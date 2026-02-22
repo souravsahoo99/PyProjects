@@ -1,1 +1,0 @@
-# we will learn about trading automation using python.

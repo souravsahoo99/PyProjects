@@ -1,1 +1,0 @@
-# Here we are going to create a broker class that will be responsible for handling the communication between the client and the server.
