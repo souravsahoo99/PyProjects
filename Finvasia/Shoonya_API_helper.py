@@ -19,7 +19,7 @@ vc      = os.getenv("VC")
 apikey  = os.getenv("APIKEY")
 imei    = os.getenv("IMEI")     
 
-credentials = {
+cred = {
     "user": user,
     "pwd": pwd,
     "factor2": factor2,
@@ -297,3 +297,13 @@ class ShoonyaApi:
         return self._api.close_websocket()
     
 
+# create an instance of the wrapper class and then invoke methods on it
+api = ShoonyaApi()  
+ret = api.login(userid=user,
+                password=pwd,
+                twoFA=factor2,
+                vendor_code=vc,
+                api_secret=apikey,  
+                imei=imei)
+
+print(ret)  
