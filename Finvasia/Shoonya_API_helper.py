@@ -1,9 +1,32 @@
 from NorenRestApiPy.NorenApi import NorenApi
 from typing import Optional, List, Dict
-from threading import Timer
-import pandas as pd
-import time
 import concurrent.futures
+import pandas as pd
+import threading
+import time
+import os
+
+from dotenv import find_dotenv
+from dotenv import load_dotenv
+
+dotenv_file: str = find_dotenv()
+load_dotenv(dotenv_file)
+
+user    = os.getenv("USER")
+pwd     = os.getenv("PWD")
+factor2 = os.getenv("FACTOR2")
+vc      = os.getenv("VC")
+apikey  = os.getenv("APIKEY")
+imei    = os.getenv("IMEI")     
+
+credentials = {
+    "user": user,
+    "pwd": pwd,
+    "factor2": factor2,
+    "vc": vc,
+    "apikey": apikey,
+    "imei": imei
+}
 
 def get_time(time_string):
     data = time.strptime(time_string,'%d-%m-%Y %H:%M:%S')

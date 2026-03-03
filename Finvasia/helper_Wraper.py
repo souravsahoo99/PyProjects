@@ -1,10 +1,18 @@
+import os
 import time
 import asyncio
 import threading
+
 import pandas as pd
-
 from Shoonya_API_helper import ShoonyaApi
-
+from tamingnifty import utils as util
+from dotenv import find_dotenv
+from dotenv import load_dotenv
+dotenv_file: str = find_dotenv()
+load_dotenv(dotenv_file)
+# ==== Notification Management ====
+slack_token = os.getenv("slack_token")
+slack_client = util.get_slack_client(token=slack_token)         
 
 # ============================================================
 #                 SHOONYA ENGINE
@@ -336,3 +344,5 @@ def get_best_ltp(ws_ltp: WebsocketLTP,
 
     # Fallback to REST
     return rest_ltp.get_latest()
+
+
