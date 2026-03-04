@@ -2,24 +2,20 @@ import os
 import time
 import asyncio
 import threading
-import pandas as pd
 
+import pandas as pd
 from ShoonyaAPI_helper import ShoonyaApi
 from dotenv import find_dotenv, load_dotenv
 
-
 dotenv_file: str = find_dotenv()
 load_dotenv(dotenv_file)
-
-
 # ==== Credentials fetching ====
-
 user    = os.getenv("USER")
 pwd     = os.getenv("PWD")
 factor2 = os.getenv("FACTOR2")
 vc      = os.getenv("VC")
 apikey  = os.getenv("APIKEY")
-imei    = os.getenv("IMEI")
+imei    = os.getenv("IMEI")     
 
 cred = {
     'user': user,
@@ -30,9 +26,8 @@ cred = {
     'imei': imei
 }
 
-
 # ============================================================
-# SHOONYA ENGINE
+#                 SHOONYA ENGINE
 # ============================================================
 
 class ShoonyaEngine:
@@ -47,67 +42,21 @@ class ShoonyaEngine:
         self._is_ws_connected = False
         self._subscribed_instruments = set()
 
-        self._login()
-
+        self._login()          # Automatically login on initialization
 
     # -------------------------
     # LOGIN
     # -------------------------
 
     def _login(self):
-
-        max_retries = 5
-        attempt = 0
-
-        while attempt < max_retries:
-
-            ret = self.api.login(
-                userid=self.credentials['user'],
-                password=self.credentials['pwd'],
-                twoFA=self.credentials['factor2'],
-                vendor_code=self.credentials['vc'],
-                api_secret=self.credentials['apikey'],
-                imei=self.credentials['imei']
-            )
-
-            if ret == None:
-
-                print("[ENGINE] Login failed. Retrying...")
-
-                delay = 2 + attempt
-                time.sleep(delay)
-
-                attempt += 1
-                continue
-
-            else:
-
-                token = ret.get("susertoken")
-
-                if token == None:
-
-                    print("[ENGINE] Login succeeded but token missing. Retrying...")
-
-                    delay = 2 + attempt
-                    time.sleep(delay)
-
-                    attempt += 1
-                    continue
-
-                else:
-
-                    self.api.set_session(
-                        userid=self.credentials['user'],
-                        password=self.credentials['pwd'],
-                        usertoken=token
-                    )
-
-                    print("[ENGINE] Login successful. Session established.")
-
-                    return
-
-        raise Exception("[ENGINE] Unable to login after multiple attempts")
-
+        self.api.login(
+            userid=self.credentials['user'],
+            password=self.credentials['pwd'],
+            twoFA=self.credentials['factor2'],
+            vendor_code=self.credentials['vc'],
+            api_secret=self.credentials['apikey'],
+            imei=self.credentials['imei']
+        )
 
     # -------------------------
     # RETRY WRAPPER
@@ -116,20 +65,15 @@ class ShoonyaEngine:
     def _retry(self, func, *args, retries=3, delay=2, **kwargs):
 
         for attempt in range(retries):
-
             try:
                 return func(*args, **kwargs)
-
             except Exception:
-
                 if attempt == retries - 1:
                     raise
-
                 time.sleep(delay)
 
-
     # -------------------------
-    # REST OHLC
+    # REST — OHLC
     # -------------------------
 
     def get_ohlc(self, exchange: str, token: str, interval: int = 1):
@@ -154,23 +98,19 @@ class ShoonyaEngine:
 
         df['timestamp'] = pd.to_datetime(df['timestamp'])
 
-        return df[['timestamp','open','high','low','close','volume']]
-
+        return df[['timestamp', 'open', 'high', 'low', 'close', 'volume']]
 
     # -------------------------
-    # REST LTP
+    # REST — LTP
     # -------------------------
 
     def get_ltp_rest(self, exchange: str, token: str):
-
         data = self._retry(
             self.api.get_quotes,
             exchange=exchange,
             token=token
         )
-
         return float(data['lp'])
-
 
     # -------------------------
     # WEBSOCKET
@@ -181,14 +121,10 @@ class ShoonyaEngine:
         key = f"{message['e']}|{message['tk']}"
 
         with self._tick_lock:
-
             self._tick_cache[key] = message
 
-
     def _on_open(self):
-
         self._is_ws_connected = True
-
 
     def start_ws(self):
 
@@ -199,88 +135,78 @@ class ShoonyaEngine:
             socket_open_callback=self._on_open
         )
 
-
     def subscribe(self, exchange: str, token: str):
 
         instrument = f"{exchange}|{token}"
-
         self._subscribed_instruments.add(instrument)
-
         self.api.subscribe(instrument)
-
 
     def wait_for_ws(self, timeout: float = 5.0):
 
         start = time.time()
 
-        while self._is_ws_connected == False:
-
+        while not self._is_ws_connected:
             if time.time() - start > timeout:
                 raise TimeoutError("WebSocket connection timeout")
-
             time.sleep(0.05)
-
 
     def restart_ws(self):
 
         print("[WS] Restarting WebSocket...")
 
         self.close_ws()
-
         time.sleep(1)
 
         self.start_ws()
-
         self.wait_for_ws(timeout=5.0)
 
+        # resubscribe automatically
         for instrument in self._subscribed_instruments:
-
             self.api.subscribe(instrument)
 
         print("[WS] Reconnected and Resubscribed.")
-
 
     def get_ltp_live(self, exchange: str, token: str):
 
         key = f"{exchange}|{token}"
 
         with self._tick_lock:
-
             if key in self._tick_cache:
-
                 return float(self._tick_cache[key]['lp'])
 
         return None
 
-
     def close_ws(self):
 
         self.api.close_websocket()
-
         self._is_ws_connected = False
 
+    # -------------------------
+    # SHUTDOWN
+    # -------------------------
 
     def shutdown(self):
 
         print("[ENGINE] Shutting down...")
-
         self.close_ws()
-
         try:
             self.api.logout()
         except:
             pass
-
         print("[ENGINE] Logout complete.")
 
 
 # ============================================================
-# REST LTP POLLER (REFINED READABILITY)
+# REST LTP POLLER
 # ============================================================
 
 class RestLTP:
 
-    def __init__(self, engine: ShoonyaEngine, exchange: str, token: str, interval: float = 1.0):
+    def __init__(self,
+                 engine: ShoonyaEngine,
+                 exchange: str,
+                 token: str,
+                 interval: float = 1.0):
 
         self.engine = engine
         self.exchange = exchange
@@ -292,144 +218,61 @@ class RestLTP:
         self._task = None
         self._failure_count = 0
 
-
     async def _poll_loop(self):
 
-        while self._is_running == True:
+        while self._is_running:
 
             cycle_start = time.time()
 
             try:
+                price = self.engine.get_ltp_rest(
+                    self.exchange,
+                    self.token
+                )
 
-                price = self.engine.get_ltp_rest(self.exchange, self.token)
-
-                if price != None:
-
-                    self._latest_price = price
-                    self._failure_count = 0
-
-                elif price == None:
-
-                    pass
-
-                else:
-
-                    pass
-
+                self._latest_price = price
+                self._failure_count = 0
 
             except Exception as e:
-
                 self._failure_count += 1
-
                 print(f"[REST ERROR] {e} | Failures: {self._failure_count}")
 
+                # Cooldown after too many failures
                 if self._failure_count >= 10:
-
                     print("[REST] Cooling down for 10 seconds...")
-
                     await asyncio.sleep(10)
-
                     self._failure_count = 0
 
-                elif self._failure_count < 10:
-
-                    pass
-
-                else:
-
-                    pass
-
-
             elapsed = time.time() - cycle_start
-            sleep_duration = self.interval - elapsed
+            sleep_duration = max(0, self.interval - elapsed)
 
-
-            if sleep_duration > 0:
-
-                try:
-
-                    await asyncio.sleep(sleep_duration)
-
-                except asyncio.CancelledError:
-
-                    break
-
-
-            elif sleep_duration <= 0:
-
-                continue
-
-            else:
-
-                pass
-
+            try:
+                await asyncio.sleep(sleep_duration)
+            except asyncio.CancelledError:
+                break
 
     async def start(self):
 
-        if self._is_running == True:
-
+        if self._is_running:
             return
 
-        elif self._is_running == False:
-
-            self._is_running = True
-
-            loop = asyncio.get_running_loop()
-
-            self._task = loop.create_task(self._poll_loop())
-
-            return
-
-        else:
-
-            return
-
+        self._is_running = True
+        loop = asyncio.get_running_loop()
+        self._task = loop.create_task(self._poll_loop())
 
     async def stop(self):
 
-        if self._is_running == True:
+        self._is_running = False
 
-            self._is_running = False
-
-            if self._task != None:
-
-                self._task.cancel()
-
-                try:
-                    await self._task
-
-                except asyncio.CancelledError:
-                    pass
-
-                else:
-                    pass
-
-            else:
-
+        if self._task:
+            self._task.cancel()
+            try:
+                await self._task
+            except asyncio.CancelledError:
                 pass
 
-        elif self._is_running == False:
-
-            return
-
-        else:
-
-            return
-
-
     def get_latest(self):
-
-        if self._latest_price != None:
-
-            return self._latest_price
-
-        elif self._latest_price == None:
-
-            return None
-
-        else:
-
-            return None
+        return self._latest_price
 
 
 # ============================================================
@@ -438,7 +281,10 @@ class RestLTP:
 
 class WebsocketLTP:
 
-    def __init__(self, engine: ShoonyaEngine, exchange: str, token: str):
+    def __init__(self,
+                 engine: ShoonyaEngine,
+                 exchange: str,
+                 token: str):
 
         self.engine = engine
         self.exchange = exchange
@@ -448,82 +294,68 @@ class WebsocketLTP:
         self._last_update_time = None
         self._is_running = False
 
-
     def start(self):
 
-        if self._is_running == True:
-
+        if self._is_running:
             return
 
-        else:
+        self.engine.start_ws()
+        self.engine.wait_for_ws(timeout=5.0)
+        self.engine.subscribe(self.exchange, self.token)
 
-            self.engine.start_ws()
-            self.engine.wait_for_ws(timeout=5.0)
-            self.engine.subscribe(self.exchange, self.token)
-
-            self._is_running = True
-
+        self._is_running = True
 
     def stop(self):
 
-        if self._is_running == False:
-
+        if not self._is_running:
             return
 
-        else:
-
-            self.engine.close_ws()
-
-            self._is_running = False
-
+        self.engine.close_ws()
+        self._is_running = False
 
     def get_latest(self):
 
-        price = self.engine.get_ltp_live(self.exchange, self.token)
+        price = self.engine.get_ltp_live(
+            self.exchange,
+            self.token
+        )
 
-        if price != None:
-
+        if price is not None:
             self._latest_price = price
             self._last_update_time = time.time()
 
         return self._latest_price
 
-
     def last_update_age(self):
 
-        if self._last_update_time == None:
-
+        if self._last_update_time is None:
             return None
 
-        else:
-
-            return time.time() - self._last_update_time
+        return time.time() - self._last_update_time
 
 
 # ============================================================
-# BEST LTP SELECTOR
+# BEST LTP SELECTOR WITH AUTO-HEAL
 # ============================================================
 
-def get_best_ltp(ws_ltp: WebsocketLTP, rest_ltp: RestLTP, ws_timeout: float = 3.0):
+def get_best_ltp(ws_ltp: WebsocketLTP,
+                 rest_ltp: RestLTP,
+                 ws_timeout: float = 3.0):
 
     ws_price = ws_ltp.get_latest()
     ws_age = ws_ltp.last_update_age()
 
-
-    if ws_price != None and ws_age != None and ws_age <= ws_timeout:
-
+    # If WS fresh → use it
+    if ws_price is not None and ws_age is not None and ws_age <= ws_timeout:
         return ws_price
 
-
-    elif ws_age != None and ws_age > ws_timeout:
-
+    # If WS stale → attempt recovery
+    if ws_age is not None and ws_age > ws_timeout:
         print("[WS] Stale data detected. Attempting restart...")
-
         ws_ltp.engine.restart_ws()
 
-        return rest_ltp.get_latest()
+    # Fallback to REST
+    return rest_ltp.get_latest()
 
 
-    else:
 
-        return rest_ltp.get_latest()
