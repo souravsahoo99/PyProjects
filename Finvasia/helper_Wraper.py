@@ -5,8 +5,7 @@ import threading
 
 import pandas as pd
 from ShoonyaAPI_helper import ShoonyaApi
-from dotenv import find_dotenv
-from dotenv import load_dotenv
+from dotenv import find_dotenv, load_dotenv
 
 dotenv_file: str = find_dotenv()
 load_dotenv(dotenv_file)
@@ -19,12 +18,12 @@ apikey  = os.getenv("APIKEY")
 imei    = os.getenv("IMEI")     
 
 cred = {
-    "user": user,
-    "pwd": pwd,
-    "factor2": factor2,
-    "vc": vc,
-    "apikey": apikey,
-    "imei": imei
+    'user': user,
+    'pwd': pwd,
+    'factor2': factor2,
+    'vc': vc,
+    'apikey': apikey,
+    'imei': imei
 }
 
 # ============================================================
@@ -36,14 +35,14 @@ class ShoonyaEngine:
     def __init__(self, credentials: dict):
 
         self.api = ShoonyaApi()
-        self.credentials = cred
+        self.credentials = credentials
 
         self._tick_cache = {}
         self._tick_lock = threading.Lock()
         self._is_ws_connected = False
         self._subscribed_instruments = set()
 
-        self._login()
+        self._login()          # Automatically login on initialization
 
     # -------------------------
     # LOGIN
@@ -359,13 +358,4 @@ def get_best_ltp(ws_ltp: WebsocketLTP,
     return rest_ltp.get_latest()
 
 
-# IMP: create an instance of the wrapper class and then invoke methods on it
-api = ShoonyaApi()  
-ret = api.login(userid=user,
-                password=pwd,
-                twoFA=factor2,
-                vendor_code=vc,
-                api_secret=apikey,  
-                imei=imei)
 
-print(ret)  

@@ -4,16 +4,15 @@ import asyncio
 
 from ShoonyaAPI_helper import Order
 from helper_wraper import ShoonyaEngine 
-from helper_wraper import get_best_ltp
+from helper_wraper import get_best_ltp , cred
+from dotenv import find_dotenv, load_dotenv
 from tamingnifty import utils as util
-from dotenv import find_dotenv
-from dotenv import load_dotenv
 
 dotenv_file: str = find_dotenv()
 load_dotenv(dotenv_file)
 
 # ==== Notification Management ====
-slack_token = os.getenv("slack_token")
+slack_token = os.getenv("SLACK_TOKEN")
 slack_client = util.get_slack_client(token=slack_token) 
 
 # util.notify("Your Notification Message Comes here",slack_channel="pibot",slack_client=slack_client)
@@ -401,7 +400,10 @@ class TradeManager:
 
                 break
 
+#########################
 
-
-
-
+# IMP: create an instance of the wrapper class and then invoke methods on it
+api = ShoonyaEngine(credentials=cred)
+if api != None:
+    print(api)
+    util.notify("Shoonya API Wrapper initialized successfully",slack_channel="pibot",slack_client=slack_client)
