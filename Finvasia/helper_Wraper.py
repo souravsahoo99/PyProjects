@@ -5,18 +5,27 @@ import threading
 
 import pandas as pd
 from ShoonyaAPI_helper import ShoonyaApi
-from tamingnifty import utils as util
 from dotenv import find_dotenv
 from dotenv import load_dotenv
 
 dotenv_file: str = find_dotenv()
 load_dotenv(dotenv_file)
+# ==== Credentials fetching ====
+user    = os.getenv("USER")
+pwd     = os.getenv("PWD")
+factor2 = os.getenv("FACTOR2")
+vc      = os.getenv("VC")
+apikey  = os.getenv("APIKEY")
+imei    = os.getenv("IMEI")     
 
-# ==== Notification Management ====
-slack_token = os.getenv("slack_token")
-slack_client = util.get_slack_client(token=slack_token) 
-
-# util.notify("Your Notification Message Comes here",slack_channel="pibot",slack_client=slack_client)
+cred = {
+    "user": user,
+    "pwd": pwd,
+    "factor2": factor2,
+    "vc": vc,
+    "apikey": apikey,
+    "imei": imei
+}
 
 # ============================================================
 #                 SHOONYA ENGINE
@@ -27,7 +36,7 @@ class ShoonyaEngine:
     def __init__(self, credentials: dict):
 
         self.api = ShoonyaApi()
-        self.credentials = credentials
+        self.credentials = cred
 
         self._tick_cache = {}
         self._tick_lock = threading.Lock()
@@ -350,3 +359,13 @@ def get_best_ltp(ws_ltp: WebsocketLTP,
     return rest_ltp.get_latest()
 
 
+# IMP: create an instance of the wrapper class and then invoke methods on it
+api = ShoonyaApi()  
+ret = api.login(userid=user,
+                password=pwd,
+                twoFA=factor2,
+                vendor_code=vc,
+                api_secret=apikey,  
+                imei=imei)
+
+print(ret)  
