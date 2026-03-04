@@ -297,7 +297,7 @@ class ShoonyaApi:
         return self._api.close_websocket()
     
 
-# create an instance of the wrapper class and then invoke methods on it
+# IMP: create an instance of the wrapper class and then invoke methods on it
 api = ShoonyaApi()  
 ret = api.login(userid=user,
                 password=pwd,
