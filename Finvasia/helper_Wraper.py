@@ -4,15 +4,18 @@ import asyncio
 import threading
 
 import pandas as pd
-from Shoonya_API_helper import ShoonyaApi
+from ShoonyaAPI_helper import ShoonyaApi
 from tamingnifty import utils as util
 from dotenv import find_dotenv
 from dotenv import load_dotenv
 dotenv_file: str = find_dotenv()
 load_dotenv(dotenv_file)
+
 # ==== Notification Management ====
 slack_token = os.getenv("slack_token")
-slack_client = util.get_slack_client(token=slack_token)         
+slack_client = util.get_slack_client(token=slack_token) 
+
+# util.notify("Your Notification Message Comes here",slack_channel="pibot",slack_client=slack_client)
 
 # ============================================================
 #                 SHOONYA ENGINE

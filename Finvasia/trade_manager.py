@@ -1,8 +1,21 @@
+import os
 import time
 import asyncio
 
-from Shoonya_API_helper import Order
-from helper_Wraper import get_best_ltp
+from ShoonyaAPI_helper import Order
+from helper_wraper import ShoonyaEngine 
+from helper_wraper import get_best_ltp
+from tamingnifty import utils as util
+from dotenv import find_dotenv
+from dotenv import load_dotenv
+dotenv_file: str = find_dotenv()
+load_dotenv(dotenv_file)
+
+# ==== Notification Management ====
+slack_token = os.getenv("slack_token")
+slack_client = util.get_slack_client(token=slack_token) 
+
+# util.notify("Your Notification Message Comes here",slack_channel="pibot",slack_client=slack_client)
 
 
 # ============================================================
@@ -17,7 +30,7 @@ class TradeManager:
         self.exchange = exchange
         self.ws_ltp = ws_ltp
         self.rest_ltp = rest_ltp
-
+        self.time_exit = None              # time value comes here as 3PM exit or 15 minutes after entry etc. (optional)
         # -------------------------
         # TRADE STATE DICTIONARY
         # -------------------------
@@ -37,7 +50,7 @@ class TradeManager:
             "strategy_state": None
         }
 
-        self.time_exit = None
+        
 
 
     # ============================================================
@@ -369,7 +382,7 @@ class TradeManager:
 
 
             # ------------------------------------------------
-            # "STATE" : EXITED
+            # "STATE" : EXITED  => Shutdown of while loop if missed in ACTIVE state
             # ------------------------------------------------
 
             elif state == "EXITED":
@@ -383,9 +396,11 @@ class TradeManager:
 
             else:
 
-                print("[TRADE] Unknown strategy state")
+                print("[TRADE] Unknown Ghost state")
 
                 break
+
+
 
 
 
