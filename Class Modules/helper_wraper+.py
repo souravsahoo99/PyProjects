@@ -11,15 +11,24 @@ from dotenv import find_dotenv, load_dotenv
 dotenv_file: str = find_dotenv()
 load_dotenv(dotenv_file)
 
+
 # ==== Credentials fetching ====
-user_    = str(os.getenv("USER1"))
-pwd_     = str(os.getenv("PWD"))
-factor2_ = str(os.getenv("FACTOR2"))
-vc_      = str(os.getenv("VC"))
-apikey_  = str(os.getenv("APIKEY"))
-imei_    = str(os.getenv("IMEI"))
 
+user    = os.getenv("USER")
+pwd     = os.getenv("PWD")
+factor2 = os.getenv("FACTOR2")
+vc      = os.getenv("VC")
+apikey  = os.getenv("APIKEY")
+imei    = os.getenv("IMEI")
 
+cred = {
+    'user': user,
+    'pwd': pwd,
+    'factor2': factor2,
+    'vc': vc,
+    'apikey': apikey,
+    'imei': imei
+}
 
 
 # ============================================================
@@ -27,10 +36,12 @@ imei_    = str(os.getenv("IMEI"))
 # ============================================================
 
 class ShoonyaEngine:
-    
-    def __init__(self):
+
+    def __init__(self, credentials: dict):
 
         self.api = ShoonyaApi()
+        self.credentials = credentials
+
         self._tick_cache = {}
         self._tick_lock = threading.Lock()
         self._is_ws_connected = False
@@ -44,20 +55,21 @@ class ShoonyaEngine:
     # -------------------------
 
     def _login(self):
-        cred = {
-            'user': user_,
-            'pwd': pwd_,
-            'factor2': factor2_,
-            'vc': vc_,
-            'apikey': apikey_,
-            'imei': imei_
-        }
-        max_retries = 3
+
+        max_retries = 5
         attempt = 0
 
         while attempt < max_retries:
 
-            ret = self.api.Userlogin(userid = cred['user'], password = cred['pwd'], twoFA=cred['factor2'], vendor_code=cred['vc'], api_secret=cred['apikey'], imei=cred['imei'])
+            ret = self.api.login(
+                userid=self.credentials['user'],
+                password=self.credentials['pwd'],
+                twoFA=self.credentials['factor2'],
+                vendor_code=self.credentials['vc'],
+                api_secret=self.credentials['apikey'],
+                imei=self.credentials['imei']
+            )
+
             if ret == None:
 
                 print("[ENGINE] Login failed. Retrying...")
@@ -70,7 +82,7 @@ class ShoonyaEngine:
 
             else:
 
-                token = ret.get("stat")
+                token = ret.get("susertoken")
 
                 if token == None:
 
@@ -84,15 +96,15 @@ class ShoonyaEngine:
 
                 else:
 
-                    """self.api.set_session(
+                    self.api.set_session(
                         userid=self.credentials['user'],
                         password=self.credentials['pwd'],
                         usertoken=token
                     )
 
-                    print("[ENGINE] Login successful. Session established.")"""
+                    print("[ENGINE] Login successful. Session established.")
 
-                    return token
+                    return
 
         raise Exception("[ENGINE] Unable to login after multiple attempts")
 
@@ -515,4 +527,3 @@ def get_best_ltp(ws_ltp: WebsocketLTP, rest_ltp: RestLTP, ws_timeout: float = 3.
     else:
 
         return rest_ltp.get_latest()
-    

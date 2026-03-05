@@ -2,14 +2,18 @@ from NorenRestApiPy.NorenApi import NorenApi
 from typing import Optional, List, Dict
 import concurrent.futures
 import threading
+import logging
 import time
+import os
 
+
+#logging.basicConfig(level=logging.INFO)
 
 def get_time(time_string):
     data = time.strptime(time_string,'%d-%m-%Y %H:%M:%S')
 
     return time.mktime(data)
-
+api=None
 class Order:
     def __init__(self,
                  buy_or_sell: str,
@@ -36,31 +40,25 @@ class Order:
         self.retention = retention
         self.remarks = remarks
 
-# Original calling method
-class ShoonyaApiPy(NorenApi):
+#   Original calling method
+
+class ShoonyaApi(NorenApi):
     def __init__(self):
         NorenApi.__init__(self, host='https://api.shoonya.com/NorenWClientTP/', websocket='wss://api.shoonya.com/NorenWSTP/')        
         global api
         api = self
 
-# GPT style calling method
-class ShoonyaApi:
-    def __init__(self):
-        self._api = NorenApi(host='https://api.shoonya.com/NorenWClientTP/', websocket='wss://api.shoonya.com/NorenWSTP/')
-        
-
     # ==========================================================
     #                       AUTHENTICATION
     # ==========================================================
 
-    def login(self, userid, password, twoFA, vendor_code, api_secret, imei):
-        """
-        Performs QuickAuth login.
-        Must be called before any REST or WS function.
-        """
-        return self._api.login(userid, password, twoFA,
-                               vendor_code, api_secret, imei)
-
+    def Userlogin(self, userid, password, twoFA, vendor_code, api_secret, imei):
+        #enable dbug to see request and responses
+        logging.basicConfig(level=logging.DEBUG)
+        api = ShoonyaApi()
+        ret= api.login(userid, password, twoFA, vendor_code, api_secret, imei)
+        return ret
+    
     def set_session(self, userid, password, usertoken):
         """
         Restore session without logging in again.

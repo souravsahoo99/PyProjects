@@ -110,8 +110,9 @@ class TradeManager:
                 self.trade["strategy_state"] = "ACTIVE"
 
                 print(f"[TRADE] Entered at {ltp}")
+                util.notify(f"Entered trade for {self.trade['symbol']} at {ltp}", slack_channel="pibot", slack_client=slack_client)
 
-                return
+                return 
 
         else:
 
@@ -166,6 +167,7 @@ class TradeManager:
                 pnl = ltp - self.trade["entry_price"]
 
                 print(f"[TRADE] Exit @ {ltp} | PnL {pnl}")
+                util.notify(f"Exited trade for {self.trade['symbol']} at {ltp} | PnL {pnl}", slack_channel="pibot", slack_client=slack_client)
 
 
             self.trade["net_pnl"] = pnl
@@ -337,6 +339,7 @@ class TradeManager:
                     print("[TRADE] Stop loss hit")
 
                     self.exit_trade()
+                    util.notify(f"Stop loss hit for {self.trade['symbol']} at {ltp}", slack_channel="pibot", slack_client=slack_client)
 
                     break
 
@@ -352,6 +355,7 @@ class TradeManager:
                     print("[TRADE] Target hit")
 
                     self.exit_trade()
+                    util.notify(f"Target hit for {self.trade['symbol']} at {ltp}", slack_channel="pibot", slack_client=slack_client)
 
                     break
 
@@ -368,6 +372,7 @@ class TradeManager:
                     print("[TRADE] Time exit triggered")
 
                     self.exit_trade()
+                    util.notify(f"Time exit triggered for {self.trade['symbol']} at {ltp}", slack_channel="pibot", slack_client=slack_client)
 
                     break
 
@@ -381,29 +386,22 @@ class TradeManager:
                 continue
 
 
-            # ------------------------------------------------
+            # ---------------------------------------------------------------------
             # "STATE" : EXITED  => Shutdown of while loop if missed in ACTIVE state
-            # ------------------------------------------------
+            # ---------------------------------------------------------------------
 
             elif state == "EXITED":
 
                 break
+            
 
-
-            # ------------------------------------------------
-            #       SAFEGUARD   (UNKNOWN STATE)
-            # ------------------------------------------------
-
-            else:
-
-                print("[TRADE] Unknown Ghost state")
-
-                break
-
-#########################
+#####################################################################################
 
 # IMP: create an instance of the wrapper class and then invoke methods on it
 api = ShoonyaEngine(credentials=cred)
 if api != None:
     print(api)
-    util.notify("Shoonya API Wrapper initialized successfully",slack_channel="pibot",slack_client=slack_client)
+    util.notify("API Login successful", slack_channel="pibot", slack_client=slack_client)
+else:
+    print("Login failed")
+
