@@ -70,7 +70,7 @@ class ShoonyaEngine:
 
             else:
 
-                token = ret.get("stat")
+                token = ret
 
                 if token == None:
 
