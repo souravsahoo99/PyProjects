@@ -65,30 +65,30 @@ class ShoonyaApi(NorenApi):
         #enable dbug to see request and responses
         logging.basicConfig(level=logging.DEBUG)
         
-        ret= self.login(userid=userid, password=password, twoFA=twoFA, vendor_code=vendor_code, api_secret=api_secret, imei=imei)
+        ret= NorenApi.login(userid=userid, password=password, twoFA=twoFA, vendor_code=vendor_code, api_secret=api_secret, imei=imei)
         return ret
         #returns Dictionary: self._susertoken = resDict['susertoken']
     
     def Set_Session(self, userid, password, usertoken):
-        ret = self.set_session(userid=userid, password=password, usertoken=usertoken)
+        ret = NorenApi.set_session(userid=userid, password=password, usertoken=usertoken)
         return ret                      
         #returns boolian Value True or False
         
     
     def logout(self):
-        ret=self.logout()
+        ret=NorenApi.logout()
         return ret
         #returns dictionary: resDict['stat'] = 'Ok' if successful, else error message
 
     #                       [ MARKET DATA ]
 
     def Get_OHLC_data(self, exchange, token, starttime=None, endtime=None, interval=None):
-        Res = self.get_time_price_series(self, exchange=exchange, token=token, starttime=starttime, endtime=endtime, interval=interval)
+        Res = NorenApi.get_time_price_series(self, exchange=exchange, token=token, starttime=starttime, endtime=endtime, interval=interval)
         return Res
         #returns List: type(resDict) != list : return None, else return resDict
 
     def Get_Daily_Data(self, exchange, tradingsymbol, startdate=None, enddate=None):
-        res = self.get_daily_price_series(self, exchange=exchange, tradingsymbol=tradingsymbol, startdate=startdate, enddate=enddate)
+        res = NorenApi.get_daily_price_series(self, exchange=exchange, tradingsymbol=tradingsymbol, startdate=startdate, enddate=enddate)
         return res
         #returns List: type(resDict) != list : return None, else return resDict
 
@@ -97,7 +97,7 @@ class ShoonyaApi(NorenApi):
     #
 
     def Place_Order(self,order: Order):
-        ret = self.place_order(self, buy_or_sell=order.buy_or_sell, product_type=order.product_type,
+        ret = NorenApi.place_order(self, buy_or_sell=order.buy_or_sell, product_type=order.product_type,
                             exchange=order.exchange, tradingsymbol=order.tradingsymbol, 
                             quantity=order.quantity, discloseqty=order.discloseqty, price_type=order.price_type, 
                             price=order.price, trigger_price=order.trigger_price,
@@ -108,38 +108,38 @@ class ShoonyaApi(NorenApi):
 
     def Modify_Order(self, orderno, exchange, tradingsymbol, newquantity,
                     newprice_type, newprice=0.0, newtrigger_price=None, bookloss_price = 0.0, bookprofit_price = 0.0, trail_price = 0.0):
-        ret = self.modify_order(orderno=orderno, exchange=exchange, tradingsymbol=tradingsymbol, newquantity=newquantity, newprice_type=newprice_type, newprice=newprice, newtrigger_price=newtrigger_price, bookloss_price=bookloss_price, bookprofit_price=bookprofit_price, trail_price=trail_price)
+        ret = NorenApi.modify_order(orderno=orderno, exchange=exchange, tradingsymbol=tradingsymbol, newquantity=newquantity, newprice_type=newprice_type, newprice=newprice, newtrigger_price=newtrigger_price, bookloss_price=bookloss_price, bookprofit_price=bookprofit_price, trail_price=trail_price)
         
         return ret
         # returns Dict: resDict['stat'] = 'Ok' if successful, else None
 
     def Cancel_Order(self, orderno):
-        ret = self.cancel_order(self, orderno=orderno)
+        ret = NorenApi.cancel_order(self, orderno=orderno)
         return ret
         # returns Dict: resDict['stat'] = 'Ok' if successful, else None 
 
     def Exit_Order(self, orderno, product_type):
-        ret = self.exit_order(self, orderno=orderno, product_type=product_type)
+        ret = NorenApi.exit_order(self, orderno=orderno, product_type=product_type)
         return ret
         # returns Dict: resDict['stat'] = 'Ok' if successful, else None
 
     def Get_Positions(self):
-        res = self.get_positions(self)
+        res = NorenApi.get_positions(self)
         return res
         # returns List: type(resDict) != list : return None, else return resDict
 
     def Single_Order_History(self, orderno):
-        book = self.single_order_history(self, orderno=orderno)
+        book = NorenApi.single_order_history(self, orderno=orderno)
         return book
         # returns List: type(resDict) != list : return None, else return resDict
 
     def Get_Orderbook(self):
-        book = self.get_order_book(self)
+        book = NorenApi.get_order_book(self)
         return book
         # returns List: type(resDict) != list : return None, else return resDict
 
     def Get_TradeBook(self):
-        book = self.get_trade_book(self)
+        book = NorenApi.get_trade_book(self)
         return book
         # returns List: type(resDict) != list : return None, else return resDict
         
@@ -148,17 +148,17 @@ class ShoonyaApi(NorenApi):
     # 
     
     def Search_Script(self, exchange, searchtext):
-        res = self.searchscrip(exchange=exchange, searchtext=searchtext)
+        res = NorenApi.searchscrip(exchange=exchange, searchtext=searchtext)
         return res
         #returns Dictionary: resDict['stat'] != 'Ok' : return None, else return resDict
 
     def Get_Quotes(self, exchange, token):
-        res = self.get_quotes(self, exchange=exchange, token=token)
+        res = NorenApi.get_quotes(self, exchange=exchange, token=token)
         return res
         #returns Dictionary: resDict['stat'] != 'Ok' : return None, else return resDict
 
     def Get_Option_Chain(self, exchange, tradingsymbol, strikeprice, count=2):
-        res = self.get_option_chain(self, exchange=exchange, tradingsymbol=tradingsymbol, strikeprice=strikeprice, count=count)
+        res = NorenApi.get_option_chain(self, exchange=exchange, tradingsymbol=tradingsymbol, strikeprice=strikeprice, count=count)
         return res
         #returns Dict: if resDict['stat'] != 'Ok' : return None, else return resDict
 
@@ -167,28 +167,27 @@ class ShoonyaApi(NorenApi):
     # ==========================================================
 
     def Start_Websocket(self, subscribe_callback = None, order_update_callback = None, socket_open_callback = None, socket_close_callback = None, socket_error_callback = None):
-        ws = self.start_websocket(self, subscribe_callback=subscribe_callback, order_update_callback=order_update_callback, socket_open_callback=socket_open_callback, socket_close_callback=socket_close_callback, socket_error_callback=socket_error_callback)
+        ws = NorenApi.start_websocket(self, subscribe_callback=subscribe_callback, order_update_callback=order_update_callback, socket_open_callback=socket_open_callback, socket_close_callback=socket_close_callback, socket_error_callback=socket_error_callback)
         return ws    
 
     def Close_Websocket(self):
-        ws = self.close_websocket(self)
+        ws = NorenApi.close_websocket(self)
         return ws
     
     #  Subscribe live Market LTP Data for given instrument token. Token can be obtained from searchscrip or get_security_info API.
     def Subscribe_inst(self, Instrument):
-        sub= self.subscribe(instrument=Instrument)
+        sub= NorenApi.subscribe(instrument=Instrument)
         return sub
         
     def Unsubscribe_inst(self, Instrument):
-        unsub= self.unsubscribe(instrument=Instrument)
+        unsub= NorenApi.unsubscribe(instrument=Instrument)
         return unsub
     
     def Subscribe_order(self):
-        sub_order = self.subscribe_orders()
+        sub_order = NorenApi.subscribe_orders()
         return sub_order
     
    
 
-
-################################################
+#######################################################
 
