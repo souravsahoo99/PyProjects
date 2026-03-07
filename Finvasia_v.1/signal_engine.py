@@ -12,14 +12,13 @@ from strategy_utils import breakout, breakdown
 
 
 # ============================================================
-# GLOBAL SIGNAL BUS
+# GLOBAL SIGNAL OBJECT
 # ============================================================
 
 SIGNAL = {
 
     "state": False,
 
-    "exchange": None,
     "symbol": None,
     "token": None,
 
@@ -35,35 +34,27 @@ SIGNAL = {
 # ============================================================
 
 class SignalEngine:
-    """
-    SignalEngine evaluates strategies on ONE instrument pipeline
-    and publishes signals to the global SIGNAL bus.
-    """
 
-    def __init__(self, market_data, exchange, symbol, token):
+    def __init__(self, market_data, symbol, token):
 
         self.market_data = market_data
-
-        self.exchange = exchange
         self.symbol = symbol
         self.token = token
 
-        # track last processed candle
         self.last_candle_time = None
 
-        # ORB state
         self.orb_high = None
         self.orb_low = None
         self.orb_ready = False
 
-        # Market profile levels
         self.vah = None
         self.val = None
+
         self.profile_ready = False
 
 
     # --------------------------------------------------------
-    # BUILD DATAFRAME FROM BUFFER
+    # BUILD DATAFRAME FROM CANDLE BUFFER
     # --------------------------------------------------------
 
     def _build_dataframe(self, buffer):
@@ -95,6 +86,9 @@ class SignalEngine:
     # --------------------------------------------------------
 
     def _update_orb(self, df):
+
+        if df is None:
+            return
 
         now = df.iloc[-1]["timestamp"]
 
@@ -184,7 +178,7 @@ class SignalEngine:
 
 
     # --------------------------------------------------------
-    # STRATEGY 3 : MARKET PROFILE BREAKOUT
+    # STRATEGY 3 : MARKET PROFILE
     # --------------------------------------------------------
 
     def _strategy_market_profile(self, close):
@@ -209,13 +203,11 @@ class SignalEngine:
 
         global SIGNAL
 
-        # do not override active signal
         if SIGNAL["state"]:
             return
 
         SIGNAL["state"] = True
 
-        SIGNAL["exchange"] = self.exchange
         SIGNAL["symbol"] = self.symbol
         SIGNAL["token"] = self.token
 
@@ -228,30 +220,26 @@ class SignalEngine:
 
 
     # --------------------------------------------------------
-    # STRATEGY EVALUATION
+    # EVALUATE STRATEGIES
     # --------------------------------------------------------
 
     def _evaluate(self, df):
 
         close = df.iloc[-1]["close"]
-
         timestamp = int(df.iloc[-1]["timestamp"].timestamp())
 
-        # ORB
         res = self._strategy_orb(close)
 
         if res:
             self._publish_signal(res, close, timestamp, "ORB")
             return
 
-        # VWAP
         res = self._strategy_vwap(df)
 
         if res:
             self._publish_signal(res, close, timestamp, "VWAP_DEV")
             return
 
-        # MARKET PROFILE
         res = self._strategy_market_profile(close)
 
         if res:
@@ -260,7 +248,7 @@ class SignalEngine:
 
 
     # --------------------------------------------------------
-    # MAIN SIGNAL LOOP
+    # MAIN LOOP
     # --------------------------------------------------------
 
     async def run(self):
@@ -290,16 +278,13 @@ class SignalEngine:
                 await asyncio.sleep(0.2)
                 continue
 
-            # update ORB levels
             self._update_orb(df)
 
-            # load market profile once
             self._load_market_profile(df)
 
-            # evaluate strategies
             self._evaluate(df)
 
             await asyncio.sleep(0.2)
 
 
-##
+#

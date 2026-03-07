@@ -114,7 +114,7 @@ class ShoonyaApi(NorenApi):
         # returns Dict: resDict['stat'] = 'Ok' if successful, else None
 
     def Cancel_Order(self, orderno):
-        ret = super().cancel_order(self, orderno=orderno)
+        ret= super().cancel_order(self, orderno=orderno)
         return ret
         # returns Dict: resDict['stat'] = 'Ok' if successful, else None 
 
@@ -191,6 +191,4 @@ class ShoonyaApi(NorenApi):
 
 
 ################################################
-
-
 

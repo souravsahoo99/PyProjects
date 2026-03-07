@@ -8,6 +8,10 @@ from ShoonyaAPI_helper import ShoonyaApi
 from dotenv import find_dotenv, load_dotenv
 
 
+# ============================================================
+# LOAD ENVIRONMENT VARIABLES
+# ============================================================
+
 dotenv_file: str = find_dotenv()
 load_dotenv(dotenv_file)
 
@@ -29,26 +33,56 @@ imei_    = str(os.getenv("IMEI"))
 # ============================================================
 
 class ShoonyaEngine:
+    """
+    Core broker engine responsible for:
+
+    • API login/session
+    • WebSocket lifecycle
+    • Tick routing
+    • REST market data access
+
+    Only ONE instance of this class should exist.
+    """
 
     def __init__(self):
 
+        # ----------------------------------------------------
+        # Broker API
+        # ----------------------------------------------------
+
         self.api = ShoonyaApi()
+
+        # ----------------------------------------------------
+        # Tick cache (for instant LTP access)
+        # ----------------------------------------------------
 
         self._tick_cache = {}
         self._tick_lock = threading.Lock()
 
+        # ----------------------------------------------------
+        # WebSocket state
+        # ----------------------------------------------------
+
         self._is_ws_connected = False
         self._subscribed_instruments = set()
 
-        # optional external data engine
-        self.market_data = None
+        # ----------------------------------------------------
+        # Instrument routing map
+        # exchange|token → MarketDataManager
+        # ----------------------------------------------------
+
+        self.market_data_map = {}
+
+        # ----------------------------------------------------
+        # Login immediately during engine startup
+        # ----------------------------------------------------
 
         self._login()
 
 
-    # ---------------------------------------------------------
+    # =========================================================
     # LOGIN
-    # ---------------------------------------------------------
+    # =========================================================
 
     def _login(self):
 
@@ -66,88 +100,77 @@ class ShoonyaEngine:
 
         while attempt <= max_retry:
 
-            ret = self.api.Userlogin(userid=cred['user'],password=cred['pwd'],twoFA=cred['factor2'],vendor_code=cred['vc'],api_secret=cred['apikey'],imei=cred['imei'])
+            ret = self.api.Userlogin(
+                userid=cred['user'],
+                password=cred['pwd'],
+                twoFA=cred['factor2'],
+                vendor_code=cred['vc'],
+                api_secret=cred['apikey'],
+                imei=cred['imei']
+            )
 
-            if ret == None:
+            if ret is None:
 
                 print("[ENGINE] Login failed. Retrying...")
 
-                delay = 2 + attempt
-                time.sleep(delay)
-
+                time.sleep(2 + attempt)
                 attempt += 1
-
                 continue
 
-            elif ret != None :
+            if ret.get("stat") == "Not_Ok":
 
-                if ret.get("stat") == "Not_Ok":
-                    print(f"[ENGINE] ! Login Error: {ret.get('emsg', 'Unknown error')}")
+                print(f"[ENGINE] Login error: {ret.get('emsg')}")
 
-                    delay = 2 + attempt
-                    time.sleep(delay)
+                time.sleep(2 + attempt)
+                attempt += 1
+                continue
 
+            if ret.get("stat") == "Ok":
+
+                token = ret.get("susertoken")
+
+                if token is None:
+
+                    print("[ENGINE] Session token missing. Retrying...")
+                    time.sleep(2 + attempt)
                     attempt += 1
-
                     continue
-                
-                elif ret.get("stat") == "Ok" :
 
-                    token = ret.get("susertoken")
+                self.api.Set_Session(
+                    userid=cred['user'],
+                    password=cred['pwd'],
+                    usertoken=token
+                )
 
-                    if token == None:
+                print("[ENGINE] Login successful.")
 
-                        print("[ENGINE] Login succeeded but session Token missing. Retrying...")
+                return token
 
-                        delay = 2 + attempt
-                        time.sleep(delay)
-
-                        attempt += 1
-
-                        continue
-
-                    else:
-
-                        self.api.Set_Session(
-                            userid=cred['user'],
-                            password=cred['pwd'],
-                            usertoken=token
-                        )
-
-                        print("[ENGINE] Login successful. Session established.")
-
-                        return token
-            else:
-                print(f"[ENGINE] Login error: {ret.get("emsg", 'Unknown error')}")
-
-                
         raise Exception("[ENGINE] Unable to login after multiple attempts")
 
 
-    # ---------------------------------------------------------
+    # =========================================================
     # RETRY WRAPPER
-    # ---------------------------------------------------------
+    # =========================================================
 
     def _retry(self, func, *args, retries=3, delay=2, **kwargs):
 
         for attempt in range(retries):
 
             try:
-
                 return func(*args, **kwargs)
 
             except Exception:
 
                 if attempt == retries - 1:
-
                     raise
 
                 time.sleep(delay)
 
 
-    # ---------------------------------------------------------
+    # =========================================================
     # REST OHLC
-    # ---------------------------------------------------------
+    # =========================================================
 
     def get_ohlc(self, exchange: str, token: str, interval: int = 1):
 
@@ -174,9 +197,9 @@ class ShoonyaEngine:
         return df[['timestamp','open','high','low','close','volume']]
 
 
-    # ---------------------------------------------------------
+    # =========================================================
     # REST LTP
-    # ---------------------------------------------------------
+    # =========================================================
 
     def get_ltp_rest(self, exchange: str, token: str):
 
@@ -190,39 +213,59 @@ class ShoonyaEngine:
 
 
     # =========================================================
-    # WEBSOCKET
+    # WEBSOCKET CALLBACKS
     # =========================================================
 
     def _on_quote(self, message):
+        """
+        WebSocket tick handler.
 
-        key = f"{message['e']}|{message['tk']}"
+        Responsibilities:
+        1. Cache latest LTP
+        2. Route tick to correct MarketDataManager
+        """
+
+        exchange = message.get("e")
+        token = message.get("tk")
+
+        key = f"{exchange}|{token}"
+
+        # ----------------------------------------------------
+        # Update tick cache
+        # ----------------------------------------------------
 
         with self._tick_lock:
 
             self._tick_cache[key] = message
 
+        # ----------------------------------------------------
+        # Route tick to instrument pipeline
+        # ----------------------------------------------------
 
-        # -----------------------------------------------------
-        # SURGICAL INTEGRATION → MARKET DATA ENGINE
-        # -----------------------------------------------------
+        md = self.market_data_map.get(key)
 
-        if self.market_data != None:
+        if md is None:
+            return
 
-            try:
+        try:
 
-                price = float(message["lp"])
+            price = float(message["lp"])
 
-                self.market_data.update_tick(price)
+            # push tick to instrument queue
+            md.tick_queue.put_nowait(price)
 
-            except Exception:
-
-                pass
+        except Exception:
+            pass
 
 
     def _on_open(self):
 
         self._is_ws_connected = True
 
+
+    # =========================================================
+    # WEBSOCKET CONTROL
+    # =========================================================
 
     def start_ws(self):
 
@@ -247,10 +290,9 @@ class ShoonyaEngine:
 
         start = time.time()
 
-        while self._is_ws_connected == False:
+        while not self._is_ws_connected:
 
             if time.time() - start > timeout:
-
                 raise TimeoutError("WebSocket connection timeout")
 
             time.sleep(0.05)
@@ -265,15 +307,17 @@ class ShoonyaEngine:
         time.sleep(1)
 
         self.start_ws()
-
-        self.wait_for_ws(timeout=5.0)
+        self.wait_for_ws()
 
         for instrument in self._subscribed_instruments:
-
             self.api.Subscribe_inst(instrument)
 
-        print("[WS] Reconnected and Resubscribed.")
+        print("[WS] Reconnected and resubscribed.")
 
+
+    # =========================================================
+    # LIVE LTP ACCESS
+    # =========================================================
 
     def get_ltp_live(self, exchange: str, token: str):
 
@@ -281,12 +325,17 @@ class ShoonyaEngine:
 
         with self._tick_lock:
 
-            if key in self._tick_cache:
+            msg = self._tick_cache.get(key)
 
-                return float(self._tick_cache[key]['lp'])
+            if msg:
+                return float(msg['lp'])
 
         return None
 
+
+    # =========================================================
+    # WEBSOCKET SHUTDOWN
+    # =========================================================
 
     def close_ws(self):
 
@@ -295,9 +344,9 @@ class ShoonyaEngine:
         self._is_ws_connected = False
 
 
-    # ---------------------------------------------------------
-    # SHUTDOWN
-    # ---------------------------------------------------------
+    # =========================================================
+    # ENGINE SHUTDOWN
+    # =========================================================
 
     def shutdown(self):
 
@@ -306,15 +355,11 @@ class ShoonyaEngine:
         self.close_ws()
 
         try:
-
             self.api.logout()
-
         except Exception:
-
             pass
 
         print("[ENGINE] Logout complete.")
 
 
-
-#
+##

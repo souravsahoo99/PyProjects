@@ -36,7 +36,7 @@ SIGNAL = {
 
 class SignalEngine:
     """
-    SignalEngine evaluates strategies on ONE instrument pipeline
+    SignalEngine evaluates strategies for ONE instrument pipeline
     and publishes signals to the global SIGNAL bus.
     """
 
@@ -115,7 +115,7 @@ class SignalEngine:
 
 
     # --------------------------------------------------------
-    # LOAD PREVIOUS DAY MARKET PROFILE
+    # LOAD MARKET PROFILE
     # --------------------------------------------------------
 
     def _load_market_profile(self, df):
@@ -209,7 +209,6 @@ class SignalEngine:
 
         global SIGNAL
 
-        # do not override active signal
         if SIGNAL["state"]:
             return
 
@@ -237,21 +236,18 @@ class SignalEngine:
 
         timestamp = int(df.iloc[-1]["timestamp"].timestamp())
 
-        # ORB
         res = self._strategy_orb(close)
 
         if res:
             self._publish_signal(res, close, timestamp, "ORB")
             return
 
-        # VWAP
         res = self._strategy_vwap(df)
 
         if res:
             self._publish_signal(res, close, timestamp, "VWAP_DEV")
             return
 
-        # MARKET PROFILE
         res = self._strategy_market_profile(close)
 
         if res:
@@ -290,13 +286,10 @@ class SignalEngine:
                 await asyncio.sleep(0.2)
                 continue
 
-            # update ORB levels
             self._update_orb(df)
 
-            # load market profile once
             self._load_market_profile(df)
 
-            # evaluate strategies
             self._evaluate(df)
 
             await asyncio.sleep(0.2)
