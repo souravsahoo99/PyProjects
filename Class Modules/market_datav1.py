@@ -1,12 +1,12 @@
 import time
 import asyncio
 import threading
-import pandas as pd
 from collections import deque
 
 
+
 # ============================================================
-# CANDLE BUFFER
+# CANDLE BUFFER (PINESCRIPT STYLE STORAGE)
 # ============================================================
 
 class CandleBuffer:
@@ -30,20 +30,10 @@ class CandleBuffer:
         self.volume.append(v)
         self.time.append(t)
 
-        return
-
 
     def __len__(self):
 
-        length = len(self.close)
-
-        if length >= 0:
-
-            return length
-
-        else:
-
-            return 0
+        return len(self.close)
 
 
     def last(self):
@@ -52,24 +42,20 @@ class CandleBuffer:
 
             return None
 
-        elif len(self.close) > 0:
+        return {
+            "open": self.open[-1],
+            "high": self.high[-1],
+            "low": self.low[-1],
+            "close": self.close[-1],
+            "volume": self.volume[-1],
+            "time": self.time[-1]
+        }
 
-            return {
-                "open": self.open[-1],
-                "high": self.high[-1],
-                "low": self.low[-1],
-                "close": self.close[-1],
-                "volume": self.volume[-1],
-                "time": self.time[-1]
-            }
-
-        else:
-
-            return None
 
 
 # ============================================================
-# TICK CANDLE AGGREGATOR
+# TICK → MICRO CANDLE AGGREGATOR
+# (10s / 15s / 30s)
 # ============================================================
 
 class TickCandleAggregator:
@@ -106,22 +92,11 @@ class TickCandleAggregator:
 
             timestamp = int(time.time())
 
-        elif timestamp is not None:
-
-            pass
-
-        else:
-
-            pass
-
-
         with self._lock:
 
             for tf, seconds in self.timeframes.items():
 
                 self._update_tf(tf, seconds, price, timestamp)
-
-        return
 
 
     def _update_tf(self, tf, seconds, price, ts):
@@ -139,16 +114,12 @@ class TickCandleAggregator:
             candle["low"] = price
             candle["close"] = price
 
-            return
-
 
         elif bucket == candle["start"]:
 
             candle["high"] = max(candle["high"], price)
             candle["low"] = min(candle["low"], price)
             candle["close"] = price
-
-            return
 
 
         elif bucket > candle["start"]:
@@ -168,31 +139,18 @@ class TickCandleAggregator:
             candle["low"] = price
             candle["close"] = price
 
-            return
-
-
-        else:
-
-            pass
-
 
     def get(self, tf):
 
-        if tf in self.buffers:
+        return self.buffers.get(tf)
 
-            return self.buffers.get(tf)
-
-        elif tf not in self.buffers:
-
-            return None
-
-        else:
-
-            return None
 
 
 # ============================================================
 # REST CANDLE AGGREGATOR
+# (1m / 3m / 5m)
+# Independent pipelines
+# Timestamp validation + backfill
 # ============================================================
 
 class RestCandleAggregator:
@@ -219,33 +177,15 @@ class RestCandleAggregator:
         self._tasks = []
 
 
-    # ---------------------------------------------------------
-    # STORE VALIDATED CANDLE
-    # ---------------------------------------------------------
-
     def _store_candle(self, tf, candle):
 
         ts = int(pd.to_datetime(candle["timestamp"]).timestamp())
 
         last_ts = self._last_timestamp[tf]
 
-
-        if last_ts is None:
-
-            pass
-
-        elif ts <= last_ts:
+        if last_ts is not None and ts <= last_ts:
 
             return
-
-        elif ts > last_ts:
-
-            pass
-
-        else:
-
-            pass
-
 
         o = float(candle["open"])
         h = float(candle["high"])
@@ -253,54 +193,29 @@ class RestCandleAggregator:
         c = float(candle["close"])
         v = float(candle["volume"])
 
-
         self.buffers[tf].append(o, h, l, c, v, ts)
 
         self._last_timestamp[tf] = ts
 
-        return
-
-
-    # ---------------------------------------------------------
-    # PROCESS REST RESPONSE
-    # ---------------------------------------------------------
 
     def _process_response(self, tf, df):
 
-        if df is None:
+        if df is None or len(df) == 0:
 
             return
 
-        elif len(df) == 0:
+        for _, row in df.iterrows():
 
-            return
+            self._store_candle(tf, row)
 
-        elif len(df) > 0:
-
-            for _, row in df.iterrows():
-
-                self._store_candle(tf, row)
-
-            return
-
-        else:
-
-            pass
-
-
-    # ---------------------------------------------------------
-    # REST PIPELINE LOOP
-    # ---------------------------------------------------------
 
     async def _pipeline(self, tf, interval):
 
         interval_seconds = interval * 60
 
-
-        while self._running == True:
+        while self._running:
 
             cycle_start = time.time()
-
 
             try:
 
@@ -314,114 +229,57 @@ class RestCandleAggregator:
 
             except Exception as e:
 
-                print(f"[REST PIPELINE ERROR] {tf}: {e}")
-
-            else:
-
-                pass
-
+                print(f"[REST PIPELINE ERROR] {tf} : {e}")
 
             elapsed = time.time() - cycle_start
 
             sleep_time = interval_seconds - elapsed
 
-
             if sleep_time > 0:
 
                 await asyncio.sleep(sleep_time)
 
-            elif sleep_time <= 0:
+            else:
 
                 await asyncio.sleep(1)
 
-            else:
-
-                pass
-
-
-    # ---------------------------------------------------------
-    # START PIPELINES
-    # ---------------------------------------------------------
 
     async def start(self):
 
-        if self._running == True:
+        if self._running:
 
             return
 
-        elif self._running == False:
+        self._running = True
 
-            self._running = True
+        loop = asyncio.get_running_loop()
 
-            loop = asyncio.get_running_loop()
+        self._tasks.append(loop.create_task(self._pipeline("1m", 1)))
+        self._tasks.append(loop.create_task(self._pipeline("3m", 3)))
+        self._tasks.append(loop.create_task(self._pipeline("5m", 5)))
 
-            self._tasks.append(loop.create_task(self._pipeline("1m", 1)))
-            self._tasks.append(loop.create_task(self._pipeline("3m", 3)))
-            self._tasks.append(loop.create_task(self._pipeline("5m", 5)))
-
-            return
-
-        else:
-
-            pass
-
-
-    # ---------------------------------------------------------
-    # STOP PIPELINES
-    # ---------------------------------------------------------
 
     async def stop(self):
 
-        if self._running == False:
+        self._running = False
 
-            return
+        for t in self._tasks:
 
-        elif self._running == True:
+            t.cancel()
 
-            self._running = False
+        for t in self._tasks:
 
-            for t in self._tasks:
+            try:
 
-                t.cancel()
+                await t
+            except asyncio.CancelledError:
+                pass
 
-            for t in self._tasks:
-
-                try:
-
-                    await t
-
-                except asyncio.CancelledError:
-
-                    pass
-
-                else:
-
-                    pass
-
-            return
-
-        else:
-
-            pass
-
-
-    # ---------------------------------------------------------
-    # FETCH BUFFER
-    # ---------------------------------------------------------
 
     def get(self, tf):
 
-        if tf in self.buffers:
+        return self.buffers.get(tf)
 
-            return self.buffers.get(tf)
-
-        elif tf not in self.buffers:
-
-            return None
-
-        else:
-
-            return None
 
 
 # ============================================================
@@ -449,31 +307,15 @@ class MarketDataManager:
 
         await self.rest_agg.start()
 
-        return
-
 
     async def stop(self):
 
         await self.rest_agg.stop()
 
-        return
-
 
     def update_tick(self, price):
 
-        if price is None:
-
-            return
-
-        elif price is not None:
-
-            self.tick_agg.update_tick(price)
-
-            return
-
-        else:
-
-            pass
+        self.tick_agg.update_tick(price)
 
 
     def get(self, timeframe):
@@ -489,5 +331,3 @@ class MarketDataManager:
         else:
 
             return None
-        
-#

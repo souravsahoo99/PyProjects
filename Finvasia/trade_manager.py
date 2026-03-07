@@ -1,25 +1,17 @@
-import os
+# ============================================================
+# TRADE MANAGER (STATE MACHINE)
+# ============================================================
+
 import time
 import asyncio
 
 from ShoonyaAPI_helper import Order
-from helper_wraper import ShoonyaEngine 
-from helper_wraper import get_best_ltp , cred
-from dotenv import find_dotenv, load_dotenv
-from tamingnifty import utils as util
-
-dotenv_file: str = find_dotenv()
-load_dotenv(dotenv_file)
-
-# ==== Notification Management ====
-slack_token = os.getenv("SLACK_TOKEN")
-slack_client = util.get_slack_client(token=slack_token) 
-
-# util.notify("Your Notification Message Comes here",slack_channel="pibot",slack_client=slack_client)
+from helper_wraper import get_best_ltp
+from signal_engine import SIGNAL
 
 
 # ============================================================
-# TRADE MANAGER (STATE MACHINE)
+# TRADE MANAGER
 # ============================================================
 
 class TradeManager:
@@ -28,254 +20,230 @@ class TradeManager:
 
         self.engine = engine
         self.exchange = exchange
+
+        self.symbol = symbol
+        self.token = token
+        self.qty = qty
+
         self.ws_ltp = ws_ltp
         self.rest_ltp = rest_ltp
-        self.time_exit = None              # time value comes here as 3PM exit or 15 minutes after entry etc. (optional)
-        # -------------------------
-        # TRADE STATE DICTIONARY
-        # -------------------------
+
+        self.signal_validity_seconds = 5
+
+        self.time_exit = None
+
+        # ----------------------------------------------------
+        # TRADE STATE
+        # ----------------------------------------------------
 
         self.trade = {
+
             "symbol": symbol,
             "token": token,
             "qty": qty,
+
             "entry_price": None,
             "entry_time": None,
+
             "stop_loss": None,
             "target": None,
             "trailing_distance": None,
+
             "net_pnl": 0,
             "max_pnl": 0,
             "min_pnl": 0,
+
             "strategy_state": None
         }
 
-        
+
+    # ========================================================
+    # SIGNAL VALIDATION
+    # ========================================================
+
+    def _check_signal(self):
+
+        if not SIGNAL["state"]:
+            return False
+
+        if SIGNAL["token"] != self.token:
+            return False
+
+        signal_time = SIGNAL["signal_time"]
+
+        if signal_time is None:
+            return False
+
+        age = time.time() - signal_time
+
+        if age > self.signal_validity_seconds:
+            return False
+
+        return True
 
 
-    # ============================================================
-    #   ENTRY
-    # ============================================================
+    # ========================================================
+    # ENTRY
+    # ========================================================
 
     def enter_trade(self):
 
-        if self.trade["strategy_state"] == None:
-
-            # entry lock
-            self.trade["strategy_state"] = "ENTERING"
-
-            print("[TRADE] Entering position")
-
-            order = Order(
-                buy_or_sell="B",
-                product_type="C",
-                exchange=self.exchange,
-                tradingsymbol=self.trade["symbol"],
-                quantity=self.trade["qty"],
-                price_type="MKT",
-                price=0
-            )
-
-            ret = self.engine.api.place_order(order)
-
-            if ret is None:
-
-                print("[TRADE] Entry order rejected by broker")
-
-                # revert state
-                self.trade["strategy_state"] = None
-
-                return
-
-            else:
-
-                pass
-
-
-            ltp = get_best_ltp(self.ws_ltp, self.rest_ltp)
-
-            if ltp is None:
-
-                print("[TRADE] Entry failed (price unavailable)")
-
-                # revert state
-                self.trade["strategy_state"] = None
-
-                return
-
-            else:
-
-                self.trade["entry_price"] = ltp
-                self.trade["entry_time"] = time.time()
-                self.trade["strategy_state"] = "ACTIVE"
-
-                print(f"[TRADE] Entered at {ltp}")
-                util.notify(f"Entered trade for {self.trade['symbol']} at {ltp}", slack_channel="pibot", slack_client=slack_client)
-
-                return 
-
-        else:
-
-            print("[TRADE] Entry ignored. Strategy already active.")
-
+        if self.trade["strategy_state"] is not None:
             return
 
+        side = SIGNAL["side"]
 
-    # ============================================================
-    #   EXIT
-    # ============================================================
+        if side not in ["BUY", "SELL"]:
+            return
+
+        print(f"[TRADE] {self.symbol} entry signal received")
+
+        self.trade["strategy_state"] = "ENTERING"
+
+        order_side = "B" if side == "BUY" else "S"
+
+        order = Order(
+
+            buy_or_sell=order_side,
+            product_type="C",
+            exchange=self.exchange,
+            tradingsymbol=self.symbol,
+            quantity=self.qty,
+            price_type="MKT",
+            price=0
+        )
+
+        ret = self.engine.api.place_order(order)
+
+        if ret is None:
+
+            print("[TRADE] Entry rejected by broker")
+            self.trade["strategy_state"] = None
+            return
+
+        ltp = get_best_ltp(self.ws_ltp, self.rest_ltp)
+
+        if ltp is None:
+
+            print("[TRADE] Entry price unavailable")
+            self.trade["strategy_state"] = None
+            return
+
+        self.trade["entry_price"] = ltp
+        self.trade["entry_time"] = time.time()
+
+        self.trade["strategy_state"] = "ACTIVE"
+
+        print(f"[TRADE] {self.symbol} entered @ {ltp}")
+
+        SIGNAL["state"] = False
+
+
+    # ========================================================
+    # EXIT
+    # ========================================================
 
     def exit_trade(self):
 
-        if self.trade["strategy_state"] == "ACTIVE":
-
-            print("[TRADE] Exiting trade")
-
-            order = Order(
-                buy_or_sell="S",
-                product_type="C",
-                exchange=self.exchange,
-                tradingsymbol=self.trade["symbol"],
-                quantity=self.trade["qty"],
-                price_type="MKT",
-                price=0
-            )
-
-            ret = self.engine.api.place_order(order)
-
-            if ret is None:
-
-                print("[TRADE] Exit order rejected by broker")
-
-                return
-
-            else:
-
-                pass
-
-
-            ltp = get_best_ltp(self.ws_ltp, self.rest_ltp)
-
-            if ltp is None:
-
-                print("[TRADE] Exit price unavailable")
-
-                pnl = None
-
-            else:
-
-                pnl = ltp - self.trade["entry_price"]
-
-                print(f"[TRADE] Exit @ {ltp} | PnL {pnl}")
-                util.notify(f"Exited trade for {self.trade['symbol']} at {ltp} | PnL {pnl}", slack_channel="pibot", slack_client=slack_client)
-
-
-            self.trade["net_pnl"] = pnl
-            self.trade["strategy_state"] = "EXITED"
-
+        if self.trade["strategy_state"] != "ACTIVE":
             return
 
-        else:
+        print(f"[TRADE] Exiting {self.symbol}")
 
-            print("[TRADE] Exit ignored. No active position.")
+        order = Order(
 
+            buy_or_sell="S",
+            product_type="C",
+            exchange=self.exchange,
+            tradingsymbol=self.symbol,
+            quantity=self.qty,
+            price_type="MKT",
+            price=0
+        )
+
+        ret = self.engine.api.place_order(order)
+
+        if ret is None:
+
+            print("[TRADE] Exit order rejected")
             return
 
+        ltp = get_best_ltp(self.ws_ltp, self.rest_ltp)
 
-    # ============================================================
-    #   TRAILING SL
-    # ============================================================
+        pnl = None
+
+        if ltp is not None:
+
+            pnl = ltp - self.trade["entry_price"]
+
+        self.trade["net_pnl"] = pnl
+
+        print(f"[TRADE] Exit @ {ltp} | PnL {pnl}")
+
+        self.trade["strategy_state"] = "EXITED"
+
+
+    # ========================================================
+    # TRAILING STOP LOSS
+    # ========================================================
 
     def update_trailing_sl(self, ltp):
 
         dist = self.trade["trailing_distance"]
 
         if dist is None:
-
             return
 
-        else:
+        new_sl = ltp - dist
 
-            new_sl = ltp - dist
+        if self.trade["stop_loss"] is None:
 
-            if self.trade["stop_loss"] is None:
+            self.trade["stop_loss"] = new_sl
+            print("[TRADE] Initial trailing SL:", new_sl)
 
-                self.trade["stop_loss"] = new_sl
-                print("[TRADE] Initial trailing SL:", new_sl)
+        elif new_sl > self.trade["stop_loss"]:
 
-            elif new_sl > self.trade["stop_loss"]:
-
-                self.trade["stop_loss"] = new_sl
-                print("[TRADE] Trailing SL updated:", new_sl)
-
-            else:
-
-                return
+            self.trade["stop_loss"] = new_sl
+            print("[TRADE] Trailing SL updated:", new_sl)
 
 
-    # ============================================================
-    #    PNL UPDATE
-    # ============================================================
+    # ========================================================
+    # PNL UPDATE
+    # ========================================================
 
     def update_pnl(self, ltp):
 
         entry = self.trade["entry_price"]
 
         if entry is None:
-
             return
 
-        else:
+        pnl = ltp - entry
 
-            pnl = ltp - entry
+        self.trade["net_pnl"] = pnl
 
-            self.trade["net_pnl"] = pnl
+        if pnl > self.trade["max_pnl"]:
+            self.trade["max_pnl"] = pnl
 
-            if pnl > self.trade["max_pnl"]:
-
-                self.trade["max_pnl"] = pnl
-
-            else:
-
-                pass
-
-            if pnl < self.trade["min_pnl"]:
-
-                self.trade["min_pnl"] = pnl
-
-            else:
-
-                pass
-
-            return
+        if pnl < self.trade["min_pnl"]:
+            self.trade["min_pnl"] = pnl
 
 
-    # ============================================================
-    #    TIME EXIT
-    # ============================================================
+    # ========================================================
+    # TIME EXIT
+    # ========================================================
 
     def check_time_exit(self):
 
         if self.time_exit is None:
-
             return False
 
-        else:
-
-            now = time.time()
-
-            if now >= self.time_exit:
-
-                return True
-
-            else:
-
-                return False
+        return time.time() >= self.time_exit
 
 
-    # ============================================================
-    #    MAIN LOOP ('STATE' DRIVEN)
-    # ============================================================
+    # ========================================================
+    # MAIN LOOP
+    # ========================================================
 
     async def run(self):
 
@@ -283,125 +251,73 @@ class TradeManager:
 
             state = self.trade["strategy_state"]
 
-
             # ------------------------------------------------
-            # "STATE" : NONE
+            # WAITING FOR SIGNAL
             # ------------------------------------------------
 
-            if state == None:
+            if state is None:
 
-                # waiting for strategy signal injection
+                if self._check_signal():
+
+                    self.enter_trade()
 
                 await asyncio.sleep(0.2)
-
                 continue
 
 
             # ------------------------------------------------
-            # "STATE" : ENTERING
+            # ACTIVE TRADE
             # ------------------------------------------------
 
-            elif state == "ENTERING":
-
-                # waiting for entry confirmation
-
-                await asyncio.sleep(0.2)
-
-                continue
-
-
-            # ------------------------------------------------
-            # "STATE" : ACTIVE
-            # ------------------------------------------------
-
-            elif state == "ACTIVE":
+            if state == "ACTIVE":
 
                 ltp = get_best_ltp(self.ws_ltp, self.rest_ltp)
 
                 if ltp is None:
 
                     await asyncio.sleep(0.2)
-
                     continue
 
-                else:
-
-                    pass
-
-
                 self.update_pnl(ltp)
-
 
                 sl = self.trade["stop_loss"]
 
                 if sl is not None and ltp <= sl:
 
                     print("[TRADE] Stop loss hit")
-
                     self.exit_trade()
-                    util.notify(f"Stop loss hit for {self.trade['symbol']} at {ltp}", slack_channel="pibot", slack_client=slack_client)
-
                     break
-
-                else:
-
-                    pass
-
 
                 tgt = self.trade["target"]
 
                 if tgt is not None and ltp >= tgt:
 
                     print("[TRADE] Target hit")
-
                     self.exit_trade()
-                    util.notify(f"Target hit for {self.trade['symbol']} at {ltp}", slack_channel="pibot", slack_client=slack_client)
-
                     break
 
-                else:
-
-                    pass
-
-
                 self.update_trailing_sl(ltp)
-
 
                 if self.check_time_exit():
 
                     print("[TRADE] Time exit triggered")
-
                     self.exit_trade()
-                    util.notify(f"Time exit triggered for {self.trade['symbol']} at {ltp}", slack_channel="pibot", slack_client=slack_client)
-
                     break
 
-                else:
-
-                    pass
-
-
                 await asyncio.sleep(0.2)
-
                 continue
 
 
-            # ---------------------------------------------------------------------
-            # "STATE" : EXITED  => Shutdown of while loop if missed in ACTIVE state
-            # ---------------------------------------------------------------------
+            # ------------------------------------------------
+            # EXITED STATE
+            # ------------------------------------------------
 
-            elif state == "EXITED":
+            if state == "EXITED":
 
                 break
+
+            await asyncio.sleep(0.2)
+
+
             
-
-#####################################################################################
-
-# IMP: create an instance of the wrapper class and then invoke methods on it
-api = ShoonyaEngine(credentials=cred)
-if api != None:
-    print(api)
-    util.notify("API Login successful", slack_channel="pibot", slack_client=slack_client)
-else:
-    print("Login failed")
-
+#
