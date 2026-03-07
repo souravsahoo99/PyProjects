@@ -12,22 +12,10 @@ from strategy_utils import breakout, breakdown
 
 
 # ============================================================
-# GLOBAL SIGNAL BUS
+# GLOBAL SIGNAL STORAGE
 # ============================================================
 
-SIGNAL = {
-
-    "state": False,
-
-    "exchange": None,
-    "symbol": None,
-    "token": None,
-
-    "side": None,
-    "entry_price": None,
-    "signal_time": None,
-    "strategy": None
-}
+SIGNALS = []
 
 
 # ============================================================
@@ -35,43 +23,34 @@ SIGNAL = {
 # ============================================================
 
 class SignalEngine:
-    """
-    SignalEngine evaluates strategies for ONE instrument pipeline
-    and publishes signals to the global SIGNAL bus.
-    """
 
     def __init__(self, market_data, exchange, symbol, token):
 
         self.market_data = market_data
-
         self.exchange = exchange
         self.symbol = symbol
         self.token = token
 
-        # track last processed candle
         self.last_candle_time = None
 
-        # ORB state
+        # ORB
         self.orb_high = None
         self.orb_low = None
         self.orb_ready = False
 
-        # Market profile levels
+        # Market Profile
         self.vah = None
         self.val = None
         self.profile_ready = False
 
 
     # --------------------------------------------------------
-    # BUILD DATAFRAME FROM BUFFER
+    # BUILD DATAFRAME
     # --------------------------------------------------------
 
     def _build_dataframe(self, buffer):
 
-        if buffer is None:
-            return None
-
-        if len(buffer) == 0:
+        if buffer is None or len(buffer) == 0:
             return None
 
         df = pd.DataFrame({
@@ -91,7 +70,7 @@ class SignalEngine:
 
 
     # --------------------------------------------------------
-    # ORB CALCULATION
+    # ORB UPDATE
     # --------------------------------------------------------
 
     def _update_orb(self, df):
@@ -142,7 +121,7 @@ class SignalEngine:
 
 
     # --------------------------------------------------------
-    # STRATEGY 1 : ORB
+    # STRATEGY 1 — ORB
     # --------------------------------------------------------
 
     def _strategy_orb(self, close):
@@ -160,13 +139,12 @@ class SignalEngine:
 
 
     # --------------------------------------------------------
-    # STRATEGY 2 : VWAP DEVIATION
+    # STRATEGY 2 — VWAP DEVIATION
     # --------------------------------------------------------
 
     def _strategy_vwap(self, df):
 
         vwap = VWAPBands(df)
-
         bands = vwap.calculate()
 
         if bands is None:
@@ -184,7 +162,7 @@ class SignalEngine:
 
 
     # --------------------------------------------------------
-    # STRATEGY 3 : MARKET PROFILE BREAKOUT
+    # STRATEGY 3 — MARKET PROFILE
     # --------------------------------------------------------
 
     def _strategy_market_profile(self, close):
@@ -207,21 +185,25 @@ class SignalEngine:
 
     def _publish_signal(self, side, price, timestamp, strategy):
 
-        global SIGNAL
+        global SIGNALS
 
-        if SIGNAL["state"]:
-            return
+        signal_dict = {
 
-        SIGNAL["state"] = True
+            "exchange": self.exchange,
+            "symbol": self.symbol,
+            "token": self.token,
 
-        SIGNAL["exchange"] = self.exchange
-        SIGNAL["symbol"] = self.symbol
-        SIGNAL["token"] = self.token
+            "side": side,
+            "entry_price": price,
+            "signal_time": timestamp,
+            "strategy": strategy
+        }
 
-        SIGNAL["side"] = side
-        SIGNAL["entry_price"] = price
-        SIGNAL["signal_time"] = timestamp
-        SIGNAL["strategy"] = strategy
+        SIGNALS.append(signal_dict)
+
+        # rolling buffer control
+        if len(SIGNALS) >= 300:
+            SIGNALS.pop(0)
 
         print(f"[SIGNAL] {self.symbol} → {side} | {strategy} | {price}")
 
@@ -233,7 +215,6 @@ class SignalEngine:
     def _evaluate(self, df):
 
         close = df.iloc[-1]["close"]
-
         timestamp = int(df.iloc[-1]["timestamp"].timestamp())
 
         res = self._strategy_orb(close)
@@ -256,24 +237,28 @@ class SignalEngine:
 
 
     # --------------------------------------------------------
-    # MAIN SIGNAL LOOP
+    # MAIN LOOP
     # --------------------------------------------------------
 
     async def run(self):
 
+        global SIGNALS
+
         while True:
+
+            # enforce rolling buffer rule every cycle
+            if len(SIGNALS) >= 300:
+                SIGNALS.pop(0)
 
             buffer = self.market_data.get("1m")
 
             if buffer is None or len(buffer) == 0:
-
                 await asyncio.sleep(0.2)
                 continue
 
             candle_time = buffer.time[-1]
 
             if candle_time == self.last_candle_time:
-
                 await asyncio.sleep(0.2)
                 continue
 
@@ -282,17 +267,14 @@ class SignalEngine:
             df = self._build_dataframe(buffer)
 
             if df is None:
-
                 await asyncio.sleep(0.2)
                 continue
 
             self._update_orb(df)
-
             self._load_market_profile(df)
-
             self._evaluate(df)
 
             await asyncio.sleep(0.2)
 
 
-##
+#_#_#_

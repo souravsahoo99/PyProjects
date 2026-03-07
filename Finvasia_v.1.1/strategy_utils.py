@@ -304,6 +304,3 @@ def value_when(condition_series, value_series, occurrence=0, lookback=100):
             count += 1
 
     return None
-
-
-#_

@@ -6,8 +6,7 @@ import time
 import asyncio
 
 from ShoonyaAPI_helper import Order
-from helper_wraper import get_best_ltp
-from signal_engine import SIGNALS
+from signal_engine import SIGNAL
 
 
 # ============================================================
@@ -15,22 +14,26 @@ from signal_engine import SIGNALS
 # ============================================================
 
 class TradeManager:
+    """
+    TradeManager is responsible for executing trades
+    on ONE instrument while consuming signals from
+    any signal pipeline.
 
-    def __init__(self, engine, exchange, symbol, token, qty, ws_ltp, rest_ltp):
+    Example:
+        Signal Source → NIFTY
+        Execution Target → NIFTY CE
+    """
+
+    def __init__(self, engine, exchange, symbol, token, qty):
 
         self.engine = engine
-        self.exchange = exchange
 
+        self.exchange = exchange
         self.symbol = symbol
         self.token = token
         self.qty = qty
 
-        self.ws_ltp = ws_ltp
-        self.rest_ltp = rest_ltp
-
-        # signal validity window
         self.signal_validity_seconds = 5
-
         self.time_exit = None
 
         # ----------------------------------------------------
@@ -59,43 +62,56 @@ class TradeManager:
 
 
     # ========================================================
-    # FETCH VALID SIGNAL
+    # FETCH BEST LTP
     # ========================================================
 
-    def _get_valid_signal(self):
+    def _get_ltp(self):
 
-        now = time.time()
+        ltp = self.engine.get_ltp_live(self.exchange, self.token)
 
-        for signal in reversed(SIGNALS):
+        if ltp is None:
+            ltp = self.engine.get_ltp_rest(self.exchange, self.token)
 
-            # signal age check
-            if now - signal["signal_time"] > self.signal_validity_seconds:
-                continue
+        return ltp
 
-            # token match
-            if signal["token"] != self.token:
-                continue
 
-            return signal
+    # ========================================================
+    # SIGNAL VALIDATION
+    # ========================================================
 
-        return None
+    def _check_signal(self):
+
+        if not SIGNAL["state"]:
+            return False
+
+        signal_time = SIGNAL["signal_time"]
+
+        if signal_time is None:
+            return False
+
+        age = time.time() - signal_time
+
+        if age > self.signal_validity_seconds:
+            return False
+
+        return True
 
 
     # ========================================================
     # ENTRY
     # ========================================================
 
-    def enter_trade(self, signal):
+    def enter_trade(self):
 
         if self.trade["strategy_state"] is not None:
             return
 
-        side = signal["side"]
+        side = SIGNAL["side"]
 
         if side not in ["BUY", "SELL"]:
             return
 
-        print(f"[TRADE] {self.symbol} entry signal received")
+        print(f"[TRADE] {self.symbol} entry triggered by {SIGNAL['symbol']} signal")
 
         self.trade["strategy_state"] = "ENTERING"
 
@@ -112,7 +128,8 @@ class TradeManager:
             price=0
         )
 
-        ret = self.engine.api.place_order(order)
+        # correct API call
+        ret = self.engine.api.Place_Order(order)
 
         if ret is None:
 
@@ -120,7 +137,7 @@ class TradeManager:
             self.trade["strategy_state"] = None
             return
 
-        ltp = get_best_ltp(self.ws_ltp, self.rest_ltp)
+        ltp = self._get_ltp()
 
         if ltp is None:
 
@@ -135,11 +152,7 @@ class TradeManager:
 
         print(f"[TRADE] {self.symbol} entered @ {ltp}")
 
-        # remove consumed signal
-        try:
-            SIGNALS.remove(signal)
-        except ValueError:
-            pass
+        SIGNAL["state"] = False
 
 
     # ========================================================
@@ -164,19 +177,18 @@ class TradeManager:
             price=0
         )
 
-        ret = self.engine.api.place_order(order)
+        ret = self.engine.api.Place_Order(order)
 
         if ret is None:
 
             print("[TRADE] Exit order rejected")
             return
 
-        ltp = get_best_ltp(self.ws_ltp, self.rest_ltp)
+        ltp = self._get_ltp()
 
         pnl = None
 
         if ltp is not None:
-
             pnl = ltp - self.trade["entry_price"]
 
         self.trade["net_pnl"] = pnl
@@ -260,10 +272,8 @@ class TradeManager:
 
             if state is None:
 
-                signal = self._get_valid_signal()
-
-                if signal:
-                    self.enter_trade(signal)
+                if self._check_signal():
+                    self.enter_trade()
 
                 await asyncio.sleep(0.2)
                 continue
@@ -275,7 +285,7 @@ class TradeManager:
 
             if state == "ACTIVE":
 
-                ltp = get_best_ltp(self.ws_ltp, self.rest_ltp)
+                ltp = self._get_ltp()
 
                 if ltp is None:
 
@@ -317,11 +327,10 @@ class TradeManager:
             # ------------------------------------------------
 
             if state == "EXITED":
-
                 break
 
             await asyncio.sleep(0.2)
 
 
 
-#_#_#_
+##

@@ -73,6 +73,3 @@ class SeriesAdapter:
         data = self.buffer["volume"]
 
         return Series(data)
-
-
-#
