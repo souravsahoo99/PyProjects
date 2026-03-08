@@ -13,7 +13,6 @@ import pandas as pd
 from ShoonyaAPI_helper import ShoonyaApi
 from dotenv import find_dotenv, load_dotenv
 
-
 # ============================================================
 #  LOADING... Environment Variables & Fetching CREDENTIALS 
 # ============================================================
@@ -31,7 +30,7 @@ apikey_  = str(os.getenv("APIKEY"))
 imei_    = str(os.getenv("IMEI"))
 
 # ============================================================
-# SHOONYA ENGINE
+#      SHOONYA ENGINE
 # ============================================================
 
 class ShoonyaEngine:
@@ -123,7 +122,7 @@ class ShoonyaEngine:
 
 
     # =========================================================
-    # RETRY WRAPPER
+    #  RETRY WRAPPER
     # =========================================================
 
     def _retry(self, func, *args, retries=3, delay=2, **kwargs):
@@ -142,7 +141,7 @@ class ShoonyaEngine:
 
 
     # =========================================================
-    # REST OHLC
+    #  REST OHLC
     # =========================================================
 
     def get_ohlc(self, exchange: str, token: str, interval: int = 1):
@@ -177,7 +176,7 @@ class ShoonyaEngine:
 
 
     # =========================================================
-    # REST LTP
+    #  REST LTP
     # =========================================================
 
     def get_ltp_rest(self, exchange: str, token: str):
@@ -195,7 +194,7 @@ class ShoonyaEngine:
 
 
     # =========================================================
-    # WEBSOCKET CALLBACKS
+    #  WEBSOCKET CALLBACKS
     # =========================================================
 
     def _on_quote(self, message):
@@ -231,7 +230,7 @@ class ShoonyaEngine:
 
 
     # =========================================================
-    # WEBSOCKET CONTROL
+    #  WEBSOCKET CONTROL
     # =========================================================
 
     def start_ws(self):
@@ -283,7 +282,7 @@ class ShoonyaEngine:
 
 
     # =========================================================
-    # LIVE LTP
+    #  LIVE LTP
     # =========================================================
 
     def get_ltp_live(self, exchange: str, token: str):
@@ -301,7 +300,7 @@ class ShoonyaEngine:
 
 
     # =========================================================
-    # BEST LTP
+    #  BEST LTP
     # =========================================================
 
     def get_best_ltp(self, exchange, token):
@@ -315,7 +314,7 @@ class ShoonyaEngine:
 
 
     # =========================================================
-    # WEBSOCKET SHUTDOWN
+    #  WEBSOCKET SHUTDOWN
     # =========================================================
 
     def close_ws(self):
@@ -326,7 +325,7 @@ class ShoonyaEngine:
 
 
     # =========================================================
-    # ENGINE SHUTDOWN
+    #  ENGINE SHUTDOWN
     # =========================================================
 
     def shutdown(self):
@@ -344,7 +343,7 @@ class ShoonyaEngine:
 
 
 # ============================================================
-#                    LTP HELPER 
+#  LTP HELPER 
 # ============================================================
 
 def get_best_ltp(ws_ltp, rest_ltp):
@@ -367,4 +366,7 @@ def get_best_ltp(ws_ltp, rest_ltp):
 
     return None
 
-#_#_
+
+
+
+#_#_#_
