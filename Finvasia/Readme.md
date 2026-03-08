@@ -2,10 +2,17 @@
 
 Shoonya_API_helper
 helper_wrapper
-TradeManager
-Strategy layer        <-(coming in future)
+token_registry
+instrument_node
+market_data    -data pipelines
+pineseries_adapter
+indicator utils
+strategy utils
+signal_engine
+trade_manager
+main.py
 
-########################_ LOGIC FLOW _############################
+########################_ CORE LOGIC FLOW _############################
 
 *
 |      start program
@@ -27,31 +34,48 @@ Strategy layer        <-(coming in future)
 
 ####################_ Runtime Interaction _######################
 
-PROGRAM START
-      │
-      ▼
-Create ShoonyaEngine
-      │
-      ▼
-Broker Login
-      │
-      ▼
-Start WebSocket
-      │
-      ▼
-Create LTP Handlers
-      │
-      ├─ WebsocketLTP
-      └─ RestLTP
-      │
-      ▼
-Create TradeManager
-      │
-      ▼
-TradeManager.run()
-      │
-      ▼
-STATE MACHINE LOOP
+USER STRATEGY CONFIG
+        │
+        ▼
+main.py (Orchestration Engine)
+        │
+        ├──────────── Signal Layer ─────────────
+        │
+        │        InstrumentNode (per instrument)
+        │                │
+        │                ▼
+        │        MarketDataManager
+        │                │
+        │                ├── Tick Pipeline
+        │                │        │
+        │                │        └── TickCandleAggregator
+        │                │
+        │                └── REST Pipeline
+        │                         │
+        │                         └── RestCandleAggregator
+        │
+        │                ▼
+        │          SignalEngine
+        │                │
+        │                ▼
+        │        GLOBAL SIGNAL BUS
+        │
+        └──────────── Execution Layer ───────────
+                 │
+                 ▼
+          TradeManager_v2
+                 │
+                 ├── Parent Signal Detection
+                 │
+                 ├── Product Type Routing
+                 │       ├─ OPT → CE/PE selection
+                 │       ├─ FUT → fixed token
+                 │       └─ SPOT/STOCK → parent token
+                 │
+                 ├── Child Signal Confirmation
+                 │
+                 └── Order Execution
+
 
 #####################_  Data Flow During Runtime  _#########################
 
