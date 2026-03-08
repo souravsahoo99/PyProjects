@@ -1,6 +1,6 @@
 # ============================================================
 # MAIN TRADING ENGINE
-# Production Orchestrator
+# Production Orchestrator – Signal Layer + Execution Pool
 # ============================================================
 
 import asyncio
@@ -14,188 +14,98 @@ from trade_manager import TradeManager
 
 
 # ============================================================
-# STRATEGY CONFIGURATION
-# User only edits this section
+# TRADING CONFIGURATION
 # ============================================================
 
-STRATEGY_CONFIG = [
+TRADING_CONFIG = [
 
     {
-        "parent_symbol": "NIFTY",
-        "parent_exchange": "NSE",
+        "type": "equity",
+        "exchange": "NSE",
+        "symbol": "RELIANCE",
+        "qty": 10
+    },
 
-        "child_exchange": "NFO",
-        "product_type": "OPT",
-
+    {
+        "type": "options",
+        "exchange": "NFO",
+        "symbol": "NIFTY",
+        "expiry": "2024-06-27",
+        "window": 5,
         "qty": 50
     },
 
     {
-        "parent_symbol": "RELIANCE",
-        "parent_exchange": "NSE",
-
-        "child_exchange": "NSE",
-        "product_type": "STOCK",
-
-        "qty": 10
+        "type": "future",
+        "exchange": "NFO",
+        "symbol": "NIFTY",
+        "qty": 50
     }
 
 ]
 
 
 # ============================================================
-# FETCH ATM OPTION TOKENS
-# ============================================================
-
-def discover_atm_option_pair(engine, registry, symbol, exchange):
-
-    """
-    Dynamically discover ATM CE and PE tokens
-    """
-
-    parent_token = registry.get_token(exchange, symbol)
-
-    if parent_token is None:
-        return None, None
-
-    # fetch live spot price
-    spot = engine.get_ltp_live(exchange, parent_token)
-
-    if spot is None:
-        return None, None
-
-    # find ATM strike
-    strikes = registry.get_strikes(symbol, None)
-
-    if not strikes:
-        return None, None
-
-    atm = min(strikes, key=lambda x: abs(x - spot))
-
-    ce_token = registry.get_option_token(symbol, None, atm, "CE")
-    pe_token = registry.get_option_token(symbol, None, atm, "PE")
-
-    return ce_token, pe_token
-
-
-# ============================================================
 # BUILD SIGNAL NODES
 # ============================================================
 
-def build_signal_nodes(engine, registry):
-
-    """
-    Build all required instrument nodes for signal generation
-    """
+def build_signal_nodes(registry):
 
     nodes = []
-    node_configs = []
 
-    for config in STRATEGY_CONFIG:
+    for config in TRADING_CONFIG:
 
-        parent_symbol = config["parent_symbol"]
-        parent_exchange = config["parent_exchange"]
+        inst_type = config["type"]
 
-        parent_token = registry.get_token(parent_exchange, parent_symbol)
+        if inst_type == "equity":
 
-        if parent_token is None:
-            continue
-
-        node_configs.append({
-            "exchange": parent_exchange,
-            "symbol": parent_symbol,
-            "token": parent_token
-        })
-
-    return node_configs
-
-
-# ============================================================
-# BUILD TRADE MANAGERS
-# ============================================================
-
-def build_trade_managers(engine, registry):
-
-    trade_managers = []
-
-    for config in STRATEGY_CONFIG:
-
-        parent_symbol = config["parent_symbol"]
-        parent_exchange = config["parent_exchange"]
-
-        child_exchange = config["child_exchange"]
-        product_type = config["product_type"]
-
-        qty = config["qty"]
-
-        # ----------------------------------------------------
-        # Fetch parent token
-        # ----------------------------------------------------
-
-        parent_token = registry.get_token(parent_exchange, parent_symbol)
-
-        if parent_token is None:
-            continue
-
-        # ----------------------------------------------------
-        # Determine child token
-        # ----------------------------------------------------
-
-        child_token = parent_token
-        trading_symbol = parent_symbol
-
-        if product_type == "FUT":
-
-            fut = registry.get_current_future(parent_symbol)
-
-            if fut:
-                child_token = fut.token
-                trading_symbol = fut.symbol
-
-        elif product_type == "OPT":
-
-            ce_token, pe_token = discover_atm_option_pair(
-                engine,
-                registry,
-                parent_symbol,
-                parent_exchange
+            token = registry.get_token(
+                config["exchange"],
+                config["symbol"]
             )
 
-            # child token initially CE (runtime routing decides later)
-            child_token = ce_token
+            if token:
 
-        elif product_type in ["SPOT", "STOCK"]:
+                nodes.append({
+                    "exchange": config["exchange"],
+                    "symbol": config["symbol"],
+                    "token": token
+                })
 
-            child_token = parent_token
 
-        # ----------------------------------------------------
-        # Create TradeManager
-        # ----------------------------------------------------
+        elif inst_type == "future":
 
-        tm = TradeManager(
+            fut = registry.get_current_future(config["symbol"])
 
-            engine=engine,
+            if fut:
 
-            parent_exchange=parent_exchange,
-            child_exchange=child_exchange,
+                nodes.append({
+                    "exchange": fut.exchange,
+                    "symbol": fut.symbol,
+                    "token": fut.token
+                })
 
-            signal_symbol=parent_symbol,
-            trading_symbol=trading_symbol,
 
-            parent_token=parent_token,
-            child_token=child_token,
+        elif inst_type == "options":
 
-            product_type=product_type,
+            spot = 20000
 
-            qty=qty,
+            contracts = registry.build_option_universe(
+                symbol=config["symbol"],
+                expiry=config["expiry"],
+                spot=spot,
+                window=config["window"]
+            )
 
-            ws_ltp=None,
-            rest_ltp=None
-        )
+            for c in contracts:
 
-        trade_managers.append(tm)
+                nodes.append({
+                    "exchange": c.exchange,
+                    "symbol": c.symbol,
+                    "token": c.token
+                })
 
-    return trade_managers
+    return nodes
 
 
 # ============================================================
@@ -238,7 +148,7 @@ async def engine_bootloader():
     # Build Signal Nodes
     # --------------------------------------------------------
 
-    node_configs = build_signal_nodes(engine, registry)
+    node_configs = build_signal_nodes(registry)
 
     print(f"[ENGINE] Signal nodes discovered → {len(node_configs)}")
 
@@ -247,7 +157,6 @@ async def engine_bootloader():
     for inst in node_configs:
 
         node = InstrumentNode(
-
             engine,
             inst["exchange"],
             inst["symbol"],
@@ -262,15 +171,40 @@ async def engine_bootloader():
     print("[ENGINE] Signal layer initialized\n")
 
     # --------------------------------------------------------
-    # Build Trade Manager Pool
+    # CREATE TRADE MANAGER POOL
     # --------------------------------------------------------
 
-    trade_managers = build_trade_managers(engine, registry)
+    trade_managers = []
+
+    # Example execution strategy
+    # parent = index signal
+    # child = ATM option
+
+    nifty_token = registry.get_token("NSE", "NIFTY")
+
+    if nifty_token:
+
+        fut = registry.get_current_future("NIFTY")
+
+        if fut:
+
+            tm = TradeManager(
+                engine,
+                fut.exchange,
+                fut.symbol,
+                parent_token=nifty_token,
+                child_token=fut.token,
+                qty=50,
+                ws_ltp=None,
+                rest_ltp=None
+            )
+
+            trade_managers.append(tm)
 
     print(f"[ENGINE] Trade managers created → {len(trade_managers)}\n")
 
     # --------------------------------------------------------
-    # Collect Async Tasks
+    # COLLECT ASYNC TASKS
     # --------------------------------------------------------
 
     tasks = []
@@ -282,7 +216,7 @@ async def engine_bootloader():
         tasks.append(asyncio.create_task(tm.run()))
 
     # --------------------------------------------------------
-    # Run Engine
+    # RUN ENGINE
     # --------------------------------------------------------
 
     await asyncio.gather(*tasks)
@@ -293,7 +227,6 @@ async def engine_bootloader():
 # ============================================================
 
 def shutdown():
-
     print("\n[ENGINE] Shutdown requested\n")
 
 
@@ -322,7 +255,6 @@ if __name__ == "__main__":
         try:
 
             loop.run_until_complete(engine_bootloader())
-
             running = False
 
         except KeyboardInterrupt:
@@ -356,5 +288,4 @@ if __name__ == "__main__":
 
 
 
-
-#_#_#_#_#_
+#_#_#_#_

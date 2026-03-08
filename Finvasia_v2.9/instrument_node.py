@@ -1,6 +1,6 @@
 # ============================================================
 # INSTRUMENT NODE
-# Production Signal Node
+# Production Node Controller
 # ============================================================
 
 import asyncio
@@ -18,24 +18,19 @@ class InstrumentNode:
     def __init__(
         self,
         engine,
-        signal_exchange,
-        signal_symbol,
-        signal_token
+        exchange,
+        symbol,
+        token
     ):
 
         # ----------------------------------------------------
-        # ENGINE
+        # ENGINE / INSTRUMENT IDENTITY
         # ----------------------------------------------------
 
         self.engine = engine
-
-        # ----------------------------------------------------
-        # SIGNAL INSTRUMENT IDENTITY
-        # ----------------------------------------------------
-
-        self.signal_exchange = signal_exchange
-        self.signal_symbol = signal_symbol
-        self.signal_token = signal_token
+        self.exchange = exchange
+        self.symbol = symbol
+        self.token = token
 
         # ----------------------------------------------------
         # MODULE INSTANCES
@@ -45,7 +40,7 @@ class InstrumentNode:
         self.signal_engine = None
 
         # ----------------------------------------------------
-        # TASK STORAGE
+        # ASYNC TASKS
         # ----------------------------------------------------
 
         self.tasks = []
@@ -57,13 +52,13 @@ class InstrumentNode:
 
     async def initialize(self):
 
-        print(f"[NODE] Initializing signal node → {self.signal_symbol}")
+        print(f"[NODE] Initializing → {self.symbol}")
 
         # ----------------------------------------------------
-        # WEBSOCKET SUBSCRIPTION
+        # Subscribe instrument to WebSocket
         # ----------------------------------------------------
 
-        self.engine.subscribe(self.signal_exchange,self.signal_token)
+        self.engine.subscribe(self.exchange, self.token)
 
         # ----------------------------------------------------
         # MARKET DATA MANAGER
@@ -71,10 +66,9 @@ class InstrumentNode:
 
         self.market_data = MarketDataManager(
             self.engine,
-            self.signal_exchange,
-            self.signal_token
+            self.exchange,
+            self.token
         )
-        
 
         await self.market_data.start()
 
@@ -83,11 +77,9 @@ class InstrumentNode:
         # ----------------------------------------------------
 
         self.signal_engine = SignalEngine(
-
             self.market_data,
-            self.signal_symbol,
-            self.signal_token
-
+            self.symbol,
+            self.token
         )
 
 
@@ -97,13 +89,13 @@ class InstrumentNode:
 
     def start(self):
 
-        print(f"[NODE] Starting signal loop → {self.signal_symbol}")
+        print(f"[NODE] Starting signal loop → {self.symbol}")
 
-        signal_task = asyncio.create_task(
-            self.signal_engine.run()
+        self.tasks.append(
+            asyncio.create_task(
+                self.signal_engine.run()
+            )
         )
-
-        self.tasks.append(signal_task)
 
 
     # ========================================================
@@ -115,6 +107,4 @@ class InstrumentNode:
         return self.tasks
 
 
-
-
-#_#_#_#
+#_#_#_
