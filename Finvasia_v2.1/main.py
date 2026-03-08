@@ -1,9 +1,11 @@
 # ============================================================
 # MAIN TRADING ENGINE
+# Checkpoint 3.0 – Production Orchestrator
 # ============================================================
 
 import asyncio
 import signal
+import time
 
 from helper_wraper import ShoonyaEngine
 from token_registry import TokenRegistry
@@ -12,13 +14,10 @@ from instrument_node import InstrumentNode
 
 # ============================================================
 # TRADING CONFIGURATION
+# Defines instruments to trade (token discovery handled by registry)
 # ============================================================
 
 TRADING_CONFIG = [
-
-    # --------------------------------------------------------
-    # EQUITY
-    # --------------------------------------------------------
 
     {
         "type": "equity",
@@ -26,10 +25,6 @@ TRADING_CONFIG = [
         "symbol": "RELIANCE",
         "qty": 10
     },
-
-    # --------------------------------------------------------
-    # OPTION STRATEGY
-    # --------------------------------------------------------
 
     {
         "type": "options",
@@ -39,10 +34,6 @@ TRADING_CONFIG = [
         "window": 5,
         "qty": 50
     },
-
-    # --------------------------------------------------------
-    # FUTURE STRATEGY
-    # --------------------------------------------------------
 
     {
         "type": "future",
@@ -55,7 +46,8 @@ TRADING_CONFIG = [
 
 
 # ============================================================
-# BUILD INSTRUMENT LIST
+# BUILD RUNTIME INSTRUMENT LIST
+# Converts trading configuration into tradable instruments
 # ============================================================
 
 def build_instruments(registry):
@@ -66,9 +58,7 @@ def build_instruments(registry):
 
         inst_type = config["type"]
 
-        # ----------------------------------------------------
-        # EQUITY
-        # ----------------------------------------------------
+        # ---------- EQUITY ----------
 
         if inst_type == "equity":
 
@@ -86,15 +76,11 @@ def build_instruments(registry):
                     "qty": config["qty"]
                 })
 
-        # ----------------------------------------------------
-        # FUTURE
-        # ----------------------------------------------------
+        # ---------- FUTURE ----------
 
         elif inst_type == "future":
 
-            fut = registry.get_current_future(
-                config["symbol"]
-            )
+            fut = registry.get_current_future(config["symbol"])
 
             if fut:
 
@@ -105,14 +91,12 @@ def build_instruments(registry):
                     "qty": config["qty"]
                 })
 
-        # ----------------------------------------------------
-        # OPTIONS
-        # ----------------------------------------------------
+        # ---------- OPTIONS ----------
 
         elif inst_type == "options":
 
-            # placeholder spot price
-            # (later this can come from index tick)
+            # Temporary placeholder
+            # Later this should be derived from index tick
             spot = 20000
 
             contracts = registry.build_option_universe(
@@ -136,53 +120,42 @@ def build_instruments(registry):
 
 # ============================================================
 # ENGINE BOOTLOADER
+# Initializes broker, registry, instrument nodes
 # ============================================================
 
 async def engine_bootloader():
 
     print("\n[ENGINE] Booting Trading Engine\n")
 
-    # --------------------------------------------------------
-    # 1. Initialize Broker Engine
-    # --------------------------------------------------------
+    # ---------- Broker Engine ----------
 
     engine = ShoonyaEngine()
 
-    # --------------------------------------------------------
-    # 2. Load Token Registry
-    # --------------------------------------------------------
+    # ---------- Load Instrument Registry ----------
 
     print("[ENGINE] Loading instrument registry")
 
     registry = TokenRegistry()
-
     registry.load_master("data/instruments.csv")
 
     print("[ENGINE] Registry loaded")
 
-    # --------------------------------------------------------
-    # 3. Start WebSocket
-    # --------------------------------------------------------
+    # ---------- Start WebSocket ----------
 
     print("[ENGINE] Starting WebSocket")
 
     engine.start_ws()
-
     engine.wait_for_ws()
 
     print("[ENGINE] WebSocket connected\n")
 
-    # --------------------------------------------------------
-    # 4. Build Instrument Universe
-    # --------------------------------------------------------
+    # ---------- Discover Instruments ----------
 
     runtime_instruments = build_instruments(registry)
 
     print(f"[ENGINE] Instruments discovered → {len(runtime_instruments)}")
 
-    # --------------------------------------------------------
-    # 5. Create Instrument Nodes
-    # --------------------------------------------------------
+    # ---------- Create Instrument Nodes ----------
 
     nodes = []
 
@@ -197,21 +170,17 @@ async def engine_bootloader():
         )
 
         await node.initialize()
-
         node.start()
 
         nodes.append(node)
 
     print("\n[ENGINE] All nodes initialized\n")
 
-    # --------------------------------------------------------
-    # 6. Collect Async Tasks
-    # --------------------------------------------------------
+    # ---------- Collect async tasks ----------
 
     tasks = []
 
     for node in nodes:
-
         tasks.extend(node.get_tasks())
 
     await asyncio.gather(*tasks)
@@ -228,28 +197,62 @@ def shutdown():
 
 # ============================================================
 # PROGRAM ENTRY POINT
+# Supervisor Loop with Controlled Restart
 # ============================================================
 
 if __name__ == "__main__":
 
-    try:
+    restart_limit = 5
+    restart_delay = 5
+    restart_count = 0
+
+    running = True
+
+    while running:
+
+        print(f"\n[SUPERVISOR] Engine start attempt {restart_count + 1}\n")
 
         loop = asyncio.new_event_loop()
-
         asyncio.set_event_loop(loop)
 
         for sig in (signal.SIGINT, signal.SIGTERM):
-
             loop.add_signal_handler(sig, shutdown)
 
-        loop.run_until_complete(engine_bootloader())
+        try:
 
-    except KeyboardInterrupt:
+            loop.run_until_complete(engine_bootloader())
 
-        print("\n[ENGINE] Interrupted by user\n")
+            # Normal exit
+            running = False
 
-    finally:
+        except KeyboardInterrupt:
 
-        print("[ENGINE] Trading Engine stopped\n")
+            print("\n[ENGINE] Interrupted by user")
+            running = False
 
-#_#_#
+        except Exception as e:
+
+            restart_count += 1
+
+            print(f"\n[ENGINE] Crash detected → {e}")
+            print(f"[SUPERVISOR] Restart {restart_count}/{restart_limit}")
+
+            if restart_count >= restart_limit:
+
+                print("[SUPERVISOR] Restart limit reached. Stopping engine.")
+                running = False
+
+            else:
+
+                print(f"[SUPERVISOR] Restarting in {restart_delay} seconds...\n")
+                time.sleep(restart_delay)
+
+        finally:
+
+            loop.close()
+
+    print("\n[ENGINE] Trading Engine stopped\n")
+
+
+
+#_#_#_
