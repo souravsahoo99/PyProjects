@@ -1,6 +1,7 @@
 # ============================================================
 # TRADE MANAGER (STATE MACHINE)
-# Production Grade – Execution Pool Compatible
+# Production Grade – Checkpoint 3.5
+# Parent/Child Token Confirmation Logic
 # ============================================================
 
 import time
@@ -41,8 +42,13 @@ class TradeManager:
         # ----------------------------------------------------
 
         self.symbol = symbol
+
+        # signal source
         self.parent_token = parent_token
+
+        # execution instrument
         self.child_token = child_token
+
         self.qty = qty
 
         # ----------------------------------------------------
@@ -57,6 +63,8 @@ class TradeManager:
         # ----------------------------------------------------
 
         self.signal_validity_seconds = 5
+
+        # optional time exit
         self.time_exit = None
 
         # ----------------------------------------------------
@@ -72,7 +80,6 @@ class TradeManager:
 
             "entry_price": None,
             "entry_time": None,
-            "entry_side": None,
 
             "stop_loss": None,
             "target": None,
@@ -97,8 +104,10 @@ class TradeManager:
         parent_signal = None
         child_signal = None
 
+        # scan latest signals first
         for signal in reversed(SIGNALS):
 
+            # skip stale signals
             if now - signal["signal_time"] > self.signal_validity_seconds:
                 continue
 
@@ -110,8 +119,13 @@ class TradeManager:
             if token == self.child_token and child_signal is None:
                 child_signal = signal
 
+            # stop scanning early if both found
             if parent_signal and child_signal:
                 break
+
+        # ----------------------------------------------------
+        # VALIDATE SIGNAL ORDER
+        # ----------------------------------------------------
 
         if parent_signal and child_signal:
 
@@ -157,7 +171,7 @@ class TradeManager:
             price=0
         )
 
-        ret = self.engine.api.Place_Order(order)
+        ret = self.engine.api.place_order(order)
 
         if ret is None:
 
@@ -175,16 +189,15 @@ class TradeManager:
 
         self.trade["entry_price"] = ltp
         self.trade["entry_time"] = time.time()
-        self.trade["entry_side"] = side
 
         self.trade["strategy_state"] = "ACTIVE"
 
         print(f"[TRADE] {self.symbol} entered @ {ltp}")
 
+        # remove used signals
         try:
-            if signal in SIGNALS:
-                SIGNALS.remove(signal)
-        except Exception:
+            SIGNALS.remove(signal)
+        except ValueError:
             pass
 
 
@@ -199,13 +212,9 @@ class TradeManager:
 
         print(f"[TRADE] Exiting {self.symbol}")
 
-        entry_side = self.trade["entry_side"]
-
-        exit_side = "S" if entry_side == "BUY" else "B"
-
         order = Order(
 
-            buy_or_sell=exit_side,
+            buy_or_sell="S",
             product_type="C",
             exchange=self.exchange,
             tradingsymbol=self.symbol,
@@ -214,7 +223,7 @@ class TradeManager:
             price=0
         )
 
-        ret = self.engine.api.Place_Order(order)
+        ret = self.engine.api.place_order(order)
 
         if ret is None:
 
@@ -226,13 +235,7 @@ class TradeManager:
         pnl = None
 
         if ltp is not None:
-
-            entry = self.trade["entry_price"]
-
-            if entry_side == "BUY":
-                pnl = ltp - entry
-            else:
-                pnl = entry - ltp
+            pnl = ltp - self.trade["entry_price"]
 
         self.trade["net_pnl"] = pnl
 
@@ -276,9 +279,7 @@ class TradeManager:
         if entry is None:
             return
 
-        entry_side = self.trade["entry_side"]
-
-        pnl = (ltp - entry) if entry_side == "BUY" else (entry - ltp)
+        pnl = ltp - entry
 
         self.trade["net_pnl"] = pnl
 
@@ -311,6 +312,10 @@ class TradeManager:
 
             state = self.trade["strategy_state"]
 
+            # ------------------------------------------------
+            # WAITING FOR SIGNAL
+            # ------------------------------------------------
+
             if state is None:
 
                 signal = self._get_valid_signal()
@@ -321,6 +326,10 @@ class TradeManager:
                 await asyncio.sleep(0.2)
                 continue
 
+
+            # ------------------------------------------------
+            # ACTIVE TRADE MANAGEMENT
+            # ------------------------------------------------
 
             if state == "ACTIVE":
 
@@ -361,6 +370,10 @@ class TradeManager:
                 continue
 
 
+            # ------------------------------------------------
+            # EXITED STATE
+            # ------------------------------------------------
+
             if state == "EXITED":
                 break
 
@@ -369,4 +382,5 @@ class TradeManager:
 
 
 
-#_#_#_#_#
+
+#_#_#_#_

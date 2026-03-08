@@ -1,8 +1,3 @@
-# ============================================================
-# MARKET DATA MANAGER
-# Production Grade
-# ============================================================
-
 import time
 import asyncio
 import threading
@@ -37,6 +32,7 @@ class CandleBuffer:
 
 
     def __len__(self):
+
         return len(self.close)
 
 
@@ -95,13 +91,16 @@ class TickCandleAggregator:
         with self._lock:
 
             for tf, seconds in self.timeframes.items():
+
                 self._update_tf(tf, seconds, price, timestamp)
 
 
     def _update_tf(self, tf, seconds, price, ts):
 
         bucket = ts - (ts % seconds)
+
         candle = self.current[tf]
+
 
         if candle["start"] is None:
 
@@ -113,6 +112,7 @@ class TickCandleAggregator:
 
             return
 
+
         if bucket == candle["start"]:
 
             candle["high"] = max(candle["high"], price)
@@ -120,6 +120,7 @@ class TickCandleAggregator:
             candle["close"] = price
 
             return
+
 
         if bucket > candle["start"]:
 
@@ -140,6 +141,7 @@ class TickCandleAggregator:
 
 
     def get(self, tf):
+
         return self.buffers.get(tf)
 
 
@@ -171,9 +173,14 @@ class RestCandleAggregator:
         self._tasks = []
 
 
+    # ---------------------------------------------------------
+    # STORE VALIDATED CANDLE
+    # ---------------------------------------------------------
+
     def _store_candle(self, tf, candle):
 
         ts = int(pd.to_datetime(candle["timestamp"]).timestamp())
+
         last_ts = self._last_timestamp[tf]
 
         if last_ts is not None and ts <= last_ts:
@@ -186,8 +193,13 @@ class RestCandleAggregator:
         v = float(candle["volume"])
 
         self.buffers[tf].append(o, h, l, c, v, ts)
+
         self._last_timestamp[tf] = ts
 
+
+    # ---------------------------------------------------------
+    # PROCESS REST RESPONSE
+    # ---------------------------------------------------------
 
     def _process_response(self, tf, df):
 
@@ -198,11 +210,17 @@ class RestCandleAggregator:
             self._store_candle(tf, row)
 
 
+    # ---------------------------------------------------------
+    # REST PIPELINE LOOP
+    # ---------------------------------------------------------
+
     async def _pipeline(self, tf, interval):
 
         interval_seconds = interval * 60
 
         while self._running:
+
+            cycle_start = time.time()
 
             try:
 
@@ -218,12 +236,20 @@ class RestCandleAggregator:
 
                 print(f"[REST PIPELINE ERROR] {tf}: {e}")
 
-            # align next fetch to candle boundary
-            now = time.time()
-            sleep_time = interval_seconds - (now % interval_seconds)
 
-            await asyncio.sleep(sleep_time)
+            elapsed = time.time() - cycle_start
 
+            sleep_time = interval_seconds - elapsed
+
+            if sleep_time > 0:
+                await asyncio.sleep(sleep_time)
+            else:
+                await asyncio.sleep(1)
+
+
+    # ---------------------------------------------------------
+    # START PIPELINES
+    # ---------------------------------------------------------
 
     async def start(self):
 
@@ -238,6 +264,10 @@ class RestCandleAggregator:
         self._tasks.append(loop.create_task(self._pipeline("3m", 3)))
         self._tasks.append(loop.create_task(self._pipeline("5m", 5)))
 
+
+    # ---------------------------------------------------------
+    # STOP PIPELINES
+    # ---------------------------------------------------------
 
     async def stop(self):
 
@@ -258,6 +288,7 @@ class RestCandleAggregator:
 
 
     def get(self, tf):
+
         return self.buffers.get(tf)
 
 
@@ -267,17 +298,29 @@ class RestCandleAggregator:
 
 class MarketDataManager:
 
+    """
+    Handles all market data pipelines for ONE instrument.
+    """
+
     def __init__(self, engine, exchange, token):
 
         self.engine = engine
         self.exchange = exchange
         self.token = token
 
-        # register router
+        # -----------------------------------------------------
+        # REGISTER WITH ENGINE ROUTER (CRITICAL FIX)
+        # -----------------------------------------------------
+
         self.engine.market_data_map[f"{exchange}|{token}"] = self
 
-        # bounded queue
-        self.tick_queue = asyncio.Queue(maxsize=2000)
+        # -----------------------------------------------------
+        # Tick queue (receives ticks from WebSocket thread)
+        # -----------------------------------------------------
+
+        self.tick_queue = asyncio.Queue()
+
+        # -----------------------------------------------------
 
         self.tick_agg = TickCandleAggregator()
 
@@ -291,25 +334,25 @@ class MarketDataManager:
         self._running = False
 
 
+    # ---------------------------------------------------------
+    # TICK WORKER
+    # ---------------------------------------------------------
+
     async def _tick_worker(self):
 
         while self._running:
 
-            try:
+            price = await self.tick_queue.get()
 
-                price = await asyncio.wait_for(
-                    self.tick_queue.get(),
-                    timeout=1
-                )
-
-                if price is None:
-                    continue
-
-                self.tick_agg.update_tick(price)
-
-            except asyncio.TimeoutError:
+            if price is None:
                 continue
 
+            self.tick_agg.update_tick(price)
+
+
+    # ---------------------------------------------------------
+    # START DATA PIPELINES
+    # ---------------------------------------------------------
 
     async def start(self):
 
@@ -325,6 +368,10 @@ class MarketDataManager:
         self._tick_task = loop.create_task(self._tick_worker())
 
 
+    # ---------------------------------------------------------
+    # STOP DATA PIPELINES
+    # ---------------------------------------------------------
+
     async def stop(self):
 
         self._running = False
@@ -334,12 +381,10 @@ class MarketDataManager:
         if self._tick_task:
             self._tick_task.cancel()
 
-        # unregister router
-        key = f"{self.exchange}|{self.token}"
 
-        if key in self.engine.market_data_map:
-            del self.engine.market_data_map[key]
-
+    # ---------------------------------------------------------
+    # FETCH BUFFER
+    # ---------------------------------------------------------
 
     def get(self, timeframe):
 
@@ -352,4 +397,5 @@ class MarketDataManager:
         return None
 
 
-#_#_#_#
+
+#_#_#

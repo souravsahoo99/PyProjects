@@ -1,6 +1,5 @@
- # ============================================================
+# ============================================================
 # TOKEN REGISTRY
-# Production Grade
 # ============================================================
 
 import csv
@@ -29,14 +28,8 @@ class Instrument:
         self.token = str(token)
 
         self.expiry = expiry
-
-        try:
-            self.strike = float(strike) if strike not in (None, "", "0") else None
-        except Exception:
-            self.strike = None
-
+        self.strike = float(strike) if strike not in (None, "", "0") else None
         self.option_type = option_type
-
 
     def __repr__(self):
 
@@ -58,21 +51,32 @@ class TokenRegistry:
 
     def __init__(self):
 
+        # ----------------------------------------------------
+        # CORE REGISTRIES
+        # ----------------------------------------------------
+
         # token -> Instrument
         self.token_map = {}
 
         # (exchange, symbol) -> token
         self.symbol_map = {}
 
+        # ----------------------------------------------------
+        # OPTIONS REGISTRY
+        # ----------------------------------------------------
+
         # (symbol, expiry) -> [strikes]
         self.option_chain_map = defaultdict(list)
 
-        # (symbol, expiry, strike, type) -> token
+        # (symbol, expiry, strike, option_type) -> token
         self.option_lookup = {}
 
-        # symbol -> [futures]
-        self.futures_map = defaultdict(list)
+        # ----------------------------------------------------
+        # FUTURES REGISTRY
+        # ----------------------------------------------------
 
+        # symbol -> [Instrument futures sorted by expiry]
+        self.futures_map = defaultdict(list)
 
     # ========================================================
     # LOAD INSTRUMENT MASTER
@@ -80,7 +84,7 @@ class TokenRegistry:
 
     def load_master(self, filepath):
 
-        with open(filepath, "r", encoding="utf-8") as f:
+        with open(filepath, "r") as f:
 
             reader = csv.DictReader(f)
 
@@ -110,7 +114,7 @@ class TokenRegistry:
                 self.token_map[inst.token] = inst
 
                 # ------------------------------------------------
-                # SYMBOL MAP
+                # SYMBOL MAP (equities / index)
                 # ------------------------------------------------
 
                 if inst.strike is None and inst.expiry in (None, ""):
@@ -120,12 +124,11 @@ class TokenRegistry:
                 # OPTIONS REGISTRY
                 # ------------------------------------------------
 
-                if inst.option_type in ("CE", "PE") and inst.strike is not None:
+                if inst.option_type in ("CE", "PE"):
 
                     key = (inst.symbol, inst.expiry)
 
-                    if inst.strike not in self.option_chain_map[key]:
-                        self.option_chain_map[key].append(inst.strike)
+                    self.option_chain_map[key].append(inst.strike)
 
                     self.option_lookup[
                         (inst.symbol, inst.expiry, inst.strike, inst.option_type)
@@ -140,15 +143,17 @@ class TokenRegistry:
                     self.futures_map[inst.symbol].append(inst)
 
         # ----------------------------------------------------
-        # SORT STRIKES
+        # SORT OPTION STRIKES
         # ----------------------------------------------------
 
         for key in self.option_chain_map:
 
-            self.option_chain_map[key].sort()
+            self.option_chain_map[key] = sorted(
+                list(set(self.option_chain_map[key]))
+            )
 
         # ----------------------------------------------------
-        # SORT FUTURES
+        # SORT FUTURES BY EXPIRY
         # ----------------------------------------------------
 
         for symbol in self.futures_map:
@@ -157,18 +162,16 @@ class TokenRegistry:
                 key=lambda x: self._parse_expiry(x.expiry)
             )
 
-
     # ========================================================
-    # EXPIRY PARSER
+    # INTERNAL EXPIRY PARSER
     # ========================================================
 
     def _parse_expiry(self, expiry):
 
         try:
             return datetime.strptime(expiry, "%Y-%m-%d")
-        except Exception:
+        except:
             return datetime.min
-
 
     # ========================================================
     # TOKEN LOOKUP
@@ -178,18 +181,16 @@ class TokenRegistry:
 
         return self.token_map.get(str(token))
 
-
     # ========================================================
-    # SYMBOL TOKEN
+    # SYMBOL LOOKUP
     # ========================================================
 
     def get_token(self, exchange, symbol):
 
         return self.symbol_map.get((exchange, symbol))
 
-
     # ========================================================
-    # OPTION TOKEN
+    # OPTION TOKEN LOOKUP
     # ========================================================
 
     def get_option_token(self, symbol, expiry, strike, option_type):
@@ -197,7 +198,6 @@ class TokenRegistry:
         return self.option_lookup.get(
             (symbol, expiry, float(strike), option_type)
         )
-
 
     # ========================================================
     # STRIKE LIST
@@ -207,15 +207,11 @@ class TokenRegistry:
 
         return self.option_chain_map.get((symbol, expiry), [])
 
-
     # ========================================================
     # ATM STRIKE
     # ========================================================
 
     def get_atm_strike(self, symbol, expiry, spot):
-
-        if spot is None:
-            return None
 
         strikes = self.get_strikes(symbol, expiry)
 
@@ -223,7 +219,6 @@ class TokenRegistry:
             return None
 
         return min(strikes, key=lambda x: abs(x - spot))
-
 
     # ========================================================
     # STRIKE WINDOW
@@ -238,17 +233,12 @@ class TokenRegistry:
 
         atm = self.get_atm_strike(symbol, expiry, spot)
 
-        if atm is None:
-            return []
-
-        # nearest index protection
-        idx = min(range(len(strikes)), key=lambda i: abs(strikes[i] - atm))
+        idx = strikes.index(atm)
 
         start = max(idx - window, 0)
-        end = min(idx + window + 1, len(strikes))
+        end = idx + window + 1
 
         return strikes[start:end]
-
 
     # ========================================================
     # OPTION UNIVERSE
@@ -290,15 +280,17 @@ class TokenRegistry:
 
         return instruments
 
-
     # ========================================================
-    # FUTURES
+    # FUTURES LIST
     # ========================================================
 
     def get_futures(self, symbol):
 
         return self.futures_map.get(symbol, [])
 
+    # ========================================================
+    # CURRENT FUTURE
+    # ========================================================
 
     def get_current_future(self, symbol):
 
@@ -309,6 +301,9 @@ class TokenRegistry:
 
         return futures[0]
 
+    # ========================================================
+    # NEXT FUTURE
+    # ========================================================
 
     def get_next_future(self, symbol):
 
@@ -319,6 +314,9 @@ class TokenRegistry:
 
         return futures[1]
 
+    # ========================================================
+    # FAR FUTURE
+    # ========================================================
 
     def get_far_future(self, symbol):
 
@@ -328,6 +326,7 @@ class TokenRegistry:
             return None
 
         return futures[2]
+    
 
 
-#_#_
+#_

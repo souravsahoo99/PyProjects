@@ -7,6 +7,7 @@ import asyncio
 
 from market_data import MarketDataManager
 from signal_engine import SignalEngine
+from trade_manager import TradeManager
 
 
 # ============================================================
@@ -20,7 +21,9 @@ class InstrumentNode:
         engine,
         exchange,
         symbol,
-        token
+        parent_token,
+        child_token,
+        qty
     ):
 
         # ----------------------------------------------------
@@ -30,7 +33,18 @@ class InstrumentNode:
         self.engine = engine
         self.exchange = exchange
         self.symbol = symbol
-        self.token = token
+
+        # ----------------------------------------------------
+        # TOKEN ROLES
+        # ----------------------------------------------------
+
+        # signal source
+        self.parent_token = parent_token
+
+        # execution instrument
+        self.child_token = child_token
+
+        self.qty = qty
 
         # ----------------------------------------------------
         # MODULE INSTANCES
@@ -38,6 +52,7 @@ class InstrumentNode:
 
         self.market_data = None
         self.signal_engine = None
+        self.trade_manager = None
 
         # ----------------------------------------------------
         # ASYNC TASKS
@@ -55,10 +70,10 @@ class InstrumentNode:
         print(f"[NODE] Initializing → {self.symbol}")
 
         # ----------------------------------------------------
-        # Subscribe instrument to WebSocket
+        # Subscribe execution instrument to WebSocket
         # ----------------------------------------------------
 
-        self.engine.subscribe(self.exchange, self.token)
+        self.engine.subscribe(self.exchange, self.child_token)
 
         # ----------------------------------------------------
         # MARKET DATA MANAGER
@@ -67,7 +82,7 @@ class InstrumentNode:
         self.market_data = MarketDataManager(
             self.engine,
             self.exchange,
-            self.token
+            self.child_token
         )
 
         await self.market_data.start()
@@ -79,7 +94,22 @@ class InstrumentNode:
         self.signal_engine = SignalEngine(
             self.market_data,
             self.symbol,
-            self.token
+            self.parent_token
+        )
+
+        # ----------------------------------------------------
+        # TRADE MANAGER
+        # ----------------------------------------------------
+
+        self.trade_manager = TradeManager(
+            self.engine,
+            self.exchange,
+            self.symbol,
+            self.parent_token,
+            self.child_token,
+            self.qty,
+            None,
+            None
         )
 
 
@@ -89,11 +119,25 @@ class InstrumentNode:
 
     def start(self):
 
-        print(f"[NODE] Starting signal loop → {self.symbol}")
+        print(f"[NODE] Starting loops → {self.symbol}")
+
+        # ----------------------------------------------------
+        # SIGNAL ENGINE LOOP
+        # ----------------------------------------------------
 
         self.tasks.append(
             asyncio.create_task(
                 self.signal_engine.run()
+            )
+        )
+
+        # ----------------------------------------------------
+        # TRADE MANAGER LOOP
+        # ----------------------------------------------------
+
+        self.tasks.append(
+            asyncio.create_task(
+                self.trade_manager.run()
             )
         )
 
@@ -107,4 +151,5 @@ class InstrumentNode:
         return self.tasks
 
 
-#_#_#_
+
+#_#

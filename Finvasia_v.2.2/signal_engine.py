@@ -1,11 +1,12 @@
+
 # ============================================================
 # SIGNAL ENGINE
-# Production Grade – Multi Node Compatible
 # ============================================================
 
+import time
 import asyncio
 import pandas as pd
-import threading
+from datetime import datetime
 
 from indicator_utils import VWAPBands, MarketProfile
 from strategy_utils import breakout, breakdown
@@ -16,7 +17,6 @@ from strategy_utils import breakout, breakdown
 # ============================================================
 
 SIGNALS = []
-SIGNAL_LOCK = threading.Lock()
 
 
 # ============================================================
@@ -32,7 +32,7 @@ class SignalEngine:
         self.token = token
 
         self.last_candle_time = None
-        self.last_signal_key = None
+        self.last_signal_time = None
 
         # ORB
         self.orb_high = None
@@ -193,9 +193,7 @@ class SignalEngine:
 
         global SIGNALS
 
-        signal_key = f"{self.symbol}_{strategy}_{timestamp}"
-
-        if signal_key == self.last_signal_key:
+        if self.last_signal_time == timestamp:
             return
 
         signal_dict = {
@@ -209,14 +207,12 @@ class SignalEngine:
             "strategy": strategy
         }
 
-        with SIGNAL_LOCK:
+        SIGNALS.append(signal_dict)
 
-            SIGNALS.append(signal_dict)
+        if len(SIGNALS) >= 300:
+            SIGNALS.pop(0)
 
-            if len(SIGNALS) > 300:
-                SIGNALS.pop(0)
-
-        self.last_signal_key = signal_key
+        self.last_signal_time = timestamp
 
         print(f"[SIGNAL] {self.symbol} → {side} | {strategy} | {price}")
 
@@ -255,7 +251,12 @@ class SignalEngine:
 
     async def run(self):
 
+        global SIGNALS
+
         while True:
+
+            if len(SIGNALS) >= 300:
+                SIGNALS.pop(0)
 
             buffer = self.market_data.get("1m")
 
@@ -284,5 +285,6 @@ class SignalEngine:
             await asyncio.sleep(0.2)
 
 
+
             
-#_#_#_#_#_
+#_#_#_#_

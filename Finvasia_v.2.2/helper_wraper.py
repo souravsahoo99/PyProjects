@@ -1,11 +1,5 @@
-# ============================================================
-# SHOONYA ENGINE WRAPPER
-# Production Grade
-# ============================================================
-
 import os
 import time
-import pyotp
 import asyncio
 import threading
 import pandas as pd
@@ -15,12 +9,15 @@ from dotenv import find_dotenv, load_dotenv
 
 
 # ============================================================
-#  LOADING... Environment Variables & Fetching CREDENTIALS 
+# LOAD ENVIRONMENT VARIABLES
 # ============================================================
 
 dotenv_file: str = find_dotenv()
 load_dotenv(dotenv_file)
 
+
+# ============================================================
+# CREDENTIALS
 # ============================================================
 
 user_    = str(os.getenv("USER1"))
@@ -30,26 +27,55 @@ vc_      = str(os.getenv("VC"))
 apikey_  = str(os.getenv("APIKEY"))
 imei_    = str(os.getenv("IMEI"))
 
+
 # ============================================================
 # SHOONYA ENGINE
 # ============================================================
 
 class ShoonyaEngine:
+    """
+    Core broker engine responsible for:
+
+    • API login/session
+    • WebSocket lifecycle
+    • Tick routing
+    • REST market data access
+
+    Only ONE instance of this class should exist.
+    """
 
     def __init__(self):
 
+        # ----------------------------------------------------
+        # Broker API
+        # ----------------------------------------------------
+
         self.api = ShoonyaApi()
 
-        # tick cache
+        # ----------------------------------------------------
+        # Tick cache (for instant LTP access)
+        # ----------------------------------------------------
+
         self._tick_cache = {}
         self._tick_lock = threading.Lock()
 
-        # websocket state
+        # ----------------------------------------------------
+        # WebSocket state
+        # ----------------------------------------------------
+
         self._is_ws_connected = False
         self._subscribed_instruments = set()
 
-        # routing map
+        # ----------------------------------------------------
+        # Instrument routing map
+        # exchange|token → MarketDataManager
+        # ----------------------------------------------------
+
         self.market_data_map = {}
+
+        # ----------------------------------------------------
+        # Login immediately during engine startup
+        # ----------------------------------------------------
 
         self._login()
 
@@ -70,18 +96,14 @@ class ShoonyaEngine:
         }
 
         max_retry = 4
-        attempt   = 0
+        attempt = 0
 
         while attempt <= max_retry:
-
-            totp  = pyotp.TOTP(factor2_)
-            otp   = totp.now()
-            twoFA_= otp
 
             ret = self.api.Userlogin(
                 userid=cred['user'],
                 password=cred['pwd'],
-                twoFA=twoFA_,
+                twoFA=cred['factor2'],
                 vendor_code=cred['vc'],
                 api_secret=cred['apikey'],
                 imei=cred['imei']
@@ -90,6 +112,7 @@ class ShoonyaEngine:
             if ret is None:
 
                 print("[ENGINE] Login failed. Retrying...")
+
                 time.sleep(2 + attempt)
                 attempt += 1
                 continue
@@ -97,6 +120,7 @@ class ShoonyaEngine:
             if ret.get("stat") == "Not_Ok":
 
                 print(f"[ENGINE] Login error: {ret.get('emsg')}")
+
                 time.sleep(2 + attempt)
                 attempt += 1
                 continue
@@ -106,7 +130,9 @@ class ShoonyaEngine:
                 token = ret.get("susertoken")
 
                 if token is None:
-                    print("[ENGINE] Session token missing.")
+
+                    print("[ENGINE] Session token missing. Retrying...")
+                    time.sleep(2 + attempt)
                     attempt += 1
                     continue
 
@@ -117,9 +143,10 @@ class ShoonyaEngine:
                 )
 
                 print("[ENGINE] Login successful.")
+
                 return token
 
-        raise Exception("[ENGINE] Unable to login after retries")
+        raise Exception("[ENGINE] Unable to login after multiple attempts")
 
 
     # =========================================================
@@ -154,13 +181,7 @@ class ShoonyaEngine:
             interval=interval
         )
 
-        if raw is None:
-            return None
-
         df = pd.DataFrame(raw)
-
-        if df.empty:
-            return None
 
         df = df.rename(columns={
             'time': 'timestamp',
@@ -188,9 +209,6 @@ class ShoonyaEngine:
             token=token
         )
 
-        if data is None:
-            return None
-
         return float(data['lp'])
 
 
@@ -216,10 +234,6 @@ class ShoonyaEngine:
         try:
 
             price = float(message["lp"])
-
-            if md.tick_queue.full():
-                return
-
             md.tick_queue.put_nowait(price)
 
         except Exception:
@@ -227,6 +241,7 @@ class ShoonyaEngine:
 
 
     def _on_open(self):
+
         self._is_ws_connected = True
 
 
@@ -283,7 +298,7 @@ class ShoonyaEngine:
 
 
     # =========================================================
-    # LIVE LTP
+    # LIVE LTP ACCESS
     # =========================================================
 
     def get_ltp_live(self, exchange: str, token: str):
@@ -298,20 +313,6 @@ class ShoonyaEngine:
                 return float(msg['lp'])
 
         return None
-
-
-    # =========================================================
-    # BEST LTP
-    # =========================================================
-
-    def get_best_ltp(self, exchange, token):
-
-        ltp = self.get_ltp_live(exchange, token)
-
-        if ltp:
-            return ltp
-
-        return self.get_ltp_rest(exchange, token)
 
 
     # =========================================================
@@ -344,10 +345,17 @@ class ShoonyaEngine:
 
 
 # ============================================================
-#                    LTP HELPER 
+# LTP HELPER UTILITIES
 # ============================================================
 
 def get_best_ltp(ws_ltp, rest_ltp):
+    """
+    Returns the best available LTP.
+
+    Priority:
+        1. WebSocket LTP
+        2. REST fallback
+    """
 
     try:
         if ws_ltp is not None:
@@ -366,5 +374,6 @@ def get_best_ltp(ws_ltp, rest_ltp):
         pass
 
     return None
+
 
 #_#_
