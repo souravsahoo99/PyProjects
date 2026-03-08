@@ -1,298 +1,255 @@
 # ============================================================
-# SIGNAL ENGINE
+# MAIN TRADING ENGINE
 # ============================================================
 
-import time
 import asyncio
-import pandas as pd
-from datetime import datetime
+import signal
 
-from indicator_utils import VWAPBands, MarketProfile
-from strategy_utils import breakout, breakdown
-
-
-# ============================================================
-# GLOBAL SIGNAL BUS
-# ============================================================
-
-SIGNAL = {
-
-    "state": False,
-
-    "exchange": None,
-    "symbol": None,
-    "token": None,
-
-    "side": None,
-    "entry_price": None,
-    "signal_time": None,
-    "strategy": None
-}
+from helper_wraper import ShoonyaEngine
+from token_registry import TokenRegistry
+from instrument_node import InstrumentNode
 
 
 # ============================================================
-# SIGNAL ENGINE
+# TRADING CONFIGURATION
 # ============================================================
 
-class SignalEngine:
-    """
-    SignalEngine evaluates strategies for ONE instrument pipeline
-    and publishes signals to the global SIGNAL bus.
-    """
-
-    def __init__(self, market_data, exchange, symbol, token):
-
-        self.market_data = market_data
-
-        self.exchange = exchange
-        self.symbol = symbol
-        self.token = token
-
-        # track last processed candle
-        self.last_candle_time = None
-
-        # ORB state
-        self.orb_high = None
-        self.orb_low = None
-        self.orb_ready = False
-
-        # Market profile levels
-        self.vah = None
-        self.val = None
-        self.profile_ready = False
-
+TRADING_CONFIG = [
 
     # --------------------------------------------------------
-    # BUILD DATAFRAME FROM BUFFER
+    # EQUITY
     # --------------------------------------------------------
 
-    def _build_dataframe(self, buffer):
-
-        if buffer is None:
-            return None
-
-        if len(buffer) == 0:
-            return None
-
-        df = pd.DataFrame({
-
-            "timestamp": list(buffer.time),
-            "open": list(buffer.open),
-            "high": list(buffer.high),
-            "low": list(buffer.low),
-            "close": list(buffer.close),
-            "volume": list(buffer.volume)
-
-        })
-
-        df["timestamp"] = pd.to_datetime(df["timestamp"], unit="s")
-
-        return df
-
+    {
+        "type": "equity",
+        "exchange": "NSE",
+        "symbol": "RELIANCE",
+        "qty": 10
+    },
 
     # --------------------------------------------------------
-    # ORB CALCULATION
+    # OPTION STRATEGY
     # --------------------------------------------------------
 
-    def _update_orb(self, df):
-
-        now = df.iloc[-1]["timestamp"]
-
-        start = now.replace(hour=9, minute=15, second=0)
-        end = now.replace(hour=9, minute=30, second=0)
-
-        if now <= end:
-
-            session_df = df[(df["timestamp"] >= start) & (df["timestamp"] <= end)]
-
-            if len(session_df) > 0:
-
-                self.orb_high = session_df["high"].max()
-                self.orb_low = session_df["low"].min()
-
-        if now > end and self.orb_high is not None:
-            self.orb_ready = True
-
+    {
+        "type": "options",
+        "exchange": "NFO",
+        "symbol": "NIFTY",
+        "expiry": "2024-06-27",
+        "window": 5,
+        "qty": 50
+    },
 
     # --------------------------------------------------------
-    # LOAD MARKET PROFILE
+    # FUTURE STRATEGY
     # --------------------------------------------------------
 
-    def _load_market_profile(self, df):
+    {
+        "type": "future",
+        "exchange": "NFO",
+        "symbol": "NIFTY",
+        "qty": 50
+    }
 
-        if self.profile_ready:
-            return
-
-        profile = MarketProfile(df)
-
-        res = profile.calculate()
-
-        if res is None:
-            return
-
-        value_area = res["value_area"]
-
-        if len(value_area) == 0:
-            return
-
-        self.vah = max(value_area)
-        self.val = min(value_area)
-
-        self.profile_ready = True
+]
 
 
-    # --------------------------------------------------------
-    # STRATEGY 1 : ORB
-    # --------------------------------------------------------
+# ============================================================
+# BUILD INSTRUMENT LIST
+# ============================================================
 
-    def _strategy_orb(self, close):
+def build_instruments(registry):
 
-        if not self.orb_ready:
-            return None
+    instruments = []
 
-        if breakout(close, self.orb_high):
-            return "BUY"
+    for config in TRADING_CONFIG:
 
-        if breakdown(close, self.orb_low):
-            return "SELL"
+        inst_type = config["type"]
 
-        return None
+        # ----------------------------------------------------
+        # EQUITY
+        # ----------------------------------------------------
+
+        if inst_type == "equity":
+
+            token = registry.get_token(
+                config["exchange"],
+                config["symbol"]
+            )
+
+            if token:
+
+                instruments.append({
+                    "exchange": config["exchange"],
+                    "symbol": config["symbol"],
+                    "token": token,
+                    "qty": config["qty"]
+                })
+
+        # ----------------------------------------------------
+        # FUTURE
+        # ----------------------------------------------------
+
+        elif inst_type == "future":
+
+            fut = registry.get_current_future(
+                config["symbol"]
+            )
+
+            if fut:
+
+                instruments.append({
+                    "exchange": fut.exchange,
+                    "symbol": fut.symbol,
+                    "token": fut.token,
+                    "qty": config["qty"]
+                })
+
+        # ----------------------------------------------------
+        # OPTIONS
+        # ----------------------------------------------------
+
+        elif inst_type == "options":
+
+            # placeholder spot price
+            # (later this can come from index tick)
+            spot = 20000
+
+            contracts = registry.build_option_universe(
+                symbol=config["symbol"],
+                expiry=config["expiry"],
+                spot=spot,
+                window=config["window"]
+            )
+
+            for c in contracts:
+
+                instruments.append({
+                    "exchange": c.exchange,
+                    "symbol": c.symbol,
+                    "token": c.token,
+                    "qty": config["qty"]
+                })
+
+    return instruments
 
 
-    # --------------------------------------------------------
-    # STRATEGY 2 : VWAP DEVIATION
-    # --------------------------------------------------------
+# ============================================================
+# ENGINE BOOTLOADER
+# ============================================================
 
-    def _strategy_vwap(self, df):
+async def engine_bootloader():
 
-        vwap = VWAPBands(df)
-
-        bands = vwap.calculate()
-
-        if bands is None:
-            return None
-
-        close = df.iloc[-1]["close"]
-
-        if close > bands["upper1"]:
-            return "BUY"
-
-        if close < bands["lower1"]:
-            return "SELL"
-
-        return None
-
-
-    # --------------------------------------------------------
-    # STRATEGY 3 : MARKET PROFILE BREAKOUT
-    # --------------------------------------------------------
-
-    def _strategy_market_profile(self, close):
-
-        if not self.profile_ready:
-            return None
-
-        if breakout(close, self.vah):
-            return "BUY"
-
-        if breakdown(close, self.val):
-            return "SELL"
-
-        return None
-
-
-    # --------------------------------------------------------
-    # PUBLISH SIGNAL
-    # --------------------------------------------------------
-
-    def _publish_signal(self, side, price, timestamp, strategy):
-
-        global SIGNAL
-
-        if SIGNAL["state"]:
-            return
-
-        SIGNAL["state"] = True
-
-        SIGNAL["exchange"] = self.exchange
-        SIGNAL["symbol"] = self.symbol
-        SIGNAL["token"] = self.token
-
-        SIGNAL["side"] = side
-        SIGNAL["entry_price"] = price
-        SIGNAL["signal_time"] = timestamp
-        SIGNAL["strategy"] = strategy
-
-        print(f"[SIGNAL] {self.symbol} → {side} | {strategy} | {price}")
-
+    print("\n[ENGINE] Booting Trading Engine\n")
 
     # --------------------------------------------------------
-    # STRATEGY EVALUATION
+    # 1. Initialize Broker Engine
     # --------------------------------------------------------
 
-    def _evaluate(self, df):
-
-        close = df.iloc[-1]["close"]
-
-        timestamp = int(df.iloc[-1]["timestamp"].timestamp())
-
-        res = self._strategy_orb(close)
-
-        if res:
-            self._publish_signal(res, close, timestamp, "ORB")
-            return
-
-        res = self._strategy_vwap(df)
-
-        if res:
-            self._publish_signal(res, close, timestamp, "VWAP_DEV")
-            return
-
-        res = self._strategy_market_profile(close)
-
-        if res:
-            self._publish_signal(res, close, timestamp, "MP_BREAK")
-            return
-
+    engine = ShoonyaEngine()
 
     # --------------------------------------------------------
-    # MAIN SIGNAL LOOP
+    # 2. Load Token Registry
     # --------------------------------------------------------
 
-    async def run(self):
+    print("[ENGINE] Loading instrument registry")
 
-        while True:
+    registry = TokenRegistry()
 
-            buffer = self.market_data.get("1m")
+    registry.load_master("data/instruments.csv")
 
-            if buffer is None or len(buffer) == 0:
+    print("[ENGINE] Registry loaded")
 
-                await asyncio.sleep(0.2)
-                continue
+    # --------------------------------------------------------
+    # 3. Start WebSocket
+    # --------------------------------------------------------
 
-            candle_time = buffer.time[-1]
+    print("[ENGINE] Starting WebSocket")
 
-            if candle_time == self.last_candle_time:
+    engine.start_ws()
 
-                await asyncio.sleep(0.2)
-                continue
+    engine.wait_for_ws()
 
-            self.last_candle_time = candle_time
+    print("[ENGINE] WebSocket connected\n")
 
-            df = self._build_dataframe(buffer)
+    # --------------------------------------------------------
+    # 4. Build Instrument Universe
+    # --------------------------------------------------------
 
-            if df is None:
+    runtime_instruments = build_instruments(registry)
 
-                await asyncio.sleep(0.2)
-                continue
+    print(f"[ENGINE] Instruments discovered → {len(runtime_instruments)}")
 
-            self._update_orb(df)
+    # --------------------------------------------------------
+    # 5. Create Instrument Nodes
+    # --------------------------------------------------------
 
-            self._load_market_profile(df)
+    nodes = []
 
-            self._evaluate(df)
+    for inst in runtime_instruments:
 
-            await asyncio.sleep(0.2)
+        node = InstrumentNode(
+            engine,
+            inst["exchange"],
+            inst["symbol"],
+            inst["token"],
+            inst["qty"]
+        )
+
+        await node.initialize()
+
+        node.start()
+
+        nodes.append(node)
+
+    print("\n[ENGINE] All nodes initialized\n")
+
+    # --------------------------------------------------------
+    # 6. Collect Async Tasks
+    # --------------------------------------------------------
+
+    tasks = []
+
+    for node in nodes:
+
+        tasks.extend(node.get_tasks())
+
+    await asyncio.gather(*tasks)
 
 
-#_#_
+# ============================================================
+# SHUTDOWN HANDLER
+# ============================================================
+
+def shutdown():
+
+    print("\n[ENGINE] Shutdown requested\n")
+
+
+# ============================================================
+# PROGRAM ENTRY POINT
+# ============================================================
+
+if __name__ == "__main__":
+
+    try:
+
+        loop = asyncio.new_event_loop()
+
+        asyncio.set_event_loop(loop)
+
+        for sig in (signal.SIGINT, signal.SIGTERM):
+
+            loop.add_signal_handler(sig, shutdown)
+
+        loop.run_until_complete(engine_bootloader())
+
+    except KeyboardInterrupt:
+
+        print("\n[ENGINE] Interrupted by user\n")
+
+    finally:
+
+        print("[ENGINE] Trading Engine stopped\n")
+
+#_#_#

@@ -1,5 +1,7 @@
+
 # ============================================================
-# TRADE MANAGER (STATE MACHINE)
+# TRADE MANAGER
+# State Machine for Trade Execution
 # ============================================================
 
 import time
@@ -11,26 +13,58 @@ from signal_engine import SIGNALS
 
 
 # ============================================================
-# TRADE MANAGER
+# TRADE MANAGER CLASS
 # ============================================================
 
 class TradeManager:
 
-    def __init__(self, engine, exchange, symbol, token, qty, ws_ltp, rest_ltp):
+    def __init__(
+        self,
+        engine,
+        exchange,
+        symbol,
+        parent_token,
+        child_token,
+        qty,
+        ws_ltp,
+        rest_ltp
+    ):
+
+        # ----------------------------------------------------
+        # ENGINE REFERENCES
+        # ----------------------------------------------------
 
         self.engine = engine
         self.exchange = exchange
 
+        # ----------------------------------------------------
+        # INSTRUMENT IDENTITY
+        # ----------------------------------------------------
+
         self.symbol = symbol
-        self.token = token
+
+        # parent_token → signal source
+        self.parent_token = parent_token
+
+        # child_token → execution instrument
+        self.child_token = child_token
+
         self.qty = qty
+
+        # ----------------------------------------------------
+        # PRICE SOURCES
+        # ----------------------------------------------------
 
         self.ws_ltp = ws_ltp
         self.rest_ltp = rest_ltp
 
-        # signal validity window
+        # ----------------------------------------------------
+        # SIGNAL CONFIG
+        # ----------------------------------------------------
+
         self.signal_validity_seconds = 5
 
+        # optional time-based exit
         self.time_exit = None
 
         # ----------------------------------------------------
@@ -40,7 +74,8 @@ class TradeManager:
         self.trade = {
 
             "symbol": symbol,
-            "token": token,
+            "parent_token": parent_token,
+            "child_token": child_token,
             "qty": qty,
 
             "entry_price": None,
@@ -68,12 +103,12 @@ class TradeManager:
 
         for signal in reversed(SIGNALS):
 
-            # signal age check
+            # ignore stale signals
             if now - signal["signal_time"] > self.signal_validity_seconds:
                 continue
 
-            # token match
-            if signal["token"] != self.token:
+            # match signal to parent instrument
+            if signal["token"] != self.parent_token:
                 continue
 
             return signal
@@ -82,7 +117,7 @@ class TradeManager:
 
 
     # ========================================================
-    # ENTRY
+    # ENTER TRADE
     # ========================================================
 
     def enter_trade(self, signal):
@@ -102,7 +137,6 @@ class TradeManager:
         order_side = "B" if side == "BUY" else "S"
 
         order = Order(
-
             buy_or_sell=order_side,
             product_type="C",
             exchange=self.exchange,
@@ -143,7 +177,7 @@ class TradeManager:
 
 
     # ========================================================
-    # EXIT
+    # EXIT TRADE
     # ========================================================
 
     def exit_trade(self):
@@ -154,7 +188,6 @@ class TradeManager:
         print(f"[TRADE] Exiting {self.symbol}")
 
         order = Order(
-
             buy_or_sell="S",
             product_type="C",
             exchange=self.exchange,
@@ -176,7 +209,6 @@ class TradeManager:
         pnl = None
 
         if ltp is not None:
-
             pnl = ltp - self.trade["entry_price"]
 
         self.trade["net_pnl"] = pnl
@@ -192,12 +224,12 @@ class TradeManager:
 
     def update_trailing_sl(self, ltp):
 
-        dist = self.trade["trailing_distance"]
+        distance = self.trade["trailing_distance"]
 
-        if dist is None:
+        if distance is None:
             return
 
-        new_sl = ltp - dist
+        new_sl = ltp - distance
 
         if self.trade["stop_loss"] is None:
 
@@ -211,7 +243,7 @@ class TradeManager:
 
 
     # ========================================================
-    # PNL UPDATE
+    # UPDATE PNL
     # ========================================================
 
     def update_pnl(self, ltp):
@@ -233,7 +265,7 @@ class TradeManager:
 
 
     # ========================================================
-    # TIME EXIT
+    # TIME EXIT CHECK
     # ========================================================
 
     def check_time_exit(self):
@@ -245,7 +277,7 @@ class TradeManager:
 
 
     # ========================================================
-    # MAIN LOOP
+    # MAIN STATE MACHINE LOOP
     # ========================================================
 
     async def run(self):
@@ -270,7 +302,7 @@ class TradeManager:
 
 
             # ------------------------------------------------
-            # ACTIVE TRADE
+            # ACTIVE TRADE MANAGEMENT
             # ------------------------------------------------
 
             if state == "ACTIVE":
@@ -292,9 +324,9 @@ class TradeManager:
                     self.exit_trade()
                     break
 
-                tgt = self.trade["target"]
+                target = self.trade["target"]
 
-                if tgt is not None and ltp >= tgt:
+                if target is not None and ltp >= target:
 
                     print("[TRADE] Target hit")
                     self.exit_trade()
@@ -317,11 +349,10 @@ class TradeManager:
             # ------------------------------------------------
 
             if state == "EXITED":
-
                 break
 
             await asyncio.sleep(0.2)
 
 
 
-#_#_#_
+#_#_#_#
