@@ -306,12 +306,7 @@ async def engine_bootloader():
 
     for inst in node_configs:
 
-        node = InstrumentNode(
-            engine,
-            inst["exchange"],
-            inst["symbol"],
-            inst["token"]
-        )
+        node = InstrumentNode(engine, inst["exchange"], inst["symbol"], inst["token"])
 
         await node.initialize()
         node.start()
