@@ -1,44 +1,16 @@
 #####################_ System Components _########################
 
-ShoonyaAPI_helper
+Shoonya_API_helper
 helper_wrapper
 token_registry
 instrument_node
-market_data    <-data pipelines
+market_data    -data pipelines
 pineseries_adapter
-indicator_utils
-strategy_utils
+indicator utils
+strategy utils
 signal_engine
 trade_manager
-main_.py
-
-####################_Broker API - public call functions_################
-
-api_helper.py
-    ├── Order class
-    ├── ShoonyaApi (wrapper over NorenApi)
-            ├── login()
-            ├── set_session()
-            ├── get_quotes()
-            ├── get_time_price_series()
-            ├── place_order()
-            ├── modify_order()
-            ├── cancel_order()
-            ├── start_websocket()
-            ├── subscribe()
-            ├── close_websocket()
-            ├── get_positions()
-            ├── get_holdings()
-            ├── get_limits()
-            ├── single_order_history()
-            ├── get_order_book()
-            ├── get_trade_book()
-            ├── searchscrip()
-            ├── get_option_chain()
-            ├── get_security_info()
-            ├── get_daily_price_series()
-            ├── span_calculator()
-            ├── option_greek()
+main.py
 
 ########################_ CORE LOGIC FLOW _############################
 
@@ -60,7 +32,7 @@ api_helper.py
 |      exit trade
 *
 
-####################_ Runtime Interaction of main engine_######################
+####################_ Runtime Interaction _######################
 
 USER STRATEGY CONFIG
         │

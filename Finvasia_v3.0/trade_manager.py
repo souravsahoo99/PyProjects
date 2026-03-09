@@ -1,12 +1,14 @@
+
 # ============================================================
-# TRADE MANAGER v2.3
-# Production Grade Execution Engine (Readable Version)
+# TRADE MANAGER v2.2
+# Product Grade Execution Engine
 # ============================================================
 
 import time
 import asyncio
 
 from ShoonyaAPI_helper import Order
+from helper_wraper import get_best_ltp
 from signal_engine import SIGNALS
 
 
@@ -68,7 +70,7 @@ class TradeManager:
         # PRODUCT TYPE
         # ----------------------------------------------------
 
-        self.product_type = product_type
+        self.product_type = product_type   # FUT / OPT / SPOT
 
         # ----------------------------------------------------
         # OPTION TOKENS
@@ -82,6 +84,13 @@ class TradeManager:
         # ----------------------------------------------------
 
         self.qty = qty
+
+        # ----------------------------------------------------
+        # PRICE SOURCES
+        # ----------------------------------------------------
+
+        self.ws_ltp = ws_ltp
+        self.rest_ltp = rest_ltp
 
         # ----------------------------------------------------
         # SIGNAL CONTROL
@@ -102,7 +111,7 @@ class TradeManager:
         self.strategy_name = None
 
         # ----------------------------------------------------
-        # TRADE STATE
+        # TRADE STATE OBJECT
         # ----------------------------------------------------
 
         self.trade = {
@@ -123,24 +132,6 @@ class TradeManager:
 
 
     # ========================================================
-    # FETCH LTP
-    # ========================================================
-
-    def _get_ltp(self):
-
-        price = self.engine.get_ltp_live(
-            self.child_exchange,
-            self.child_token
-        )
-
-        if price is None:
-            return None
-
-        else:
-            return price
-
-
-    # ========================================================
     # ENTER TRADE
     # ========================================================
 
@@ -149,10 +140,7 @@ class TradeManager:
         if self.trade["strategy_state"] is not None:
             return
 
-        side = signal.get("side")
-
-        if side is None:
-            return
+        side = signal["side"]
 
         if side not in ["BUY", "SELL"]:
             return
@@ -161,14 +149,7 @@ class TradeManager:
 
         self.trade["strategy_state"] = "ENTERING"
 
-        if side == "BUY":
-            order_side = "B"
-
-        elif side == "SELL":
-            order_side = "S"
-
-        else:
-            return
+        order_side = "B" if side == "BUY" else "S"
 
         order = Order(
 
@@ -189,7 +170,7 @@ class TradeManager:
             self.trade["strategy_state"] = None
             return
 
-        ltp = self._get_ltp()
+        ltp = get_best_ltp(self.ws_ltp, self.rest_ltp)
 
         if ltp is None:
 
@@ -205,11 +186,8 @@ class TradeManager:
         print(f"[TRADE] {self.trading_symbol} entered @ {ltp}")
 
         try:
-
             SIGNALS.remove(signal)
-
         except ValueError:
-
             pass
 
 
@@ -238,130 +216,21 @@ class TradeManager:
         ret = self.engine.api.place_order(order)
 
         if ret is None:
-
             print("[TRADE] Exit rejected")
             return
 
-        ltp = self._get_ltp()
+        ltp = get_best_ltp(self.ws_ltp, self.rest_ltp)
 
         pnl = None
 
-        if ltp is None:
-            pnl = None
-
-        elif ltp is not None:
+        if ltp is not None:
             pnl = ltp - self.trade["entry_price"]
-
-        else:
-            pnl = None
 
         self.trade["net_pnl"] = pnl
 
         print(f"[TRADE] Exit @ {ltp} | PnL {pnl}")
 
         self.trade["strategy_state"] = "EXITED"
-
-
-    # ========================================================
-    # ROUTE CHILD TOKEN
-    # ========================================================
-
-    def _route_child_token(self, parent_signal):
-
-        parent_side = parent_signal.get("side")
-
-        if parent_side is None:
-            return
-
-        if self.product_type == "OPT":
-
-            if parent_side == "BUY":
-                self.child_token = self.ce_token
-
-            elif parent_side == "SELL":
-                self.child_token = self.pe_token
-
-            else:
-                pass
-
-        elif self.product_type == "FUT":
-
-            pass
-
-        elif self.product_type in ["SPOT", "STOCK"]:
-
-            self.child_token = self.parent_token
-
-        else:
-
-            pass
-
-
-    # ========================================================
-    # FIND SIGNAL PAIR
-    # ========================================================
-
-    def _find_signal_pair(self):
-
-        now = time.time()
-
-        parent_signal = None
-        child_signal = None
-
-        # ----------------------------------------------------
-        # FIND PARENT SIGNAL
-        # ----------------------------------------------------
-
-        for signal in reversed(SIGNALS):
-
-            if signal is None:
-                continue
-
-            if now - signal["signal_time"] > self.signal_validity_seconds:
-                continue
-
-            token = signal.get("token")
-
-            if token == self.parent_token:
-
-                parent_signal = signal
-                break
-
-            else:
-                continue
-
-        if parent_signal is None:
-            return None, None
-
-        # ----------------------------------------------------
-        # ROUTE CHILD TOKEN
-        # ----------------------------------------------------
-
-        self._route_child_token(parent_signal)
-
-        # ----------------------------------------------------
-        # FIND CHILD SIGNAL
-        # ----------------------------------------------------
-
-        for signal in reversed(SIGNALS):
-
-            if signal is None:
-                continue
-
-            if now - signal["signal_time"] > self.signal_validity_seconds:
-                continue
-
-            token = signal.get("token")
-
-            if token == self.child_token:
-
-                child_signal = signal
-                break
-
-            else:
-                continue
-
-        return parent_signal, child_signal
 
 
     # ========================================================
@@ -372,7 +241,7 @@ class TradeManager:
 
         while True:
 
-            state = self.trade.get("strategy_state")
+            state = self.trade["strategy_state"]
 
             # ------------------------------------------------
             # WAITING FOR SIGNAL
@@ -380,48 +249,91 @@ class TradeManager:
 
             if state is None:
 
-                parent_signal, child_signal = self._find_signal_pair()
+                now = time.time()
 
-                if parent_signal is None:
-                    await asyncio.sleep(0.2)
-                    continue
+                parent_signal = None
+                child_signal = None
 
-                if child_signal is None:
-                    await asyncio.sleep(0.2)
-                    continue
+                # --------------------------------------------
+                # SCAN GLOBAL SIGNAL LIST
+                # --------------------------------------------
 
-                parent_time = parent_signal.get("signal_time")
-                child_time = child_signal.get("signal_time")
+                for signal in reversed(SIGNALS):
 
-                parent_side = parent_signal.get("side")
-                child_side = child_signal.get("side")
+                    # skip stale signals
+                    if now - signal["signal_time"] > self.signal_validity_seconds:
+                        continue
 
-                if parent_time is None:
-                    await asyncio.sleep(0.2)
-                    continue
+                    token = signal["token"]
 
-                if child_time is None:
-                    await asyncio.sleep(0.2)
-                    continue
+                    # ----------------------------------------
+                    # FIND PARENT SIGNAL
+                    # ----------------------------------------
 
-                if parent_time <= child_time:
+                    if token == self.parent_token and parent_signal is None:
+                        parent_signal = signal
 
-                    if (child_time - parent_time) <= self.signal_validity_seconds:
+                    # ----------------------------------------
+                    # FIND CHILD SIGNAL
+                    # ----------------------------------------
 
-                        if parent_side == child_side:
+                    if token == self.child_token and child_signal is None:
+                        child_signal = signal
 
-                            self.strategy_name = parent_signal.get("strategy")
+                # --------------------------------------------
+                # PROCESS PARENT SIGNAL
+                # --------------------------------------------
 
-                            self.enter_trade(child_signal)
+                if parent_signal:
 
-                        else:
-                            pass
+                    parent_side = parent_signal["side"]
 
-                    else:
+                    # store strategy name
+                    self.strategy_name = parent_signal.get("strategy")
+
+                    # ----------------------------------------
+                    # PRODUCT TYPE ROUTING
+                    # ----------------------------------------
+
+                    if self.product_type == "OPT":
+
+                        # BUY → CE
+                        if parent_side == "BUY":
+                            self.child_token = self.ce_token
+
+                        # SELL → PE
+                        elif parent_side == "SELL":
+                            self.child_token = self.pe_token
+
+                    elif self.product_type == "FUT":
+
+                        # futures use provided token
                         pass
 
-                else:
-                    pass
+                    elif self.product_type in ["SPOT", "STOCK"]:
+
+                        # trade same instrument
+                        self.child_token = self.parent_token
+
+                # --------------------------------------------
+                # CHILD SIGNAL CONFIRMATION
+                # --------------------------------------------
+
+                if parent_signal and child_signal:
+
+                    parent_time = parent_signal["signal_time"]
+                    child_time = child_signal["signal_time"]
+
+                    parent_side = parent_signal["side"]
+                    child_side = child_signal["side"]
+
+                    if parent_time <= child_time:
+
+                        if (child_time - parent_time) <= self.signal_validity_seconds:
+
+                            if parent_side == child_side:
+
+                                self.enter_trade(child_signal)
 
                 await asyncio.sleep(0.2)
                 continue
@@ -431,19 +343,15 @@ class TradeManager:
             # ACTIVE TRADE MANAGEMENT
             # ------------------------------------------------
 
-            elif state == "ACTIVE":
+            if state == "ACTIVE":
 
-                ltp = self._get_ltp()
+                ltp = get_best_ltp(self.ws_ltp, self.rest_ltp)
 
                 if ltp is None:
                     await asyncio.sleep(0.2)
                     continue
 
-                entry = self.trade.get("entry_price")
-
-                if entry is None:
-                    await asyncio.sleep(0.2)
-                    continue
+                entry = self.trade["entry_price"]
 
                 pnl = ltp - entry
 
@@ -452,43 +360,24 @@ class TradeManager:
                 if pnl > self.trade["max_pnl"]:
                     self.trade["max_pnl"] = pnl
 
-                elif pnl < self.trade["min_pnl"]:
+                if pnl < self.trade["min_pnl"]:
                     self.trade["min_pnl"] = pnl
 
-                else:
-                    pass
+                sl = self.trade["stop_loss"]
 
-                sl = self.trade.get("stop_loss")
+                if sl is not None and ltp <= sl:
 
-                if sl is not None:
+                    print("[TRADE] Stop loss hit")
+                    self.exit_trade()
+                    break
 
-                    if ltp <= sl:
+                target = self.trade["target"]
 
-                        print("[TRADE] Stop loss hit")
-                        self.exit_trade()
-                        break
+                if target is not None and ltp >= target:
 
-                    else:
-                        pass
-
-                else:
-                    pass
-
-                target = self.trade.get("target")
-
-                if target is not None:
-
-                    if ltp >= target:
-
-                        print("[TRADE] Target hit")
-                        self.exit_trade()
-                        break
-
-                    else:
-                        pass
-
-                else:
-                    pass
+                    print("[TRADE] Target hit")
+                    self.exit_trade()
+                    break
 
                 await asyncio.sleep(0.2)
                 continue
@@ -498,15 +387,10 @@ class TradeManager:
             # EXITED
             # ------------------------------------------------
 
-            elif state == "EXITED":
-
+            if state == "EXITED":
                 break
 
-            else:
-
-                await asyncio.sleep(0.2)
-                continue
-
+            await asyncio.sleep(0.2)
 
 
 
