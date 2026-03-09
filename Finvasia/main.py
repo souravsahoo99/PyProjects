@@ -25,7 +25,7 @@ STRATEGY_CONFIG = [
         "parent_exchange": "NSE",
         "child_exchange": "NFO",
         "product_type": "OPT",
-        "qty": 50
+        "qty": 65
     },
 
     {

@@ -68,7 +68,7 @@ class ShoonyaEngine:
             'imei': imei_
         }
 
-        max_retry = 4
+        max_retry = 2
         attempt   = 0
 
         while attempt <= max_retry:
