@@ -1,6 +1,6 @@
 # ============================================================
-# MAIN TRADING ENGINE v2.1
-# Production Orchestrator (Fixed Version)
+# MAIN TRADING ENGINE
+# Production Orchestrator (Checkpoint 6.0 – Readable Version)
 # ============================================================
 
 import asyncio
@@ -11,8 +11,6 @@ from helper_wraper import ShoonyaEngine
 from token_registry import TokenRegistry
 from instrument_node import InstrumentNode
 from trade_manager import TradeManager
-
-# ---- NEW IMPORT (SURGICAL FIX) ----
 from signal_engine import SignalPublisher
 
 
@@ -25,20 +23,16 @@ STRATEGY_CONFIG = [
     {
         "parent_symbol": "NIFTY",
         "parent_exchange": "NSE",
-
         "child_exchange": "NFO",
         "product_type": "OPT",
-
         "qty": 50
     },
 
     {
         "parent_symbol": "RELIANCE",
         "parent_exchange": "NSE",
-
         "child_exchange": "NSE",
         "product_type": "STOCK",
-
         "qty": 10
     }
 
@@ -60,8 +54,16 @@ def wait_for_spot_price(engine, exchange, token, timeout=10):
         if price is not None:
             return price
 
-        if time.time() - start > timeout:
-            return None
+        elif price is None:
+
+            if time.time() - start > timeout:
+                return None
+
+            else:
+                pass
+
+        else:
+            pass
 
         time.sleep(0.2)
 
@@ -77,25 +79,42 @@ def discover_atm_option_pair(engine, registry, symbol, exchange):
     if parent_token is None:
         return None, None
 
+    else:
+        pass
+
     spot = wait_for_spot_price(engine, exchange, parent_token)
 
     if spot is None:
         return None, None
+
+    else:
+        pass
 
     futures = registry.get_futures(symbol)
 
     expiry = None
 
     if futures:
+
         expiry = futures[0].expiry
+
+    else:
+
+        pass
 
     if expiry is None:
         return None, None
+
+    else:
+        pass
 
     strikes = registry.get_strikes(symbol, expiry)
 
     if not strikes:
         return None, None
+
+    else:
+        pass
 
     atm = min(strikes, key=lambda x: abs(x - spot))
 
@@ -123,13 +142,18 @@ def build_signal_nodes(engine, registry):
         if parent_token is None:
             continue
 
-        node_configs.append({
+        elif parent_token is not None:
 
-            "exchange": parent_exchange,
-            "symbol": parent_symbol,
-            "token": parent_token
+            node_configs.append({
 
-        })
+                "exchange": parent_exchange,
+                "symbol": parent_symbol,
+                "token": parent_token
+
+            })
+
+        else:
+            pass
 
     return node_configs
 
@@ -157,11 +181,19 @@ def build_trade_managers(engine, registry):
         if parent_token is None:
             continue
 
+        else:
+            pass
+
         child_token = parent_token
         trading_symbol = parent_symbol
 
         ce_token = None
         pe_token = None
+
+
+        # ----------------------------------------------------
+        # PRODUCT TYPE ROUTING
+        # ----------------------------------------------------
 
         if product_type == "FUT":
 
@@ -171,6 +203,9 @@ def build_trade_managers(engine, registry):
 
                 child_token = fut.token
                 trading_symbol = fut.symbol
+
+            else:
+                pass
 
 
         elif product_type == "OPT":
@@ -185,12 +220,16 @@ def build_trade_managers(engine, registry):
             if ce_token is None or pe_token is None:
                 continue
 
-            child_token = ce_token
+            else:
+                child_token = ce_token
 
 
         elif product_type in ["SPOT", "STOCK"]:
 
             child_token = parent_token
+
+        else:
+            pass
 
 
         tm = TradeManager(
@@ -214,10 +253,18 @@ def build_trade_managers(engine, registry):
             rest_ltp=None
         )
 
+
+        # ----------------------------------------------------
+        # INJECT OPTION TOKENS
+        # ----------------------------------------------------
+
         if product_type == "OPT":
 
             tm.ce_token = ce_token
             tm.pe_token = pe_token
+
+        else:
+            pass
 
 
         trade_managers.append(tm)
@@ -257,19 +304,13 @@ async def engine_bootloader():
 
     nodes = []
 
-    # ========================================================
-    # CREATE NODES
-    # ========================================================
-
     for inst in node_configs:
 
         node = InstrumentNode(
-
             engine,
             inst["exchange"],
             inst["symbol"],
             inst["token"]
-
         )
 
         await node.initialize()
@@ -277,13 +318,8 @@ async def engine_bootloader():
 
         nodes.append(node)
 
-
     print("[ENGINE] Signal layer initialized\n")
 
-
-    # ========================================================
-    # BUILD TRADE MANAGERS
-    # ========================================================
 
     trade_managers = build_trade_managers(engine, registry)
 
@@ -291,7 +327,7 @@ async def engine_bootloader():
 
 
     # ========================================================
-    # SIGNAL PUBLISHER INJECTION (SURGICAL FIX)
+    # SIGNAL PUBLISHER INJECTION
     # ========================================================
 
     for tm in trade_managers:
@@ -312,17 +348,18 @@ async def engine_bootloader():
 
                 node.signal_engine.publisher = publisher
 
+            else:
+                pass
 
-    # ========================================================
-    # COLLECT ASYNC TASKS
-    # ========================================================
 
     tasks = []
 
     for node in nodes:
+
         tasks.extend(node.get_tasks())
 
     for tm in trade_managers:
+
         tasks.append(asyncio.create_task(tm.run()))
 
 
@@ -336,6 +373,8 @@ async def engine_bootloader():
 def shutdown():
 
     print("\n[ENGINE] Shutdown requested\n")
+
+    return
 
 
 # ============================================================
@@ -370,6 +409,7 @@ if __name__ == "__main__":
         except KeyboardInterrupt:
 
             print("\n[ENGINE] Interrupted by user")
+
             running = False
 
         except Exception as e:
@@ -382,11 +422,13 @@ if __name__ == "__main__":
             if restart_count >= restart_limit:
 
                 print("[SUPERVISOR] Restart limit reached.")
+
                 running = False
 
             else:
 
                 print(f"[SUPERVISOR] Restarting in {restart_delay} seconds\n")
+
                 time.sleep(restart_delay)
 
         finally:
@@ -400,5 +442,4 @@ if __name__ == "__main__":
 
 
 
-
-#_#_#_#_#_#
+#_#_#_#_#_#_
