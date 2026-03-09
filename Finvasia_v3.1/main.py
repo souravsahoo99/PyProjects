@@ -1,6 +1,6 @@
 # ============================================================
 # MAIN TRADING ENGINE
-# Production Orchestrator (Checkpoint 6.2)
+# Production Orchestrator (Checkpoint 6.0)
 # ============================================================
 
 import asyncio
@@ -25,8 +25,7 @@ STRATEGY_CONFIG = [
         "parent_exchange": "NSE",
         "child_exchange": "NFO",
         "product_type": "OPT",
-        "qty": 65,
-        "max_retry": 3
+        "qty": 65
     },
 
     {
@@ -34,8 +33,7 @@ STRATEGY_CONFIG = [
         "parent_exchange": "NSE",
         "child_exchange": "NSE",
         "product_type": "STOCK",
-        "qty": 10,
-        "max_retry": 2
+        "qty": 10
     }
 
 ]
@@ -97,9 +95,11 @@ def discover_atm_option_pair(engine, registry, symbol, exchange):
     expiry = None
 
     if futures:
+
         expiry = futures[0].expiry
 
     else:
+
         pass
 
     if expiry is None:
@@ -175,7 +175,6 @@ def build_trade_managers(engine, registry):
         product_type = config["product_type"]
 
         qty = config["qty"]
-        max_retry = config["max_retry"]   # <-- NEW PATCH
 
         parent_token = registry.get_token(parent_exchange, parent_symbol)
 
@@ -212,12 +211,10 @@ def build_trade_managers(engine, registry):
         elif product_type == "OPT":
 
             ce_token, pe_token = discover_atm_option_pair(
-
                 engine,
                 registry,
                 parent_symbol,
                 parent_exchange
-
             )
 
             if ce_token is None or pe_token is None:
@@ -253,10 +250,7 @@ def build_trade_managers(engine, registry):
             qty=qty,
 
             ws_ltp=None,
-            rest_ltp=None,
-
-            max_retry=max_retry   # <-- NEW PATCH
-
+            rest_ltp=None
         )
 
 
@@ -312,14 +306,7 @@ async def engine_bootloader():
 
     for inst in node_configs:
 
-        node = InstrumentNode(
-
-            engine,
-            inst["exchange"],
-            inst["symbol"],
-            inst["token"]
-
-        )
+        node = InstrumentNode(engine, inst["exchange"], inst["symbol"], inst["token"])
 
         await node.initialize()
         node.start()
@@ -344,10 +331,8 @@ async def engine_bootloader():
 
             parent_token=tm.parent_token,
             child_token=tm.child_token,
-
             ce_token=tm.ce_token,
             pe_token=tm.pe_token,
-
             product_type=tm.product_type
 
         )
@@ -365,9 +350,11 @@ async def engine_bootloader():
     tasks = []
 
     for node in nodes:
+
         tasks.extend(node.get_tasks())
 
     for tm in trade_managers:
+
         tasks.append(asyncio.create_task(tm.run()))
 
 
@@ -417,6 +404,7 @@ if __name__ == "__main__":
         except KeyboardInterrupt:
 
             print("\n[ENGINE] Interrupted by user")
+
             running = False
 
         except Exception as e:
@@ -429,11 +417,13 @@ if __name__ == "__main__":
             if restart_count >= restart_limit:
 
                 print("[SUPERVISOR] Restart limit reached.")
+
                 running = False
 
             else:
 
                 print(f"[SUPERVISOR] Restarting in {restart_delay} seconds\n")
+
                 time.sleep(restart_delay)
 
         finally:
@@ -447,5 +437,4 @@ if __name__ == "__main__":
 
 
 
-
-#_#_#_#_#_#_#_
+#_#_#_#_#_#_

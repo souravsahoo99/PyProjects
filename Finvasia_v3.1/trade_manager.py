@@ -1,6 +1,6 @@
 # ============================================================
-# TRADE MANAGER v2.4
-# Production Grade Execution Engine (Refactored)
+# TRADE MANAGER v2.3
+# Production Grade Execution Engine (Readable Version)
 # ============================================================
 
 import time
@@ -19,132 +19,107 @@ class TradeManager:
     def __init__(
         self,
         engine,
+
         parent_exchange,
         child_exchange,
+
         signal_symbol,
         trading_symbol,
+
         parent_token,
         child_token,
+
         product_type,
+
         qty,
+
         ws_ltp,
-        rest_ltp,
-        max_retry
+        rest_ltp
     ):
 
         # ----------------------------------------------------
         # ENGINE
         # ----------------------------------------------------
+
         self.engine = engine
 
         # ----------------------------------------------------
         # EXCHANGES
         # ----------------------------------------------------
+
         self.parent_exchange = parent_exchange
         self.child_exchange = child_exchange
 
         # ----------------------------------------------------
         # SYMBOLS
         # ----------------------------------------------------
+
         self.signal_symbol = signal_symbol
         self.trading_symbol = trading_symbol
 
         # ----------------------------------------------------
         # TOKENS
         # ----------------------------------------------------
+
         self.parent_token = parent_token
         self.child_token = child_token
 
         # ----------------------------------------------------
         # PRODUCT TYPE
         # ----------------------------------------------------
+
         self.product_type = product_type
 
         # ----------------------------------------------------
         # OPTION TOKENS
         # ----------------------------------------------------
+
         self.ce_token = None
         self.pe_token = None
 
         # ----------------------------------------------------
         # TRADE PARAMETERS
         # ----------------------------------------------------
+
         self.qty = qty
 
         # ----------------------------------------------------
         # SIGNAL CONTROL
         # ----------------------------------------------------
+
         self.signal_validity_seconds = 5
 
         # ----------------------------------------------------
-        # RETRY CONTROL
+        # OPTIONAL TIME EXIT
         # ----------------------------------------------------
-        self.max_retry = max_retry
-        self.retry_count = 0
+
+        self.time_exit = None
 
         # ----------------------------------------------------
         # STRATEGY NAME
         # ----------------------------------------------------
+
         self.strategy_name = None
 
         # ----------------------------------------------------
-        # TRADE DICT
+        # TRADE STATE
         # ----------------------------------------------------
+
         self.trade = {
 
             "strategy_state": None,
-            "manager_name": "TradeManager",
-            "strategy_name": None,
-            "side": None,
 
             "entry_price": None,
             "entry_time": None,
 
-            "exit_price": None,
-            "exit_time": None,
-
-            "stop_loss": -450,
-            "target": 1000,
-            "trailing_distance": 20,
+            "stop_loss": None,
+            "target": None,
+            "trailing_distance": None,
 
             "net_pnl": 0,
             "max_pnl": 0,
-            "min_pnl": 0,
-
-            "parentsignal_symbol": signal_symbol,
-
-            "parent_token": parent_token,
-            "child_token": child_token,
-
-            "qty": qty,
-            "product_type": product_type
+            "min_pnl": 0
         }
-
-        # ----------------------------------------------------
-        # MONGO PLACEHOLDER
-        # ----------------------------------------------------
-        # TODO: initialize Mongo collection
-        # self.mongo_collection = None
-
-
-    # ========================================================
-    # MONGO INSERT
-    # ========================================================
-
-    def _mongo_insert(self):
-
-        # TODO MongoDB insert
-        pass
-
-
-    # ========================================================
-    # MONGO UPDATE
-    # ========================================================
-
-    def _mongo_update(self):
-
-        # TODO MongoDB update
-        pass
 
 
     # ========================================================
@@ -160,6 +135,7 @@ class TradeManager:
 
         if price is None:
             return None
+
         else:
             return price
 
@@ -184,17 +160,18 @@ class TradeManager:
         print(f"[TRADE] {self.trading_symbol} entry signal")
 
         self.trade["strategy_state"] = "ENTERING"
-        self.trade["side"] = side
-        self.trade["strategy_name"] = signal.get("strategy")
 
         if side == "BUY":
             order_side = "B"
+
         elif side == "SELL":
             order_side = "S"
+
         else:
             return
 
         order = Order(
+
             buy_or_sell=order_side,
             product_type="C",
             exchange=self.child_exchange,
@@ -225,13 +202,14 @@ class TradeManager:
 
         self.trade["strategy_state"] = "ACTIVE"
 
-        self._mongo_update()
-
         print(f"[TRADE] {self.trading_symbol} entered @ {ltp}")
 
         try:
+
             SIGNALS.remove(signal)
+
         except ValueError:
+
             pass
 
 
@@ -247,6 +225,7 @@ class TradeManager:
         print(f"[TRADE] Exit {self.trading_symbol}")
 
         order = Order(
+
             buy_or_sell="S",
             product_type="C",
             exchange=self.child_exchange,
@@ -265,22 +244,22 @@ class TradeManager:
 
         ltp = self._get_ltp()
 
+        pnl = None
+
         if ltp is None:
             pnl = None
-        else:
+
+        elif ltp is not None:
             pnl = ltp - self.trade["entry_price"]
 
-        self.trade["exit_price"] = ltp
-        self.trade["exit_time"] = time.time()
+        else:
+            pnl = None
+
         self.trade["net_pnl"] = pnl
 
-        self.trade["strategy_state"] = "EXITED"
-
-        self.retry_count += 1
-
-        self._mongo_update()
-
         print(f"[TRADE] Exit @ {ltp} | PnL {pnl}")
+
+        self.trade["strategy_state"] = "EXITED"
 
 
     # ========================================================
@@ -302,8 +281,20 @@ class TradeManager:
             elif parent_side == "SELL":
                 self.child_token = self.pe_token
 
+            else:
+                pass
+
+        elif self.product_type == "FUT":
+
+            pass
+
         elif self.product_type in ["SPOT", "STOCK"]:
+
             self.child_token = self.parent_token
+
+        else:
+
+            pass
 
 
     # ========================================================
@@ -316,6 +307,10 @@ class TradeManager:
 
         parent_signal = None
         child_signal = None
+
+        # ----------------------------------------------------
+        # FIND PARENT SIGNAL
+        # ----------------------------------------------------
 
         for signal in reversed(SIGNALS):
 
@@ -332,10 +327,21 @@ class TradeManager:
                 parent_signal = signal
                 break
 
+            else:
+                continue
+
         if parent_signal is None:
             return None, None
 
+        # ----------------------------------------------------
+        # ROUTE CHILD TOKEN
+        # ----------------------------------------------------
+
         self._route_child_token(parent_signal)
+
+        # ----------------------------------------------------
+        # FIND CHILD SIGNAL
+        # ----------------------------------------------------
 
         for signal in reversed(SIGNALS):
 
@@ -352,6 +358,9 @@ class TradeManager:
                 child_signal = signal
                 break
 
+            else:
+                continue
+
         return parent_signal, child_signal
 
 
@@ -361,11 +370,13 @@ class TradeManager:
 
     async def run(self):
 
-        self._mongo_insert()
-
         while True:
 
             state = self.trade.get("strategy_state")
+
+            # ------------------------------------------------
+            # WAITING FOR SIGNAL
+            # ------------------------------------------------
 
             if state is None:
 
@@ -385,17 +396,40 @@ class TradeManager:
                 parent_side = parent_signal.get("side")
                 child_side = child_signal.get("side")
 
+                if parent_time is None:
+                    await asyncio.sleep(0.2)
+                    continue
+
+                if child_time is None:
+                    await asyncio.sleep(0.2)
+                    continue
+
                 if parent_time <= child_time:
 
                     if (child_time - parent_time) <= self.signal_validity_seconds:
 
                         if parent_side == child_side:
 
+                            self.strategy_name = parent_signal.get("strategy")
+
                             self.enter_trade(child_signal)
+
+                        else:
+                            pass
+
+                    else:
+                        pass
+
+                else:
+                    pass
 
                 await asyncio.sleep(0.2)
                 continue
 
+
+            # ------------------------------------------------
+            # ACTIVE TRADE MANAGEMENT
+            # ------------------------------------------------
 
             elif state == "ACTIVE":
 
@@ -407,6 +441,10 @@ class TradeManager:
 
                 entry = self.trade.get("entry_price")
 
+                if entry is None:
+                    await asyncio.sleep(0.2)
+                    continue
+
                 pnl = ltp - entry
 
                 self.trade["net_pnl"] = pnl
@@ -417,42 +455,52 @@ class TradeManager:
                 elif pnl < self.trade["min_pnl"]:
                     self.trade["min_pnl"] = pnl
 
+                else:
+                    pass
+
                 sl = self.trade.get("stop_loss")
 
                 if sl is not None:
 
-                    if pnl <= sl:
+                    if ltp <= sl:
 
                         print("[TRADE] Stop loss hit")
                         self.exit_trade()
+                        break
+
+                    else:
+                        pass
+
+                else:
+                    pass
 
                 target = self.trade.get("target")
 
                 if target is not None:
 
-                    if pnl >= target:
+                    if ltp >= target:
 
                         print("[TRADE] Target hit")
                         self.exit_trade()
+                        break
+
+                    else:
+                        pass
+
+                else:
+                    pass
 
                 await asyncio.sleep(0.2)
                 continue
 
 
+            # ------------------------------------------------
+            # EXITED
+            # ------------------------------------------------
+
             elif state == "EXITED":
 
-                if self.retry_count < self.max_retry:
-
-                    print("[TRADE] Restarting manager for next trade")
-
-                    self.trade["strategy_state"] = None
-                    continue
-
-                else:
-
-                    print("[TRADE] Max retry reached. Manager stopping.")
-                    break
-
+                break
 
             else:
 
@@ -460,89 +508,7 @@ class TradeManager:
                 continue
 
 
-# ============================================================
-# PAPER TRADE MANAGER
-# ============================================================
-
-class PaperTradeManager(TradeManager):
-
-    def __init__(self, *args, **kwargs):
-
-        super().__init__(*args, **kwargs)
-
-        self.trade["manager_name"] = "PaperTradeManager"
-
-
-    # ========================================================
-    # ENTER TRADE (SIMULATED)
-    # ========================================================
-
-    def enter_trade(self, signal):
-
-        if self.trade["strategy_state"] is not None:
-            return
-
-        side = signal.get("side")
-
-        if side not in ["BUY", "SELL"]:
-            return
-
-        print(f"[PAPER] {self.trading_symbol} entry signal")
-
-        self.trade["strategy_state"] = "ACTIVE"
-        self.trade["side"] = side
-        self.trade["strategy_name"] = signal.get("strategy")
-
-        ltp = self._get_ltp()
-
-        if ltp is None:
-            return
-
-        self.trade["entry_price"] = ltp
-        self.trade["entry_time"] = time.time()
-
-        self._mongo_update()
-
-        try:
-            SIGNALS.remove(signal)
-        except ValueError:
-            pass
-
-
-    # ========================================================
-    # EXIT TRADE (SIMULATED)
-    # ========================================================
-
-    def exit_trade(self):
-
-        if self.trade["strategy_state"] != "ACTIVE":
-            return
-
-        print(f"[PAPER] Exit {self.trading_symbol}")
-
-        ltp = self._get_ltp()
-
-        if ltp is None:
-            pnl = None
-        else:
-            pnl = ltp - self.trade["entry_price"]
-
-        self.trade["exit_price"] = ltp
-        self.trade["exit_time"] = time.time()
-        self.trade["net_pnl"] = pnl
-
-        self.trade["strategy_state"] = "EXITED"
-
-        self.retry_count += 1
-
-        self._mongo_update()
-
-        print(f"[PAPER] Exit @ {ltp} | PnL {pnl}")
 
 
 
-
-
-
-
-#_#_#_#_#_#_#_
+#_#_#_#_#_#_
