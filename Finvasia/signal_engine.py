@@ -1,6 +1,6 @@
 # ============================================================
 # SIGNAL ENGINE
-# Production Grade – Multi Node Compatible
+# Production Grade
 # ============================================================
 
 import asyncio
@@ -20,16 +20,120 @@ SIGNAL_LOCK = threading.Lock()
 
 
 # ============================================================
+# SIGNAL PUBLISHER
+# Controls which signals are allowed onto the global bus
+# ============================================================
+
+class SignalPublisher:
+
+    def __init__(
+        self,
+        parent_token=None,
+        child_token=None,
+        ce_token=None,
+        pe_token=None,
+        product_type=None,
+        allowed_strategies=None
+    ):
+
+        self.parent_token = parent_token
+        self.child_token = child_token
+        self.ce_token = ce_token
+        self.pe_token = pe_token
+        self.product_type = product_type
+        self.allowed_strategies = allowed_strategies
+
+
+    # --------------------------------------------------------
+    # TOKEN VALIDATION
+    # --------------------------------------------------------
+
+    def _is_allowed_token(self, token):
+
+        if self.product_type == "OPT":
+
+            if token == self.parent_token:
+                return True
+
+            elif token == self.ce_token:
+                return True
+
+            elif token == self.pe_token:
+                return True
+
+            else:
+                return False
+
+        elif self.product_type == "FUT":
+
+            if token == self.parent_token:
+                return True
+
+            elif token == self.child_token:
+                return True
+
+            else:
+                return False
+
+        elif self.product_type == "SPOT":
+
+            if token == self.parent_token:
+                return True
+
+            else:
+                return False
+
+        else:
+
+            return True
+
+
+    # --------------------------------------------------------
+    # STRATEGY VALIDATION
+    # --------------------------------------------------------
+
+    def _is_allowed_strategy(self, strategy):
+
+        if self.allowed_strategies is None:
+            return True
+
+        elif strategy in self.allowed_strategies:
+            return True
+
+        else:
+            return False
+
+
+    # --------------------------------------------------------
+    # PUBLICATION DECISION
+    # --------------------------------------------------------
+
+    def allow_publish(self, token, strategy):
+
+        token_ok = self._is_allowed_token(token)
+        strategy_ok = self._is_allowed_strategy(strategy)
+
+        if token_ok is True and strategy_ok is True:
+            return True
+
+        else:
+            return False
+
+
+# ============================================================
 # SIGNAL ENGINE
 # ============================================================
 
 class SignalEngine:
 
-    def __init__(self, market_data, symbol, token):
+    def __init__(self, market_data, symbol, token, publisher=None):
 
         self.market_data = market_data
         self.symbol = symbol
         self.token = token
+
+        # Signal publisher injected from main.py
+        self.publisher = publisher
 
         self.last_candle_time = None
         self.last_signal_key = None
@@ -138,10 +242,11 @@ class SignalEngine:
         if breakout(close, self.orb_high):
             return "BUY"
 
-        if breakdown(close, self.orb_low):
+        elif breakdown(close, self.orb_low):
             return "SELL"
 
-        return None
+        else:
+            return None
 
 
     # --------------------------------------------------------
@@ -161,10 +266,11 @@ class SignalEngine:
         if close > bands["upper1"]:
             return "BUY"
 
-        if close < bands["lower1"]:
+        elif close < bands["lower1"]:
             return "SELL"
 
-        return None
+        else:
+            return None
 
 
     # --------------------------------------------------------
@@ -179,10 +285,11 @@ class SignalEngine:
         if breakout(close, self.vah):
             return "BUY"
 
-        if breakdown(close, self.val):
+        elif breakdown(close, self.val):
             return "SELL"
 
-        return None
+        else:
+            return None
 
 
     # --------------------------------------------------------
@@ -197,6 +304,21 @@ class SignalEngine:
 
         if signal_key == self.last_signal_key:
             return
+
+        # ----------------------------------------------------
+        # SIGNAL PUBLISHER FILTER
+        # ----------------------------------------------------
+
+        if self.publisher is not None:
+
+            allowed = self.publisher.allow_publish(self.token, strategy)
+
+            if allowed is False:
+                return
+
+        # ----------------------------------------------------
+        # BUILD SIGNAL
+        # ----------------------------------------------------
 
         signal_dict = {
 
@@ -282,6 +404,9 @@ class SignalEngine:
             self._evaluate(df)
 
             await asyncio.sleep(0.2)
+
+
+
 
 
             

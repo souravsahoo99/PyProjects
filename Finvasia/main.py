@@ -11,6 +11,7 @@ from helper_wraper import ShoonyaEngine
 from token_registry import TokenRegistry
 from instrument_node import InstrumentNode
 from trade_manager import TradeManager
+from signal_engine import SignalPublisher
 
 
 # ============================================================
@@ -49,22 +50,16 @@ STRATEGY_CONFIG = [
 
 def discover_atm_option_pair(engine, registry, symbol, exchange):
 
-    """
-    Dynamically discover ATM CE and PE tokens
-    """
-
     parent_token = registry.get_token(exchange, symbol)
 
     if parent_token is None:
         return None, None
 
-    # fetch live spot price
     spot = engine.get_ltp_live(exchange, parent_token)
 
     if spot is None:
         return None, None
 
-    # find ATM strike
     strikes = registry.get_strikes(symbol, None)
 
     if not strikes:
@@ -82,13 +77,8 @@ def discover_atm_option_pair(engine, registry, symbol, exchange):
 # BUILD SIGNAL NODES
 # ============================================================
 
-def build_signal_nodes(engine, registry):
+def build_signal_nodes(engine, registry, publishers):
 
-    """
-    Build all required instrument nodes for signal generation
-    """
-
-    nodes = []
     node_configs = []
 
     for config in STRATEGY_CONFIG:
@@ -101,10 +91,46 @@ def build_signal_nodes(engine, registry):
         if parent_token is None:
             continue
 
+        # --------------------------------------------
+        # Create SignalPublisher
+        # --------------------------------------------
+
+        product_type = config["product_type"]
+
+        ce_token = None
+        pe_token = None
+        child_token = parent_token
+
+        if product_type == "OPT":
+
+            ce_token, pe_token = discover_atm_option_pair(
+                engine,
+                registry,
+                parent_symbol,
+                parent_exchange
+            )
+
+            child_token = ce_token
+
+        publisher = SignalPublisher(
+
+            parent_token=parent_token,
+            child_token=child_token,
+            ce_token=ce_token,
+            pe_token=pe_token,
+            product_type=product_type,
+            allowed_strategies=None
+        )
+
+        publishers.append(publisher)
+
         node_configs.append({
+
             "exchange": parent_exchange,
             "symbol": parent_symbol,
-            "token": parent_token
+            "token": parent_token,
+            "publisher": publisher
+
         })
 
     return node_configs
@@ -128,27 +154,27 @@ def build_trade_managers(engine, registry):
 
         qty = config["qty"]
 
-        # ----------------------------------------------------
-        # Fetch parent token
-        # ----------------------------------------------------
-
         parent_token = registry.get_token(parent_exchange, parent_symbol)
 
         if parent_token is None:
             continue
 
-        # ----------------------------------------------------
-        # Determine child token
-        # ----------------------------------------------------
-
         child_token = parent_token
         trading_symbol = parent_symbol
+
+        ce_token = None
+        pe_token = None
+
+        # ----------------------------------------------------
+        # PRODUCT TYPE ROUTING
+        # ----------------------------------------------------
 
         if product_type == "FUT":
 
             fut = registry.get_current_future(parent_symbol)
 
             if fut:
+
                 child_token = fut.token
                 trading_symbol = fut.symbol
 
@@ -161,7 +187,6 @@ def build_trade_managers(engine, registry):
                 parent_exchange
             )
 
-            # child token initially CE (runtime routing decides later)
             child_token = ce_token
 
         elif product_type in ["SPOT", "STOCK"]:
@@ -169,7 +194,7 @@ def build_trade_managers(engine, registry):
             child_token = parent_token
 
         # ----------------------------------------------------
-        # Create TradeManager
+        # CREATE TRADE MANAGER
         # ----------------------------------------------------
 
         tm = TradeManager(
@@ -193,6 +218,15 @@ def build_trade_managers(engine, registry):
             rest_ltp=None
         )
 
+        # ----------------------------------------------------
+        # ASSIGN OPTION TOKENS
+        # ----------------------------------------------------
+
+        if product_type == "OPT":
+
+            tm.ce_token = ce_token
+            tm.pe_token = pe_token
+
         trade_managers.append(tm)
 
     return trade_managers
@@ -206,15 +240,7 @@ async def engine_bootloader():
 
     print("\n[ENGINE] Booting Trading Engine\n")
 
-    # --------------------------------------------------------
-    # Broker Engine
-    # --------------------------------------------------------
-
     engine = ShoonyaEngine()
-
-    # --------------------------------------------------------
-    # Token Registry
-    # --------------------------------------------------------
 
     print("[ENGINE] Loading instrument registry")
 
@@ -222,10 +248,6 @@ async def engine_bootloader():
     registry.load_master("data/instruments.csv")
 
     print("[ENGINE] Registry loaded")
-
-    # --------------------------------------------------------
-    # Start WebSocket
-    # --------------------------------------------------------
 
     print("[ENGINE] Starting WebSocket")
 
@@ -235,10 +257,16 @@ async def engine_bootloader():
     print("[ENGINE] WebSocket connected\n")
 
     # --------------------------------------------------------
-    # Build Signal Nodes
+    # SIGNAL PUBLISHER STORAGE
     # --------------------------------------------------------
 
-    node_configs = build_signal_nodes(engine, registry)
+    publishers = []
+
+    # --------------------------------------------------------
+    # BUILD SIGNAL NODES
+    # --------------------------------------------------------
+
+    node_configs = build_signal_nodes(engine, registry, publishers)
 
     print(f"[ENGINE] Signal nodes discovered → {len(node_configs)}")
 
@@ -255,6 +283,15 @@ async def engine_bootloader():
         )
 
         await node.initialize()
+
+        # ----------------------------------------------------
+        # INJECT SIGNAL PUBLISHER INTO SIGNAL ENGINE
+        # ----------------------------------------------------
+
+        if node.signal_engine is not None:
+
+            node.signal_engine.publisher = inst["publisher"]
+
         node.start()
 
         nodes.append(node)
@@ -262,7 +299,7 @@ async def engine_bootloader():
     print("[ENGINE] Signal layer initialized\n")
 
     # --------------------------------------------------------
-    # Build Trade Manager Pool
+    # BUILD TRADE MANAGER POOL
     # --------------------------------------------------------
 
     trade_managers = build_trade_managers(engine, registry)
@@ -270,7 +307,7 @@ async def engine_bootloader():
     print(f"[ENGINE] Trade managers created → {len(trade_managers)}\n")
 
     # --------------------------------------------------------
-    # Collect Async Tasks
+    # COLLECT ASYNC TASKS
     # --------------------------------------------------------
 
     tasks = []
@@ -282,7 +319,7 @@ async def engine_bootloader():
         tasks.append(asyncio.create_task(tm.run()))
 
     # --------------------------------------------------------
-    # Run Engine
+    # RUN ENGINE
     # --------------------------------------------------------
 
     await asyncio.gather(*tasks)
@@ -357,4 +394,5 @@ if __name__ == "__main__":
 
 
 
-#_#_#_#_#_
+
+#_#_#_#_#_#
