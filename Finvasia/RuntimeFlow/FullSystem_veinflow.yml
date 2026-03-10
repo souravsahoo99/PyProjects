@@ -1,0 +1,133 @@
+                        ┌──────────────────────┐
+                        │     main.py          │
+                        │ Supervisor Engine    │
+                        └──────────┬───────────┘
+                                   │
+                                   ▼
+                        ┌──────────────────────┐
+                        │  InstrumentNode      │
+                        └──────────┬───────────┘
+                                   │
+                                   ▼
+                       ┌─────────────────────────┐
+                       │   MarketDataManager     │
+                       │  Tick → Candle Builder  │
+                       └──────────┬──────────────┘
+                                  │
+                                  ▼
+                         ┌───────────────────┐
+                         │   SignalEngine    │
+                         │ ORB / VWAP / MP   │
+                         └─────────┬─────────┘
+                                   │
+                                   ▼
+                       ┌────────────────────────┐
+                       │   SignalPublisher       │
+                       │ Token / Strategy Filter │
+                       └─────────┬──────────────┘
+                                 │
+                                 ▼
+                         ┌─────────────────┐
+                         │   SIGNAL BUS     │
+                         └────────┬────────┘
+                                  │
+                                  ▼
+                         ┌─────────────────┐
+                         │   TradeManager   │
+                         │ Execution Engine │
+                         └────────┬────────┘
+                                  │
+                                  ▼
+                         ┌─────────────────┐
+                         │   MongoDB        │
+                         │ Trade Storage    │
+                         └─────────────────┘ 
+
+
+
+
+#_      USER__PRE-DEFINED__DICT__CONFIG       _#
+
+   USER STRATEGY CONFIG  
+        │
+        ▼
+main.py (Orchestration Engine)
+        │
+        ├──────────── Signal Layer ─────────────
+        │
+        │        InstrumentNode (per instrument)
+        │                │
+        │                ▼
+        │        MarketDataManager
+        │                │
+        │                ├── Tick Pipeline
+        │                │        │
+        │                │        └── TickCandleAggregator
+        │                │
+        │                └── REST Pipeline
+        │                         │
+        │                         └── RestCandleAggregator
+        │
+        │                ▼
+        │          SignalEngine
+        │                │
+        │                ▼
+        │        GLOBAL SIGNAL BUS
+        │
+        └──────────── Execution Layer ───────────
+                 │
+                 ▼
+          TradeManager_v2
+                 │
+                 ├── Parent Signal Detection
+                 │
+                 ├── Product Type Routing
+                 │       ├─ OPT → CE/PE selection
+                 │       ├─ FUT → fixed token
+                 │       └─ SPOT/STOCK → parent token
+                 │
+                 ├── Child Signal Confirmation
+                 │
+                 └── Order Execution
+
+
+
+
+
+
+
+USER CONFIG
+      │
+      ▼
+main.py
+      │
+      ▼
+InstrumentNode
+      │
+      ▼
+MarketDataManager
+      │
+      ├── Tick pipeline
+      └── REST pipeline
+      │
+      ▼
+SignalEngine
+      │
+      ▼
+SIGNALS GLOBAL LIST
+      │
+      ▼
+TradeManager_v2
+      │
+      ├── parent signal detection
+      ├── product routing
+      ├── child confirmation
+      └── trade execution
+      │
+      ▼
+ShoonyaEngine
+      │
+      ▼
+Broker Order
+
+#

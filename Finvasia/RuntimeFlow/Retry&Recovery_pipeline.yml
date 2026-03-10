@@ -1,0 +1,69 @@
+┌─────────────────────────────────────────────┐
+│               RETRY PIPELINE                │
+└─────────────────────────────────────────────┘
+
+#    < RETRY >
+
+State = EXITED
+       │
+       ▼
+retry_count < max_retry ?
+
+YES
+ │
+ ▼
+strategy_state = None
+ │
+ ▼
+Manager waits for next signal
+
+NO
+ │
+ ▼
+Manager stops
+
+
+#   < RECOVERY >   #
+####################
+# -for program crash
+
+main.py restart
+      │
+      ▼
+TradeManager start
+      │
+      ▼
+Check pointer file
+      │
+      ▼
+Fetch Mongo ObjectID
+      │
+      ▼
+Restore ACTIVE trade
+      │
+      ▼
+Resume monitoring
+
+
+
+# -for System Crash & Reboot
+
+System reboot
+      │
+      ▼
+main.py starts
+      │
+      ▼
+TradeManager created
+      │
+      ▼
+Pointer file read
+      │
+      ▼
+MongoDB fetch trade
+      │
+      ▼
+Resume trade monitoring
+
+
+#

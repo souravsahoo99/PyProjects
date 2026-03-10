@@ -1,0 +1,46 @@
+#|     tick journey     |#|
+#|########################|
+
+Exchange Tick
+     │
+     ▼
+Shoonya WebSocket
+     │
+     ▼
+helper_wraper._on_quote
+     │
+     ▼
+MarketDataManager.tick_queue
+     │
+     ▼
+Candle Builder
+     │
+     ▼
+SignalEngine
+     │
+     ▼
+Strategy Logic
+     │
+     ▼
+SignalPublisher
+     │
+     ▼
+SIGNAL BUS
+     │
+     ▼
+TradeManager
+     │
+     ▼
+Order Execution
+     │
+     ▼
+MongoDB Persistence
+     │
+     ▼
+Trade Monitoring
+     │
+     ▼
+Exit Logic
+
+
+#

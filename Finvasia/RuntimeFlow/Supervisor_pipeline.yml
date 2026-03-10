@@ -1,0 +1,53 @@
+┌─────────────────────────────────────────────┐
+│              SUPERVISOR LOOP                │
+│                 main.py                     │
+└─────────────────────────────────────────────┘
+
+#
+
+START PROGRAM
+      │
+      ▼
+Create Event Loop
+      │
+      ▼
+engine_bootloader()
+      │
+      ▼
+Load Instrument Registry
+      │
+      ▼
+Start Broker WebSocket
+      │
+      ▼
+Build Signal Nodes
+      │
+      ▼
+Build Trade Managers
+      │
+      ▼
+Inject SignalPublisher
+      │
+      ▼
+Collect Async Tasks
+      │
+      ▼
+asyncio.gather()
+      │
+      ▼
+SYSTEM RUNNING
+
+
+
+
+#
+
+
+
+Exception
+   │
+   ▼
+Restart Engine
+   │
+   ▼
+Retry until restart_limit

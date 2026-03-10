@@ -1,0 +1,47 @@
+
+┌─────────────────────────────────────────────┐
+│              SIGNAL BUS PIPELINE            │
+└─────────────────────────────────────────────┘
+
+#
+
+SignalEngine
+      │
+      ▼
+SignalPublisher Filter
+
+Validation Steps:
+
+1. Token Filter
+2. Strategy Filter
+3. Instrument Filter
+4. Parent / Child Logic
+
+      │
+      ▼
+Signal Accepted
+      │
+      ▼
+SIGNALS Global Bus
+
+Thread Safe Storage:
+SIGNALS.append()
+
+Queue size capped at 300
+
+
+
+
+
+
+
+
+# Example of stored signals:
+
+{
+ symbol: NIFTY
+ token: 26000
+ side: BUY
+ strategy: ORB
+ signal_time: 1710000000
+}
