@@ -1,6 +1,6 @@
 # ============================================================
-# CANDLE CHART   v2.1
-# Production Debug Chart
+# CANDLE CHART   v2.2
+# Production Debug Chart (Smooth Updates)
 # ============================================================
 
 import asyncio
@@ -39,16 +39,18 @@ class CandleChart:
         # STATE TRACKING
         # ----------------------------------------------------
 
+        self.chart_initialized = False
         self.last_candle_time = None
         self.last_signal_index = 0
 
         self.refresh_interval = 0.36
 
         # ----------------------------------------------------
-        # CHART SERIES
+        # SERIES REFERENCES
         # ----------------------------------------------------
 
         self.price_line = None
+
         self.vwap_line = None
         self.vwap_upper = None
         self.vwap_lower = None
@@ -119,7 +121,7 @@ class CandleChart:
             self.signal_engine = self.market_data.signal_engine
 
         # ----------------------------------------------------
-        # INITIALIZE CHART
+        # CREATE CHART WINDOW
         # ----------------------------------------------------
 
         self.chart = Chart()
@@ -127,7 +129,7 @@ class CandleChart:
         self.chart.legend(True)
 
         # ----------------------------------------------------
-        # CREATE SERIES
+        # CREATE LINES
         # ----------------------------------------------------
 
         self.price_line = self.chart.create_line("Price")
@@ -174,7 +176,7 @@ class CandleChart:
 
 
     # ========================================================
-    # DRAW CANDLES
+    # DRAW / UPDATE CANDLES
     # ========================================================
 
     def _draw_candles(self):
@@ -184,6 +186,29 @@ class CandleChart:
         if buffer is None or len(buffer) == 0:
             return
 
+        df = self._build_dataframe(buffer)
+
+        if df is None:
+            return
+
+        # ----------------------------------------------------
+        # INITIAL LOAD
+        # ----------------------------------------------------
+
+        if not self.chart_initialized:
+
+            self.chart.set(df)
+
+            self.chart_initialized = True
+
+            self.last_candle_time = buffer.time[-1]
+
+            return
+
+        # ----------------------------------------------------
+        # UPDATE LAST CANDLE
+        # ----------------------------------------------------
+
         candle_time = buffer.time[-1]
 
         if candle_time == self.last_candle_time:
@@ -191,24 +216,26 @@ class CandleChart:
 
         self.last_candle_time = candle_time
 
-        df = self._build_dataframe(buffer)
+        last_row = df.iloc[-1]
 
-        if df is None:
-            return
+        self.chart.update({
 
-        self.chart.set(df)
+            "time": last_row["time"],
+            "open": last_row["open"],
+            "high": last_row["high"],
+            "low": last_row["low"],
+            "close": last_row["close"]
+
+        })
 
 
     # ========================================================
-    # DRAW LIVE PRICE
+    # LIVE PRICE LINE
     # ========================================================
 
     def _draw_price(self):
 
-        price = self.engine.get_ltp_live(
-            self.exchange,
-            self.token
-        )
+        price = self.engine.get_ltp_live(self.exchange, self.token)
 
         if price is None:
             return
@@ -217,7 +244,7 @@ class CandleChart:
 
 
     # ========================================================
-    # DRAW VWAP BANDS
+    # VWAP BANDS
     # ========================================================
 
     def _draw_vwap(self):
@@ -254,7 +281,7 @@ class CandleChart:
 
 
     # ========================================================
-    # DRAW ORB LEVELS
+    # ORB LEVELS
     # ========================================================
 
     def _draw_orb(self):
@@ -272,7 +299,7 @@ class CandleChart:
 
 
     # ========================================================
-    # DRAW MARKET PROFILE LEVELS
+    # MARKET PROFILE LEVELS
     # ========================================================
 
     def _draw_profile(self):
@@ -290,7 +317,7 @@ class CandleChart:
 
 
     # ========================================================
-    # DRAW SIGNAL MARKERS
+    # SIGNAL MARKERS
     # ========================================================
 
     def _draw_signals(self):
@@ -370,5 +397,4 @@ class CandleChart:
 
 
 
-
-#_#_#_
+#_#_#_#_

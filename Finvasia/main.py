@@ -1,23 +1,3 @@
-# ============================================================
-# MAIN TRADING ENGINE v6.6
-# Production Orchestrator
-# ============================================================
-
-"""
-main.py
-
-Responsibilities
-----------------
-1. Initialize trading engine
-2. Load token registry
-3. Start WebSocket
-4. Build instrument nodes (signal pipelines)
-5. Build trade managers (execution layer)
-6. Inject signal publishers
-7. Launch async tasks
-8. Optional debug chart
-"""
-
 import asyncio
 import signal
 import time
@@ -57,12 +37,12 @@ STRATEGY_CONFIG = [
 
 ]
 
-# optional debug chart
+# Optional debug chart
 DEBUG_CHART_SYMBOL = None
 
 
 # ============================================================
-# SAFE SPOT PRICE FETCH
+# SPOT PRICE FETCH
 # ============================================================
 
 def wait_for_spot_price(engine, exchange, token, timeout=10):
@@ -140,12 +120,10 @@ def build_signal_nodes(engine, registry):
             continue
 
         node = InstrumentNode(
-
             engine,
             exchange,
             symbol,
             token
-
         )
 
         nodes.append(node)
@@ -191,19 +169,16 @@ def build_trade_managers(engine, registry):
             fut = registry.get_current_future(parent_symbol)
 
             if fut:
-
                 child_token = fut.token
                 trading_symbol = fut.symbol
 
         elif product_type == "OPT":
 
             ce_token, pe_token = discover_atm_option_pair(
-
                 engine,
                 registry,
                 parent_symbol,
                 parent_exchange
-
             )
 
             if ce_token is None or pe_token is None:
@@ -215,7 +190,6 @@ def build_trade_managers(engine, registry):
 
             child_token = parent_token
 
-
         # ----------------------------------------------------
         # CREATE TRADE MANAGER
         # ----------------------------------------------------
@@ -223,6 +197,7 @@ def build_trade_managers(engine, registry):
         tm = TradeManager(
 
             engine=engine,
+
             parent_exchange=parent_exchange,
             child_exchange=child_exchange,
 
@@ -263,9 +238,8 @@ async def engine_bootloader():
 
     engine = ShoonyaEngine()
 
-
     # --------------------------------------------------------
-    # LOAD TOKEN REGISTRY
+    # LOAD REGISTRY
     # --------------------------------------------------------
 
     print("[ENGINE] Loading instrument registry")
@@ -275,7 +249,6 @@ async def engine_bootloader():
     registry.load_master("data/instruments.csv")
 
     print("[ENGINE] Registry loaded")
-
 
     # --------------------------------------------------------
     # START WEBSOCKET
@@ -288,7 +261,6 @@ async def engine_bootloader():
 
     print("[ENGINE] WebSocket connected\n")
 
-
     # --------------------------------------------------------
     # BUILD SIGNAL NODES
     # --------------------------------------------------------
@@ -300,11 +272,12 @@ async def engine_bootloader():
     for node in nodes:
 
         await node.initialize()
-
         node.start()
 
-    print("[ENGINE] Signal layer initialized\n")
+    # expose nodes for chart access
+    engine.instrument_nodes = nodes
 
+    print("[ENGINE] Signal layer initialized\n")
 
     # --------------------------------------------------------
     # BUILD TRADE MANAGERS
@@ -313,7 +286,6 @@ async def engine_bootloader():
     trade_managers = build_trade_managers(engine, registry)
 
     print(f"[ENGINE] Trade managers created → {len(trade_managers)}\n")
-
 
     # --------------------------------------------------------
     # SIGNAL PUBLISHER INJECTION
@@ -339,7 +311,6 @@ async def engine_bootloader():
 
                 node.signal_engine.publisher = publisher
 
-
     # --------------------------------------------------------
     # OPTIONAL DEBUG CHART
     # --------------------------------------------------------
@@ -351,26 +322,21 @@ async def engine_bootloader():
         chart = CandleChart(engine, registry)
 
         await chart.start(
-
-            symbol=DEBUG_CHART_SYMBOL,
-            exchange="NSE",
-            timeframe="1m"
-
+            DEBUG_CHART_SYMBOL,
+            "NSE",
+            "1m"
         )
 
-
     # --------------------------------------------------------
-    # COLLECT ASYNC TASKS
+    # TASK COLLECTION
     # --------------------------------------------------------
 
     tasks = []
 
     for node in nodes:
-
         tasks.extend(node.get_tasks())
 
     for tm in trade_managers:
-
         tasks.append(asyncio.create_task(tm.run()))
 
     await asyncio.gather(*tasks)
@@ -397,7 +363,6 @@ if __name__ == "__main__":
 
         print(f"[DEBUG] Chart mode enabled → {DEBUG_CHART_SYMBOL}")
 
-
     restart_limit = 2
     restart_delay = 5
     restart_count = 0
@@ -412,7 +377,6 @@ if __name__ == "__main__":
         asyncio.set_event_loop(loop)
 
         for sig in (signal.SIGINT, signal.SIGTERM):
-
             loop.add_signal_handler(sig, shutdown)
 
         try:
@@ -441,7 +405,6 @@ if __name__ == "__main__":
             else:
 
                 print(f"[SUPERVISOR] Restarting in {restart_delay} seconds\n")
-
                 time.sleep(restart_delay)
 
         finally:
@@ -450,6 +413,7 @@ if __name__ == "__main__":
             loop.close()
 
     print("\n[ENGINE] Trading Engine stopped\n")
+
 
 
 
