@@ -1,5 +1,5 @@
 # ============================================================
-# MAIN TRADING ENGINE v6.5
+# MAIN TRADING ENGINE v6.6
 # Production Orchestrator
 # ============================================================
 
@@ -32,7 +32,7 @@ from candle_chart import CandleChart
 
 
 # ============================================================
-# CONFIGURATION
+# STRATEGY CONFIGURATION
 # ============================================================
 
 STRATEGY_CONFIG = [
@@ -62,7 +62,7 @@ DEBUG_CHART_SYMBOL = None
 
 
 # ============================================================
-# SPOT PRICE FETCH
+# SAFE SPOT PRICE FETCH
 # ============================================================
 
 def wait_for_spot_price(engine, exchange, token, timeout=10):
@@ -191,6 +191,7 @@ def build_trade_managers(engine, registry):
             fut = registry.get_current_future(parent_symbol)
 
             if fut:
+
                 child_token = fut.token
                 trading_symbol = fut.symbol
 
@@ -213,6 +214,7 @@ def build_trade_managers(engine, registry):
         elif product_type in ["SPOT", "STOCK"]:
 
             child_token = parent_token
+
 
         # ----------------------------------------------------
         # CREATE TRADE MANAGER
@@ -261,8 +263,9 @@ async def engine_bootloader():
 
     engine = ShoonyaEngine()
 
+
     # --------------------------------------------------------
-    # LOAD REGISTRY
+    # LOAD TOKEN REGISTRY
     # --------------------------------------------------------
 
     print("[ENGINE] Loading instrument registry")
@@ -272,6 +275,7 @@ async def engine_bootloader():
     registry.load_master("data/instruments.csv")
 
     print("[ENGINE] Registry loaded")
+
 
     # --------------------------------------------------------
     # START WEBSOCKET
@@ -284,6 +288,7 @@ async def engine_bootloader():
 
     print("[ENGINE] WebSocket connected\n")
 
+
     # --------------------------------------------------------
     # BUILD SIGNAL NODES
     # --------------------------------------------------------
@@ -295,9 +300,11 @@ async def engine_bootloader():
     for node in nodes:
 
         await node.initialize()
+
         node.start()
 
     print("[ENGINE] Signal layer initialized\n")
+
 
     # --------------------------------------------------------
     # BUILD TRADE MANAGERS
@@ -306,6 +313,7 @@ async def engine_bootloader():
     trade_managers = build_trade_managers(engine, registry)
 
     print(f"[ENGINE] Trade managers created → {len(trade_managers)}\n")
+
 
     # --------------------------------------------------------
     # SIGNAL PUBLISHER INJECTION
@@ -331,6 +339,7 @@ async def engine_bootloader():
 
                 node.signal_engine.publisher = publisher
 
+
     # --------------------------------------------------------
     # OPTIONAL DEBUG CHART
     # --------------------------------------------------------
@@ -343,22 +352,25 @@ async def engine_bootloader():
 
         await chart.start(
 
-            DEBUG_CHART_SYMBOL,
-            "NSE",
-            "1m"
+            symbol=DEBUG_CHART_SYMBOL,
+            exchange="NSE",
+            timeframe="1m"
 
         )
 
+
     # --------------------------------------------------------
-    # COLLECT TASKS
+    # COLLECT ASYNC TASKS
     # --------------------------------------------------------
 
     tasks = []
 
     for node in nodes:
+
         tasks.extend(node.get_tasks())
 
     for tm in trade_managers:
+
         tasks.append(asyncio.create_task(tm.run()))
 
     await asyncio.gather(*tasks)
@@ -385,6 +397,7 @@ if __name__ == "__main__":
 
         print(f"[DEBUG] Chart mode enabled → {DEBUG_CHART_SYMBOL}")
 
+
     restart_limit = 2
     restart_delay = 5
     restart_count = 0
@@ -399,6 +412,7 @@ if __name__ == "__main__":
         asyncio.set_event_loop(loop)
 
         for sig in (signal.SIGINT, signal.SIGTERM):
+
             loop.add_signal_handler(sig, shutdown)
 
         try:
@@ -410,7 +424,6 @@ if __name__ == "__main__":
         except KeyboardInterrupt:
 
             print("\n[ENGINE] Interrupted by user")
-
             running = False
 
         except Exception as e:
@@ -428,6 +441,7 @@ if __name__ == "__main__":
             else:
 
                 print(f"[SUPERVISOR] Restarting in {restart_delay} seconds\n")
+
                 time.sleep(restart_delay)
 
         finally:
@@ -440,4 +454,5 @@ if __name__ == "__main__":
 
 
 
-#_#_#_#_#_#_#_#_#
+
+#_#_#_#_#_#_#_#_#_#_

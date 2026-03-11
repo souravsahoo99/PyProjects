@@ -12,11 +12,11 @@ from strategy_utils import breakout, breakdown
 
 
 # ============================================================
-# GLOBAL SIGNAL STORAGE
+# GLOBAL SIGNAL BUS
+# Used by TradeManager
 # ============================================================
 
 SIGNALS = []
-
 SIGNAL_LOCK = threading.Lock()
 
 
@@ -53,34 +53,21 @@ class SignalPublisher:
 
         if self.product_type == "OPT":
 
-            if token == self.parent_token:
+            if token in [self.parent_token, self.ce_token, self.pe_token]:
                 return True
-            elif token == self.ce_token:
-                return True
-            elif token == self.pe_token:
-                return True
-            else:
-                return False
+            return False
 
         elif self.product_type == "FUT":
 
-            if token == self.parent_token:
+            if token in [self.parent_token, self.child_token]:
                 return True
-            elif token == self.child_token:
-                return True
-            else:
-                return False
+            return False
 
-        elif self.product_type == "SPOT":
+        elif self.product_type in ["SPOT", "STOCK"]:
 
-            if token == self.parent_token:
-                return True
-            else:
-                return False
+            return token == self.parent_token
 
-        else:
-
-            return True
+        return True
 
 
     # --------------------------------------------------------
@@ -92,10 +79,7 @@ class SignalPublisher:
         if self.allowed_strategies is None:
             return True
 
-        if strategy in self.allowed_strategies:
-            return True
-
-        return False
+        return strategy in self.allowed_strategies
 
 
     # --------------------------------------------------------
@@ -105,13 +89,9 @@ class SignalPublisher:
     def allow_publish(self, token, strategy):
 
         token_ok = self._is_allowed_token(token)
-
         strategy_ok = self._is_allowed_strategy(strategy)
 
-        if token_ok and strategy_ok:
-            return True
-
-        return False
+        return token_ok and strategy_ok
 
 
 # ============================================================
@@ -122,12 +102,27 @@ class SignalEngine:
 
     def __init__(self, market_data, symbol, token, publisher=None):
 
+        # ----------------------------------------------------
+        # CORE REFERENCES
+        # ----------------------------------------------------
+
         self.market_data = market_data
         self.symbol = symbol
         self.token = token
 
-        # Publisher injected by main.py
+        # publisher injected by main.py
         self.publisher = publisher
+
+        # ----------------------------------------------------
+        # LOCAL SIGNAL HISTORY (for CandleChart)
+        # ----------------------------------------------------
+
+        self.signal_history = []
+        self._signal_history_limit = 2000
+
+        # ----------------------------------------------------
+        # STATE TRACKING
+        # ----------------------------------------------------
 
         self.last_candle_time = None
         self.last_signal_key = None
@@ -144,7 +139,7 @@ class SignalEngine:
 
 
     # --------------------------------------------------------
-    # BUILD DATAFRAME
+    # BUILD DATAFRAME FROM CANDLE BUFFER
     # --------------------------------------------------------
 
     def _build_dataframe(self, buffer):
@@ -199,7 +194,7 @@ class SignalEngine:
 
 
     # --------------------------------------------------------
-    # LOAD MARKET PROFILE
+    # LOAD PREVIOUS DAY MARKET PROFILE
     # --------------------------------------------------------
 
     def _load_market_profile(self, df):
@@ -298,7 +293,9 @@ class SignalEngine:
         if signal_key == self.last_signal_key:
             return
 
-        # Publisher filter
+        # ----------------------------------------------------
+        # Publisher Filter
+        # ----------------------------------------------------
 
         if self.publisher is not None:
 
@@ -306,6 +303,10 @@ class SignalEngine:
 
             if not allowed:
                 return
+
+        # ----------------------------------------------------
+        # SIGNAL OBJECT
+        # ----------------------------------------------------
 
         signal_dict = {
 
@@ -318,12 +319,27 @@ class SignalEngine:
 
         }
 
+        # ----------------------------------------------------
+        # GLOBAL SIGNAL BUS (TradeManager)
+        # ----------------------------------------------------
+
         with SIGNAL_LOCK:
 
             SIGNALS.append(signal_dict)
 
             if len(SIGNALS) > 300:
                 SIGNALS.pop(0)
+
+        # ----------------------------------------------------
+        # LOCAL SIGNAL HISTORY (CandleChart)
+        # ----------------------------------------------------
+
+        self.signal_history.append(signal_dict)
+
+        if len(self.signal_history) > self._signal_history_limit:
+            self.signal_history.pop(0)
+
+        # ----------------------------------------------------
 
         self.last_signal_key = signal_key
 
@@ -337,7 +353,6 @@ class SignalEngine:
     def _evaluate(self, df):
 
         close = df.iloc[-1]["close"]
-
         timestamp = int(df.iloc[-1]["timestamp"].timestamp())
 
         res = self._strategy_orb(close)
@@ -360,7 +375,7 @@ class SignalEngine:
 
 
     # --------------------------------------------------------
-    # MAIN LOOP
+    # MAIN SIGNAL LOOP
     # --------------------------------------------------------
 
     async def run(self):
@@ -370,12 +385,14 @@ class SignalEngine:
             buffer = self.market_data.get("1m")
 
             if buffer is None or len(buffer) == 0:
+
                 await asyncio.sleep(0.2)
                 continue
 
             candle_time = buffer.time[-1]
 
             if candle_time == self.last_candle_time:
+
                 await asyncio.sleep(0.2)
                 continue
 
@@ -384,19 +401,17 @@ class SignalEngine:
             df = self._build_dataframe(buffer)
 
             if df is None:
+
                 await asyncio.sleep(0.2)
                 continue
 
             self._update_orb(df)
-
             self._load_market_profile(df)
-
             self._evaluate(df)
 
             await asyncio.sleep(0.2)
 
 
 
-
             
-#_#_#_#_#_#_#_
+#_#_#_#_#_#_#_#_

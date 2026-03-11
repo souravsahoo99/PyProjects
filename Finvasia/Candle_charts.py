@@ -1,64 +1,18 @@
 # ============================================================
-# CANDLE CHART   v1.1
-# Lightweight TradingView Chart for Debug Visualization
+# CANDLE CHART
+# Lightweight Debug Chart (Production Version)
+# Base: Checkpoint 5.0
 # ============================================================
-
-"""
-candle_chart.py
-
-Purpose
--------
-Live candlestick visualization module for debugging and analysis.
-
-Architecture
-------------
-ShoonyaEngine
-      │
-      ▼
-MarketDataManager
-      │
-      ▼
-CandleBuffer
-      │
-      ▼
-Lightweight Charts
-
-Supported Timeframes
---------------------
-10s, 15s, 30s
-1m, 3m, 5m, 30m
-1D
-"""
 
 import asyncio
 import pandas as pd
-
 from lightweight_charts import Chart
-from market_data import MarketDataManager
+
+from instrument_node import InstrumentNode
 
 
 # ============================================================
-# SUPPORTED TIMEFRAMES
-# ============================================================
-
-SUPPORTED_TIMEFRAMES = {
-
-    "10s",
-    "15s",
-    "30s",
-
-    "1m",
-    "3m",
-    "5m",
-    "30m",
-
-    "1D"
-
-}
-
-
-# ============================================================
-# CANDLE CHART CLASS
+# CANDLE CHART
 # ============================================================
 
 class CandleChart:
@@ -68,118 +22,117 @@ class CandleChart:
         self.engine = engine
         self.registry = registry
 
+        self.node = None
+        self.buffer = None
+
         self.symbol = None
         self.exchange = None
         self.token = None
 
         self.timeframe = "1m"
 
-        self.market_data = None
         self.chart = None
 
-        self._running = False
-        self._task = None
+        self._last_candle_time = None
+        self._last_price = None
+
+        # refresh interval
+        self.refresh_interval = 0.36
 
 
     # ========================================================
-    # SYMBOL RESOLUTION
+    # RESOLVE SYMBOL
     # ========================================================
 
-    def _resolve_symbol(self, symbol, exchange):
+    def _resolve_symbol(self, symbol):
 
-        token = self.registry.get_token(exchange, symbol)
+        token = None
+        exchange = None
+
+        for (ex, sym), tk in self.registry.symbol_map.items():
+
+            if sym == symbol:
+                token = tk
+                exchange = ex
+                break
 
         if token is None:
-            raise Exception(f"[CHART] Symbol not found → {symbol}")
+            return None, None
 
-        self.symbol = symbol
-        self.exchange = exchange
-        self.token = token
-
-        print(f"[CHART] Resolved {symbol} → {exchange}|{token}")
+        return exchange, token
 
 
     # ========================================================
-    # WEBSOCKET SUBSCRIPTION CHECK
+    # FIND EXISTING NODE
     # ========================================================
 
-    def _ensure_subscription(self):
+    def _find_existing_node(self, exchange, token):
 
-        instrument = f"{self.exchange}|{self.token}"
+        key = f"{exchange}|{token}"
 
-        if instrument not in self.engine._subscribed_instruments:
+        md = self.engine.market_data_map.get(key)
 
-            print(f"[CHART] Subscribing {instrument}")
+        if md is None:
+            return None
 
-            self.engine.subscribe(self.exchange, self.token)
+        # create lightweight wrapper node reference
+        node = InstrumentNode(self.engine, exchange, "", token)
+        node.market_data = md
 
-        else:
-
-            print(f"[CHART] Using existing subscription {instrument}")
+        return node
 
 
     # ========================================================
-    # BUILD DATA PIPELINE
+    # CREATE TEMPORARY NODE
     # ========================================================
 
-    async def _build_pipeline(self):
+    async def _create_temp_node(self, exchange, symbol, token):
 
-        self.market_data = MarketDataManager(
-
+        node = InstrumentNode(
             self.engine,
-            self.exchange,
-            self.token
-
+            exchange,
+            symbol,
+            token
         )
 
-        await self.market_data.start()
+        await node.initialize()
 
-        print("[CHART] Market data pipeline started")
+        node.start()
+
+        return node
 
 
     # ========================================================
-    # CREATE CHART WINDOW
+    # ATTACH BUFFER
     # ========================================================
 
-    def _create_chart(self):
+    def _attach_buffer(self):
 
-        self.chart = Chart()
+        if self.node is None:
+            return
 
-        self.chart.layout(
-
-            background_color="#0f172a",
-            text_color="#e2e8f0"
-
-        )
-
-        self.chart.grid(
-
-            vert_enabled=True,
-            horz_enabled=True
-
-        )
-
-        self.chart.legend(True)
-
-        print("[CHART] Chart window created")
+        self.buffer = self.node.market_data.get(self.timeframe)
 
 
     # ========================================================
     # BUILD DATAFRAME
     # ========================================================
 
-    def _build_dataframe(self, buffer):
+    def _build_dataframe(self):
 
-        if buffer is None or len(buffer) == 0:
+        if self.buffer is None:
+            return None
+
+        if len(self.buffer) == 0:
             return None
 
         df = pd.DataFrame({
 
-            "time": list(buffer.time),
-            "open": list(buffer.open),
-            "high": list(buffer.high),
-            "low": list(buffer.low),
-            "close": list(buffer.close)
+            "time": list(self.buffer.time),
+            "open": list(self.buffer.open),
+            "high": list(self.buffer.high),
+            "low": list(self.buffer.low),
+            "close": list(self.buffer.close)
 
         })
 
@@ -189,116 +142,215 @@ class CandleChart:
 
 
     # ========================================================
-    # INITIAL LOAD
+    # LOAD INITIAL CANDLES
     # ========================================================
 
     def _load_initial_candles(self):
 
-        buffer = self.market_data.get(self.timeframe)
-
-        df = self._build_dataframe(buffer)
+        df = self._build_dataframe()
 
         if df is None:
-            print("[CHART] Waiting for candle data...")
             return
 
         self.chart.set(df)
 
-        print("[CHART] Initial candles loaded")
-
 
     # ========================================================
-    # LIVE UPDATE LOOP
+    # UPDATE CHART
     # ========================================================
 
-    async def _update_loop(self):
+    def _update_chart(self):
 
-        last_candle_time = None
+        if self.buffer is None:
+            return
 
-        self._running = True
+        if len(self.buffer) == 0:
+            return
 
-        while self._running:
+        candle_time = self.buffer.time[-1]
 
-            buffer = self.market_data.get(self.timeframe)
-
-            if buffer is None or len(buffer) == 0:
-
-                await asyncio.sleep(0.2)
-                continue
-
-            candle_time = buffer.time[-1]
-
-            if candle_time == last_candle_time:
-
-                await asyncio.sleep(0.1)
-                continue
-
-            last_candle_time = candle_time
+        # new candle
+        if candle_time != self._last_candle_time:
 
             candle = {
 
                 "time": pd.to_datetime(candle_time, unit="s"),
-                "open": buffer.open[-1],
-                "high": buffer.high[-1],
-                "low": buffer.low[-1],
-                "close": buffer.close[-1]
+                "open": self.buffer.open[-1],
+                "high": self.buffer.high[-1],
+                "low": self.buffer.low[-1],
+                "close": self.buffer.close[-1]
 
             }
 
             self.chart.update(candle)
 
-            await asyncio.sleep(0.05)
+            self._last_candle_time = candle_time
+
+
+    # ========================================================
+    # UPDATE PRICE MARKER
+    # ========================================================
+
+    def _update_price(self):
+
+        price = self.engine.get_best_ltp(
+            self.exchange,
+            self.token
+        )
+
+        if price is None:
+            return
+
+        if price == self._last_price:
+            return
+
+        try:
+
+            self.chart.price_line(price)
+
+        except Exception:
+
+            pass
+
+        self._last_price = price
+
+
+    # ========================================================
+    # PARSE LOCAL SIGNALS
+    # ========================================================
+
+    def _update_signals(self):
+
+        if self.node is None:
+            return
+
+        se = getattr(self.node, "signal_engine", None)
+
+        if se is None:
+            return
+
+        signals = getattr(se, "local_signals", None)
+
+        if signals is None:
+            return
+
+        if len(signals) == 0:
+            return
+
+        signal = signals[-1]
+
+        try:
+
+            marker = {
+
+                "time": pd.to_datetime(signal["signal_time"], unit="s"),
+                "position": "belowBar" if signal["side"] == "BUY" else "aboveBar",
+                "shape": "arrowUp" if signal["side"] == "BUY" else "arrowDown",
+                "color": "#26a69a" if signal["side"] == "BUY" else "#ef5350",
+                "text": signal["side"]
+
+            }
+
+            self.chart.marker(marker)
+
+        except Exception:
+
+            pass
+
+
+    # ========================================================
+    # SYMBOL SWITCH
+    # ========================================================
+
+    async def switch_symbol(self, symbol):
+
+        exchange, token = self._resolve_symbol(symbol)
+
+        if token is None:
+            return
+
+        node = self._find_existing_node(exchange, token)
+
+        if node is None:
+
+            node = await self._create_temp_node(
+                exchange,
+                symbol,
+                token
+            )
+
+        self.node = node
+        self.symbol = symbol
+        self.exchange = exchange
+        self.token = token
+
+        self._attach_buffer()
+
+        self._load_initial_candles()
+
+
+    # ========================================================
+    # TIMEFRAME SWITCH
+    # ========================================================
+
+    def switch_timeframe(self, timeframe):
+
+        self.timeframe = timeframe
+
+        self._attach_buffer()
+
+        self._load_initial_candles()
 
 
     # ========================================================
     # START CHART
     # ========================================================
 
-    async def start(self, symbol, exchange, timeframe="1m"):
-
-        if timeframe not in SUPPORTED_TIMEFRAMES:
-            raise Exception(f"[CHART] Unsupported timeframe → {timeframe}")
+    async def start(self, symbol, timeframe="1m"):
 
         self.timeframe = timeframe
 
-        print(f"[CHART] Starting chart → {symbol} | {timeframe}")
+        await self.switch_symbol(symbol)
 
-        self._resolve_symbol(symbol, exchange)
+        self.chart = Chart()
 
-        self._ensure_subscription()
+        self.chart.layout(
+            background="#131722",
+            text_color="#d1d4dc"
+        )
 
-        await self._build_pipeline()
-
-        self._create_chart()
-
-        await asyncio.sleep(2)
+        self.chart.candle_style(
+            up_color="#26a69a",
+            down_color="#ef5350"
+        )
 
         self._load_initial_candles()
 
-        loop = asyncio.get_running_loop()
-
-        self._task = loop.create_task(self._update_loop())
+        asyncio.create_task(self._run_loop())
 
 
     # ========================================================
-    # STOP CHART
+    # RENDER LOOP
     # ========================================================
 
-    async def stop(self):
+    async def _run_loop(self):
 
-        print("[CHART] Stopping chart")
+        while True:
 
-        self._running = False
+            try:
 
-        if self.market_data:
+                self._update_chart()
 
-            await self.market_data.stop()
+                self._update_price()
 
-        if self._task:
+                self._update_signals()
 
-            self._task.cancel()
+            except Exception:
+
+                pass
+
+            await asyncio.sleep(self.refresh_interval)
 
 
 
-
-#_
+#_#_
