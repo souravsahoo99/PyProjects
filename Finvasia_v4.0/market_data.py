@@ -1,6 +1,6 @@
 # ============================================================
 # MARKET DATA MANAGER
-# Production Grade (v2.0)
+# Production Grade
 # ============================================================
 
 import time
@@ -25,6 +25,7 @@ class CandleBuffer:
         self.volume = deque(maxlen=maxlen)
         self.time = deque(maxlen=maxlen)
 
+
     def append(self, o, h, l, c, v, t):
 
         self.open.append(o)
@@ -34,8 +35,10 @@ class CandleBuffer:
         self.volume.append(v)
         self.time.append(t)
 
+
     def __len__(self):
         return len(self.close)
+
 
     def last(self):
 
@@ -83,6 +86,7 @@ class TickCandleAggregator:
 
         self._lock = threading.Lock()
 
+
     def update_tick(self, price, timestamp=None):
 
         if timestamp is None:
@@ -92,6 +96,7 @@ class TickCandleAggregator:
 
             for tf, seconds in self.timeframes.items():
                 self._update_tf(tf, seconds, price, timestamp)
+
 
     def _update_tf(self, tf, seconds, price, ts):
 
@@ -105,6 +110,7 @@ class TickCandleAggregator:
             candle["high"] = price
             candle["low"] = price
             candle["close"] = price
+
             return
 
         if bucket == candle["start"]:
@@ -112,6 +118,7 @@ class TickCandleAggregator:
             candle["high"] = max(candle["high"], price)
             candle["low"] = min(candle["low"], price)
             candle["close"] = price
+
             return
 
         if bucket > candle["start"]:
@@ -131,6 +138,7 @@ class TickCandleAggregator:
             candle["low"] = price
             candle["close"] = price
 
+
     def get(self, tf):
         return self.buffers.get(tf)
 
@@ -148,36 +156,24 @@ class RestCandleAggregator:
         self.token = token
 
         self.buffers = {
-
             "1m": CandleBuffer(maxlen),
             "3m": CandleBuffer(maxlen),
-            "5m": CandleBuffer(maxlen),
-            "30m": CandleBuffer(maxlen),
-            "1D": CandleBuffer(maxlen)
-
+            "5m": CandleBuffer(maxlen)
         }
 
         self._last_timestamp = {
-
             "1m": None,
             "3m": None,
-            "5m": None,
-            "30m": None,
-            "1D": None
-
+            "5m": None
         }
 
         self._running = False
         self._tasks = []
 
-    # ---------------------------------------------------------
-    # STORE CANDLE
-    # ---------------------------------------------------------
 
     def _store_candle(self, tf, candle):
 
         ts = int(pd.to_datetime(candle["timestamp"]).timestamp())
-
         last_ts = self._last_timestamp[tf]
 
         if last_ts is not None and ts <= last_ts:
@@ -190,12 +186,8 @@ class RestCandleAggregator:
         v = float(candle["volume"])
 
         self.buffers[tf].append(o, h, l, c, v, ts)
-
         self._last_timestamp[tf] = ts
 
-    # ---------------------------------------------------------
-    # PROCESS RESPONSE
-    # ---------------------------------------------------------
 
     def _process_response(self, tf, df):
 
@@ -205,9 +197,6 @@ class RestCandleAggregator:
         for _, row in df.iterrows():
             self._store_candle(tf, row)
 
-    # ---------------------------------------------------------
-    # INTRADAY PIPELINE
-    # ---------------------------------------------------------
 
     async def _pipeline(self, tf, interval):
 
@@ -229,51 +218,12 @@ class RestCandleAggregator:
 
                 print(f"[REST PIPELINE ERROR] {tf}: {e}")
 
+            # align next fetch to candle boundary
             now = time.time()
             sleep_time = interval_seconds - (now % interval_seconds)
 
             await asyncio.sleep(sleep_time)
 
-    # ---------------------------------------------------------
-    # DAILY PIPELINE (Dedicated API)
-    # ---------------------------------------------------------
-
-    async def _daily_pipeline(self):
-
-        while self._running:
-
-            try:
-
-                data = self.engine.api.Get_Daily_Data(
-
-                    exchange=self.exchange,
-                    tradingsymbol=self.token
-
-                )
-
-                if data:
-
-                    for candle in data:
-
-                        ts = int(pd.to_datetime(candle["time"]).timestamp())
-
-                        o = float(candle["into"])
-                        h = float(candle["inth"])
-                        l = float(candle["intl"])
-                        c = float(candle["intc"])
-                        v = float(candle["intv"])
-
-                        self.buffers["1D"].append(o, h, l, c, v, ts)
-
-            except Exception as e:
-
-                print("[DAILY PIPELINE ERROR]", e)
-
-            await asyncio.sleep(3600)
-
-    # ---------------------------------------------------------
-    # START PIPELINES
-    # ---------------------------------------------------------
 
     async def start(self):
 
@@ -287,13 +237,7 @@ class RestCandleAggregator:
         self._tasks.append(loop.create_task(self._pipeline("1m", 1)))
         self._tasks.append(loop.create_task(self._pipeline("3m", 3)))
         self._tasks.append(loop.create_task(self._pipeline("5m", 5)))
-        self._tasks.append(loop.create_task(self._pipeline("30m", 30)))
 
-        self._tasks.append(loop.create_task(self._daily_pipeline()))
-
-    # ---------------------------------------------------------
-    # STOP PIPELINES
-    # ---------------------------------------------------------
 
     async def stop(self):
 
@@ -311,6 +255,7 @@ class RestCandleAggregator:
                 await t
             except asyncio.CancelledError:
                 pass
+
 
     def get(self, tf):
         return self.buffers.get(tf)
@@ -331,6 +276,7 @@ class MarketDataManager:
         # register router
         self.engine.market_data_map[f"{exchange}|{token}"] = self
 
+        # bounded queue
         self.tick_queue = asyncio.Queue(maxsize=2000)
 
         self.tick_agg = TickCandleAggregator()
@@ -343,6 +289,7 @@ class MarketDataManager:
 
         self._tick_task = None
         self._running = False
+
 
     async def _tick_worker(self):
 
@@ -363,6 +310,7 @@ class MarketDataManager:
             except asyncio.TimeoutError:
                 continue
 
+
     async def start(self):
 
         if self._running:
@@ -376,6 +324,7 @@ class MarketDataManager:
 
         self._tick_task = loop.create_task(self._tick_worker())
 
+
     async def stop(self):
 
         self._running = False
@@ -385,22 +334,22 @@ class MarketDataManager:
         if self._tick_task:
             self._tick_task.cancel()
 
+        # unregister router
         key = f"{self.exchange}|{self.token}"
 
         if key in self.engine.market_data_map:
             del self.engine.market_data_map[key]
+
 
     def get(self, timeframe):
 
         if timeframe in ["10s", "15s", "30s"]:
             return self.tick_agg.get(timeframe)
 
-        if timeframe in ["1m", "3m", "5m", "30m", "1D"]:
+        if timeframe in ["1m", "3m", "5m"]:
             return self.rest_agg.get(timeframe)
 
         return None
 
 
-
-
-#_#_#_#_#
+#_#_#_#

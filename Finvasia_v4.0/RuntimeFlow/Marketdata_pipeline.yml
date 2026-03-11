@@ -1,0 +1,29 @@
+┌─────────────────────────────────────────────┐
+│            MARKET DATA PIPELINE             │
+└─────────────────────────────────────────────┘
+
+#
+
+Shoonya WebSocket
+        │
+        ▼
+helper_wraper._on_quote()
+        │
+        ▼
+Tick Cache Update
+        │
+        ▼
+market_data_map Routing
+        │
+        ▼
+MarketDataManager.tick_queue
+        │
+        ▼
+Candle Builder
+        │
+        ▼
+Market Data Buffers
+
+Buffers Produced:
+    1m candles
+    OHLC arrays

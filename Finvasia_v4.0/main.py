@@ -1,38 +1,21 @@
 # ============================================================
-# MAIN TRADING ENGINE v6.5
-# Production Orchestrator
+# MAIN TRADING ENGINE
+# Production Orchestrator (Checkpoint 6.4)
 # ============================================================
-
-"""
-main.py
-
-Responsibilities
-----------------
-1. Initialize trading engine
-2. Load token registry
-3. Start WebSocket
-4. Build instrument nodes (signal pipelines)
-5. Build trade managers (execution layer)
-6. Inject signal publishers
-7. Launch async tasks
-8. Optional debug chart
-"""
 
 import asyncio
 import signal
 import time
-import sys
 
 from helper_wraper import ShoonyaEngine
 from token_registry import TokenRegistry
 from instrument_node import InstrumentNode
 from trade_manager import TradeManager
 from signal_engine import SignalPublisher
-from candle_chart import CandleChart
 
 
 # ============================================================
-# CONFIGURATION
+# STRATEGY CONFIGURATION
 # ============================================================
 
 STRATEGY_CONFIG = [
@@ -57,12 +40,9 @@ STRATEGY_CONFIG = [
 
 ]
 
-# optional debug chart
-DEBUG_CHART_SYMBOL = None
-
 
 # ============================================================
-# SPOT PRICE FETCH
+# SAFE SPOT FETCH
 # ============================================================
 
 def wait_for_spot_price(engine, exchange, token, timeout=10):
@@ -127,30 +107,27 @@ def discover_atm_option_pair(engine, registry, symbol, exchange):
 
 def build_signal_nodes(engine, registry):
 
-    nodes = []
+    node_configs = []
 
     for config in STRATEGY_CONFIG:
 
-        symbol = config["parent_symbol"]
-        exchange = config["parent_exchange"]
+        parent_symbol = config["parent_symbol"]
+        parent_exchange = config["parent_exchange"]
 
-        token = registry.get_token(exchange, symbol)
+        parent_token = registry.get_token(parent_exchange, parent_symbol)
 
-        if token is None:
+        if parent_token is None:
             continue
 
-        node = InstrumentNode(
+        node_configs.append({
 
-            engine,
-            exchange,
-            symbol,
-            token
+            "exchange": parent_exchange,
+            "symbol": parent_symbol,
+            "token": parent_token
 
-        )
+        })
 
-        nodes.append(node)
-
-    return nodes
+    return node_configs
 
 
 # ============================================================
@@ -159,7 +136,7 @@ def build_signal_nodes(engine, registry):
 
 def build_trade_managers(engine, registry):
 
-    managers = []
+    trade_managers = []
 
     for config in STRATEGY_CONFIG:
 
@@ -246,9 +223,9 @@ def build_trade_managers(engine, registry):
             tm.ce_token = ce_token
             tm.pe_token = pe_token
 
-        managers.append(tm)
+        trade_managers.append(tm)
 
-    return managers
+    return trade_managers
 
 
 # ============================================================
@@ -260,10 +237,6 @@ async def engine_bootloader():
     print("\n[ENGINE] Booting Trading Engine\n")
 
     engine = ShoonyaEngine()
-
-    # --------------------------------------------------------
-    # LOAD REGISTRY
-    # --------------------------------------------------------
 
     print("[ENGINE] Loading instrument registry")
 
@@ -288,14 +261,28 @@ async def engine_bootloader():
     # BUILD SIGNAL NODES
     # --------------------------------------------------------
 
-    nodes = build_signal_nodes(engine, registry)
+    node_configs = build_signal_nodes(engine, registry)
 
-    print(f"[ENGINE] Signal nodes discovered → {len(nodes)}")
+    print(f"[ENGINE] Signal nodes discovered → {len(node_configs)}")
 
-    for node in nodes:
+    nodes = []
+
+    for inst in node_configs:
+
+        node = InstrumentNode(
+
+            engine,
+            inst["exchange"],
+            inst["symbol"],
+            inst["token"]
+
+        )
 
         await node.initialize()
+
         node.start()
+
+        nodes.append(node)
 
     print("[ENGINE] Signal layer initialized\n")
 
@@ -332,25 +319,7 @@ async def engine_bootloader():
                 node.signal_engine.publisher = publisher
 
     # --------------------------------------------------------
-    # OPTIONAL DEBUG CHART
-    # --------------------------------------------------------
-
-    chart = None
-
-    if DEBUG_CHART_SYMBOL:
-
-        chart = CandleChart(engine, registry)
-
-        await chart.start(
-
-            DEBUG_CHART_SYMBOL,
-            "NSE",
-            "1m"
-
-        )
-
-    # --------------------------------------------------------
-    # COLLECT TASKS
+    # TASK COLLECTION
     # --------------------------------------------------------
 
     tasks = []
@@ -379,12 +348,6 @@ def shutdown():
 
 if __name__ == "__main__":
 
-    if len(sys.argv) > 1:
-
-        DEBUG_CHART_SYMBOL = sys.argv[1]
-
-        print(f"[DEBUG] Chart mode enabled → {DEBUG_CHART_SYMBOL}")
-
     restart_limit = 2
     restart_delay = 5
     restart_count = 0
@@ -399,6 +362,7 @@ if __name__ == "__main__":
         asyncio.set_event_loop(loop)
 
         for sig in (signal.SIGINT, signal.SIGTERM):
+
             loop.add_signal_handler(sig, shutdown)
 
         try:
@@ -440,4 +404,6 @@ if __name__ == "__main__":
 
 
 
-#_#_#_#_#_#_#_#_#
+
+
+#_#_#_#_#_#_#_#_#_

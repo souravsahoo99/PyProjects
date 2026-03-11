@@ -1,0 +1,97 @@
+ ┌─────────────────────────────────────────────┐
+│           TRADE EXECUTION PIPELINE          │
+└─────────────────────────────────────────────┘
+
+#
+
+TradeManager.run()
+        │
+        ▼
+Scan SIGNALS bus
+        │
+        ▼
+Find Parent Signal
+        │
+        ▼
+Route Child Token
+
+Example:
+
+Parent: NIFTY
+Side: BUY
+
+Child Token Selected:
+NIFTY CE
+
+        │
+        ▼
+Entry Condition Confirmed
+        │
+        ▼
+Place Order
+engine.api.place_order()
+
+        │
+        ▼
+Record Entry
+
+MongoDB Update
+Pointer File Update
+
+        │
+        ▼
+State = ACTIVE
+
+#
+
+┌─────────────────────────────────────────────┐
+│          TRADE MONITORING PIPELINE          │
+└─────────────────────────────────────────────┘
+
+TradeManager ACTIVE State
+        │
+        ▼
+get_ltp_live()
+        │
+        ▼
+PnL Calculation
+
+pnl = ltp - entry_price
+
+        │
+        ▼
+Update Metrics
+
+net_pnl
+max_pnl
+min_pnl
+
+#
+
+┌─────────────────────────────────────────────┐
+│               EXIT PIPELINE                 │
+└─────────────────────────────────────────────┘
+
+Check Conditions:
+
+Stop Loss
+Target
+Manual Exit
+
+        │
+        ▼
+Exit Order
+engine.api.place_order()
+
+        │
+        ▼
+Mongo Update
+        │
+        ▼
+strategy_state = EXITED
+        │
+        ▼
+retry_count++
+
+#
+

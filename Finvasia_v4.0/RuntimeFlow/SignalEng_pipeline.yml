@@ -1,0 +1,35 @@
+┌─────────────────────────────────────────────┐
+│           SIGNAL ENGINE PIPELINE            │
+└─────────────────────────────────────────────┘
+#
+MarketDataManager
+        │
+        ▼
+SignalEngine.run()
+        │
+        ▼
+Fetch Latest Candle
+        │
+        ▼
+Build DataFrame
+        │
+        ▼
+Indicator Layer
+
+    ORB High / Low
+    VWAP Bands
+    Market Profile
+
+        │
+        ▼
+Strategy Evaluation
+
+
+
+ORB
+VWAP_DEV
+MP_BREAK
+
+        │
+        ▼
+Signal Decision
