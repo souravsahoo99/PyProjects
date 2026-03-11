@@ -1,6 +1,6 @@
 # ============================================================
-# CANDLE CHART   v2.2
-# Production Debug Chart (Smooth Updates)
+# CANDLE CHART v2.3
+# Production Debug Chart (Engine Compatible)
 # ============================================================
 
 import asyncio
@@ -84,7 +84,7 @@ class CandleChart:
         self.token = token
 
         # ----------------------------------------------------
-        # ATTACH EXISTING DATA PIPELINE
+        # ATTACH EXISTING MARKET DATA PIPELINE
         # ----------------------------------------------------
 
         for md in self.engine.market_data_map.values():
@@ -113,12 +113,15 @@ class CandleChart:
             await self.market_data.start()
 
         # ----------------------------------------------------
-        # ATTACH SIGNAL ENGINE
+        # ATTACH SIGNAL ENGINE FROM INSTRUMENT NODES
         # ----------------------------------------------------
 
-        if hasattr(self.market_data, "signal_engine"):
+        for node in getattr(self.engine, "instrument_nodes", []):
 
-            self.signal_engine = self.market_data.signal_engine
+            if node.token == token:
+
+                self.signal_engine = node.signal_engine
+                break
 
         # ----------------------------------------------------
         # CREATE CHART WINDOW
@@ -181,6 +184,9 @@ class CandleChart:
 
     def _draw_candles(self):
 
+        if self.market_data is None:
+            return
+
         buffer = self.market_data.get(self.timeframe)
 
         if buffer is None or len(buffer) == 0:
@@ -191,23 +197,14 @@ class CandleChart:
         if df is None:
             return
 
-        # ----------------------------------------------------
-        # INITIAL LOAD
-        # ----------------------------------------------------
-
         if not self.chart_initialized:
 
             self.chart.set(df)
 
             self.chart_initialized = True
-
             self.last_candle_time = buffer.time[-1]
 
             return
-
-        # ----------------------------------------------------
-        # UPDATE LAST CANDLE
-        # ----------------------------------------------------
 
         candle_time = buffer.time[-1]
 
@@ -249,6 +246,9 @@ class CandleChart:
 
     def _draw_vwap(self):
 
+        if self.market_data is None:
+            return
+
         buffer = self.market_data.get(self.timeframe)
 
         if buffer is None or len(buffer) < 20:
@@ -260,7 +260,6 @@ class CandleChart:
             return
 
         vwap = VWAPBands(df)
-
         bands = vwap.calculate()
 
         if bands is None:
@@ -333,7 +332,6 @@ class CandleChart:
         while self.last_signal_index < len(signals):
 
             signal = signals[self.last_signal_index]
-
             self.last_signal_index += 1
 
             ts = pd.to_datetime(signal["signal_time"], unit="s")
@@ -376,15 +374,10 @@ class CandleChart:
             try:
 
                 self._draw_candles()
-
                 self._draw_price()
-
                 self._draw_vwap()
-
                 self._draw_orb()
-
                 self._draw_profile()
-
                 self._draw_signals()
 
             except Exception as e:
@@ -397,4 +390,4 @@ class CandleChart:
 
 
 
-#_#_#_#_
+#_#_#_#_#_
