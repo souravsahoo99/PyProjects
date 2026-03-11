@@ -1,6 +1,7 @@
 # ============================================================
-# CANDLE CHART v2.3
-# Production Debug Chart (Engine Compatible)
+# CANDLE CHART v3.0
+# Dual Pane Debug Chart (Parent + Child)
+# Production Compatible
 # ============================================================
 
 import asyncio
@@ -11,17 +12,14 @@ from indicator_utils import VWAPBands
 
 
 # ============================================================
-# CANDLE CHART
+# INTERNAL PANE CONTROLLER
 # ============================================================
 
-class CandleChart:
+class _ChartPane:
 
-    def __init__(self, engine, registry):
+    def __init__(self, chart, engine, registry):
 
-        # ----------------------------------------------------
-        # CORE REFERENCES
-        # ----------------------------------------------------
-
+        self.chart = chart
         self.engine = engine
         self.registry = registry
 
@@ -33,22 +31,11 @@ class CandleChart:
         self.market_data = None
         self.signal_engine = None
 
-        self.chart = None
-
-        # ----------------------------------------------------
-        # STATE TRACKING
-        # ----------------------------------------------------
-
         self.chart_initialized = False
         self.last_candle_time = None
         self.last_signal_index = 0
 
-        self.refresh_interval = 0.36
-
-        # ----------------------------------------------------
-        # SERIES REFERENCES
-        # ----------------------------------------------------
-
+        # series references
         self.price_line = None
 
         self.vwap_line = None
@@ -62,13 +49,11 @@ class CandleChart:
         self.val_line = None
 
 
-    # ========================================================
-    # START CHART
-    # ========================================================
+    # --------------------------------------------------------
+    # INITIALIZE PANE
+    # --------------------------------------------------------
 
-    async def start(self, symbol, exchange, timeframe):
-
-        print(f"[CHART] Starting chart for {symbol}")
+    async def initialize(self, symbol, exchange, timeframe):
 
         self.symbol = symbol
         self.exchange = exchange
@@ -77,16 +62,12 @@ class CandleChart:
         token = self.registry.get_token(exchange, symbol)
 
         if token is None:
-
-            print("[CHART] Symbol not found in registry")
+            print("[CHART] Symbol not found:", symbol)
             return
 
         self.token = token
 
-        # ----------------------------------------------------
-        # ATTACH EXISTING MARKET DATA PIPELINE
-        # ----------------------------------------------------
-
+        # attach market data
         for md in self.engine.market_data_map.values():
 
             if md.token == token:
@@ -94,15 +75,12 @@ class CandleChart:
                 self.market_data = md
                 break
 
-        # ----------------------------------------------------
-        # CREATE PIPELINE IF NOT FOUND
-        # ----------------------------------------------------
-
+        # create pipeline if not existing
         if self.market_data is None:
 
             from market_data import MarketDataManager
 
-            print("[CHART] Creating standalone market pipeline")
+            print("[CHART] Creating pipeline for", symbol)
 
             self.market_data = MarketDataManager(
                 self.engine,
@@ -112,10 +90,7 @@ class CandleChart:
 
             await self.market_data.start()
 
-        # ----------------------------------------------------
-        # ATTACH SIGNAL ENGINE FROM INSTRUMENT NODES
-        # ----------------------------------------------------
-
+        # attach signal engine
         for node in getattr(self.engine, "instrument_nodes", []):
 
             if node.token == token:
@@ -123,18 +98,7 @@ class CandleChart:
                 self.signal_engine = node.signal_engine
                 break
 
-        # ----------------------------------------------------
-        # CREATE CHART WINDOW
-        # ----------------------------------------------------
-
-        self.chart = Chart()
-
-        self.chart.legend(True)
-
-        # ----------------------------------------------------
-        # CREATE LINES
-        # ----------------------------------------------------
-
+        # create lines
         self.price_line = self.chart.create_line("Price")
 
         self.vwap_line = self.chart.create_line("VWAP")
@@ -147,16 +111,10 @@ class CandleChart:
         self.vah_line = self.chart.create_line("VAH")
         self.val_line = self.chart.create_line("VAL")
 
-        # ----------------------------------------------------
-        # START UPDATE LOOP
-        # ----------------------------------------------------
 
-        asyncio.create_task(self._update_loop())
-
-
-    # ========================================================
-    # BUILD DATAFRAME
-    # ========================================================
+    # --------------------------------------------------------
+    # DATAFRAME BUILDER
+    # --------------------------------------------------------
 
     def _build_dataframe(self, buffer):
 
@@ -178,11 +136,11 @@ class CandleChart:
         return df
 
 
-    # ========================================================
-    # DRAW / UPDATE CANDLES
-    # ========================================================
+    # --------------------------------------------------------
+    # DRAW CANDLES
+    # --------------------------------------------------------
 
-    def _draw_candles(self):
+    def draw_candles(self):
 
         if self.market_data is None:
             return
@@ -226,11 +184,11 @@ class CandleChart:
         })
 
 
-    # ========================================================
-    # LIVE PRICE LINE
-    # ========================================================
+    # --------------------------------------------------------
+    # LIVE PRICE
+    # --------------------------------------------------------
 
-    def _draw_price(self):
+    def draw_price(self):
 
         price = self.engine.get_ltp_live(self.exchange, self.token)
 
@@ -240,14 +198,11 @@ class CandleChart:
         self.price_line.update(price)
 
 
-    # ========================================================
+    # --------------------------------------------------------
     # VWAP BANDS
-    # ========================================================
+    # --------------------------------------------------------
 
-    def _draw_vwap(self):
-
-        if self.market_data is None:
-            return
+    def draw_vwap(self):
 
         buffer = self.market_data.get(self.timeframe)
 
@@ -259,67 +214,62 @@ class CandleChart:
         if df is None:
             return
 
-        vwap = VWAPBands(df)
-        bands = vwap.calculate()
+        bands = VWAPBands(df).calculate()
 
         if bands is None:
             return
 
-        vwap_val = bands.get("vwap")
-        upper = bands.get("upper1")
-        lower = bands.get("lower1")
+        if bands.get("vwap") is not None:
+            self.vwap_line.update(bands["vwap"])
 
-        if vwap_val is not None:
-            self.vwap_line.update(vwap_val)
+        if bands.get("upper1") is not None:
+            self.vwap_upper.update(bands["upper1"])
 
-        if upper is not None:
-            self.vwap_upper.update(upper)
-
-        if lower is not None:
-            self.vwap_lower.update(lower)
+        if bands.get("lower1") is not None:
+            self.vwap_lower.update(bands["lower1"])
 
 
-    # ========================================================
+    # --------------------------------------------------------
     # ORB LEVELS
-    # ========================================================
+    # --------------------------------------------------------
 
-    def _draw_orb(self):
+    def draw_orb(self):
 
         if self.signal_engine is None:
             return
 
-        orb_high, orb_low = self.signal_engine.get_orb_levels()
+        high, low = self.signal_engine.get_orb_levels()
 
-        if orb_high is not None:
-            self.orb_high_line.update(orb_high)
+        if high:
+            self.orb_high_line.update(high)
 
-        if orb_low is not None:
-            self.orb_low_line.update(orb_low)
+        if low:
+            self.orb_low_line.update(low)
 
 
-    # ========================================================
-    # MARKET PROFILE LEVELS
-    # ========================================================
+    # --------------------------------------------------------
+    # MARKET PROFILE
+    # --------------------------------------------------------
 
-    def _draw_profile(self):
+    def draw_profile(self):
 
         if self.signal_engine is None:
             return
 
         vah, val = self.signal_engine.get_profile_levels()
 
-        if vah is not None:
+        if vah:
             self.vah_line.update(vah)
 
-        if val is not None:
+        if val:
             self.val_line.update(val)
 
 
-    # ========================================================
+    # --------------------------------------------------------
     # SIGNAL MARKERS
-    # ========================================================
+    # --------------------------------------------------------
 
-    def _draw_signals(self):
+    def draw_signals(self):
 
         if self.signal_engine is None:
             return
@@ -336,36 +286,77 @@ class CandleChart:
 
             ts = pd.to_datetime(signal["signal_time"], unit="s")
 
-            side = signal["side"]
-
-            if side == "BUY":
+            if signal["side"] == "BUY":
 
                 self.chart.marker(
-
                     time=ts,
                     position="belowBar",
                     shape="arrowUp",
                     color="green",
                     text="BUY"
-
                 )
 
-            elif side == "SELL":
+            else:
 
                 self.chart.marker(
-
                     time=ts,
                     position="aboveBar",
                     shape="arrowDown",
                     color="red",
                     text="SELL"
-
                 )
 
 
-    # ========================================================
+# ============================================================
+# MAIN CANDLE CHART
+# ============================================================
+
+class CandleChart:
+
+    def __init__(self, engine, registry):
+
+        self.engine = engine
+        self.registry = registry
+
+        self.chart = None
+
+        self.parent_pane = None
+        self.child_pane = None
+
+        self.refresh_interval = 0.36
+
+
+    # --------------------------------------------------------
+    # START
+    # --------------------------------------------------------
+
+    async def start(self, parent_symbol, exchange, timeframe="1m"):
+
+        print("[CHART] Starting dual pane chart")
+
+        self.chart = Chart()
+        self.chart.legend(True)
+
+        # create panes
+        parent_chart = self.chart.create_subchart(height=0.4)
+        child_chart = self.chart.create_subchart(height=0.6)
+
+        self.parent_pane = _ChartPane(parent_chart, self.engine, self.registry)
+        self.child_pane = _ChartPane(child_chart, self.engine, self.registry)
+
+        await self.parent_pane.initialize(parent_symbol, exchange, "1m")
+
+        # child defaults to CE
+        ce_symbol = parent_symbol + "CE"
+
+        await self.child_pane.initialize(ce_symbol, "NFO", "15s")
+
+        asyncio.create_task(self._update_loop())
+
+
+    # --------------------------------------------------------
     # UPDATE LOOP
-    # ========================================================
+    # --------------------------------------------------------
 
     async def _update_loop(self):
 
@@ -373,12 +364,17 @@ class CandleChart:
 
             try:
 
-                self._draw_candles()
-                self._draw_price()
-                self._draw_vwap()
-                self._draw_orb()
-                self._draw_profile()
-                self._draw_signals()
+                for pane in (self.parent_pane, self.child_pane):
+
+                    if pane is None:
+                        continue
+
+                    pane.draw_candles()
+                    pane.draw_price()
+                    pane.draw_vwap()
+                    pane.draw_orb()
+                    pane.draw_profile()
+                    pane.draw_signals()
 
             except Exception as e:
 
@@ -390,4 +386,4 @@ class CandleChart:
 
 
 
-#_#_#_#_#_
+#_#_#_#_#_#_
