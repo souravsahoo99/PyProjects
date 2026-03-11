@@ -1,146 +1,118 @@
 # ============================================================
-# SIGNAL ENGINE
-# Production Grade
+# CANDLE CHART
+# Lightweight Debug Chart
 # ============================================================
 
 import asyncio
 import pandas as pd
-import threading
-
-from indicator_utils import VWAPBands, MarketProfile
-from strategy_utils import breakout, breakdown
+from lightweight_charts import Chart
 
 
 # ============================================================
-# GLOBAL SIGNAL BUS
-# Used by TradeManager
+# CANDLE CHART
 # ============================================================
 
-SIGNALS = []
-SIGNAL_LOCK = threading.Lock()
+class CandleChart:
 
+    def __init__(self, engine, registry):
 
-# ============================================================
-# SIGNAL PUBLISHER
-# Controls which signals are allowed onto the global bus
-# ============================================================
+        self.engine = engine
+        self.registry = registry
 
-class SignalPublisher:
+        self.symbol = None
+        self.exchange = None
+        self.token = None
+        self.timeframe = None
 
-    def __init__(
-        self,
-        parent_token=None,
-        child_token=None,
-        ce_token=None,
-        pe_token=None,
-        product_type=None,
-        allowed_strategies=None
-    ):
+        self.market_data = None
+        self.signal_engine = None
 
-        self.parent_token = parent_token
-        self.child_token = child_token
-        self.ce_token = ce_token
-        self.pe_token = pe_token
-        self.product_type = product_type
-        self.allowed_strategies = allowed_strategies
-
-
-    # --------------------------------------------------------
-    # TOKEN VALIDATION
-    # --------------------------------------------------------
-
-    def _is_allowed_token(self, token):
-
-        if self.product_type == "OPT":
-
-            if token in [self.parent_token, self.ce_token, self.pe_token]:
-                return True
-            return False
-
-        elif self.product_type == "FUT":
-
-            if token in [self.parent_token, self.child_token]:
-                return True
-            return False
-
-        elif self.product_type in ["SPOT", "STOCK"]:
-
-            return token == self.parent_token
-
-        return True
-
-
-    # --------------------------------------------------------
-    # STRATEGY VALIDATION
-    # --------------------------------------------------------
-
-    def _is_allowed_strategy(self, strategy):
-
-        if self.allowed_strategies is None:
-            return True
-
-        return strategy in self.allowed_strategies
-
-
-    # --------------------------------------------------------
-    # PUBLICATION DECISION
-    # --------------------------------------------------------
-
-    def allow_publish(self, token, strategy):
-
-        token_ok = self._is_allowed_token(token)
-        strategy_ok = self._is_allowed_strategy(strategy)
-
-        return token_ok and strategy_ok
-
-
-# ============================================================
-# SIGNAL ENGINE
-# ============================================================
-
-class SignalEngine:
-
-    def __init__(self, market_data, symbol, token, publisher=None):
-
-        # ----------------------------------------------------
-        # CORE REFERENCES
-        # ----------------------------------------------------
-
-        self.market_data = market_data
-        self.symbol = symbol
-        self.token = token
-
-        # publisher injected by main.py
-        self.publisher = publisher
-
-        # ----------------------------------------------------
-        # LOCAL SIGNAL HISTORY (for CandleChart)
-        # ----------------------------------------------------
-
-        self.signal_history = []
-        self._signal_history_limit = 2000
-
-        # ----------------------------------------------------
-        # STATE TRACKING
-        # ----------------------------------------------------
+        self.chart = None
 
         self.last_candle_time = None
-        self.last_signal_key = None
+        self.last_signal_index = 0
 
-        # ORB
-        self.orb_high = None
-        self.orb_low = None
-        self.orb_ready = False
-
-        # Market Profile
-        self.vah = None
-        self.val = None
-        self.profile_ready = False
+        self.refresh_interval = 0.36
 
 
-    # --------------------------------------------------------
-    # BUILD DATAFRAME FROM CANDLE BUFFER
-    # --------------------------------------------------------
+    # ========================================================
+    # START CHART
+    # ========================================================
+
+    async def start(self, symbol, exchange, timeframe):
+
+        print(f"[CHART] Starting chart for {symbol}")
+
+        self.symbol = symbol
+        self.exchange = exchange
+        self.timeframe = timeframe
+
+        token = self.registry.get_token(exchange, symbol)
+
+        if token is None:
+
+            print("[CHART] Symbol not found in registry")
+            return
+
+        self.token = token
+
+        # ----------------------------------------------------
+        # Find existing node (if charted symbol already used)
+        # ----------------------------------------------------
+
+        self.market_data = None
+        self.signal_engine = None
+
+        for md in self.engine.market_data_map.values():
+
+            if md.token == token:
+
+                self.market_data = md
+                break
+
+        # ----------------------------------------------------
+        # If node doesn't exist → create temporary pipeline
+        # ----------------------------------------------------
+
+        if self.market_data is None:
+
+            from market_data import MarketDataManager
+
+            print("[CHART] Creating standalone market data pipeline")
+
+            self.market_data = MarketDataManager(
+                self.engine,
+                exchange,
+                token
+            )
+
+            await self.market_data.start()
+
+        # ----------------------------------------------------
+        # Locate signal engine
+        # ----------------------------------------------------
+
+        if hasattr(self.market_data, "signal_engine"):
+            self.signal_engine = self.market_data.signal_engine
+
+        # ----------------------------------------------------
+        # Create chart window
+        # ----------------------------------------------------
+
+        self.chart = Chart()
+
+        self.chart.legend(True)
+
+        # ----------------------------------------------------
+        # Start update loop
+        # ----------------------------------------------------
+
+        asyncio.create_task(self._update_loop())
+
+
+    # ========================================================
+    # BUILD DATAFRAME
+    # ========================================================
 
     def _build_dataframe(self, buffer):
 
@@ -149,269 +121,361 @@ class SignalEngine:
 
         df = pd.DataFrame({
 
-            "timestamp": list(buffer.time),
+            "time": list(buffer.time),
             "open": list(buffer.open),
             "high": list(buffer.high),
             "low": list(buffer.low),
-            "close": list(buffer.close),
-            "volume": list(buffer.volume)
+            "close": list(buffer.close)
 
         })
 
-        df["timestamp"] = pd.to_datetime(df["timestamp"], unit="s")
-
-        df = df.dropna()
-
-        if len(df) == 0:
-            return None
+        df["time"] = pd.to_datetime(df["time"], unit="s")
 
         return df
 
 
-    # --------------------------------------------------------
-    # ORB UPDATE
-    # --------------------------------------------------------
+    # ========================================================
+    # DRAW CANDLES
+    # ========================================================
 
-    def _update_orb(self, df):
+    def _draw_candles(self):
 
-        now = df.iloc[-1]["timestamp"]
+        buffer = self.market_data.get(self.timeframe)
 
-        start = now.replace(hour=9, minute=15, second=0)
-        end = now.replace(hour=9, minute=30, second=0)
-
-        if now <= end:
-
-            session_df = df[(df["timestamp"] >= start) & (df["timestamp"] <= end)]
-
-            if len(session_df) > 0:
-
-                self.orb_high = session_df["high"].max()
-                self.orb_low = session_df["low"].min()
-
-        if now > end and self.orb_high is not None:
-
-            self.orb_ready = True
-
-
-    # --------------------------------------------------------
-    # LOAD PREVIOUS DAY MARKET PROFILE
-    # --------------------------------------------------------
-
-    def _load_market_profile(self, df):
-
-        if self.profile_ready:
+        if buffer is None or len(buffer) == 0:
             return
 
-        profile = MarketProfile(df)
+        candle_time = buffer.time[-1]
 
-        res = profile.calculate()
-
-        if res is None:
+        if candle_time == self.last_candle_time:
             return
 
-        value_area = res["value_area"]
+        self.last_candle_time = candle_time
 
-        if len(value_area) == 0:
+        df = self._build_dataframe(buffer)
+
+        if df is None:
             return
 
-        self.vah = max(value_area)
-        self.val = min(value_area)
-
-        self.profile_ready = True
+        self.chart.set(df)
 
 
-    # --------------------------------------------------------
-    # STRATEGY 1 — ORB
-    # --------------------------------------------------------
+    # ========================================================
+    # DRAW SIGNAL MARKERS
+    # ========================================================
 
-    def _strategy_orb(self, close):
+    def _draw_signals(self):
 
-        if not self.orb_ready:
-            return None
-
-        if breakout(close, self.orb_high):
-            return "BUY"
-
-        if breakdown(close, self.orb_low):
-            return "SELL"
-
-        return None
-
-
-    # --------------------------------------------------------
-    # STRATEGY 2 — VWAP DEVIATION
-    # --------------------------------------------------------
-
-    def _strategy_vwap(self, df):
-
-        vwap = VWAPBands(df)
-
-        bands = vwap.calculate()
-
-        if bands is None:
-            return None
-
-        close = df.iloc[-1]["close"]
-
-        if close > bands["upper1"]:
-            return "BUY"
-
-        if close < bands["lower1"]:
-            return "SELL"
-
-        return None
-
-
-    # --------------------------------------------------------
-    # STRATEGY 3 — MARKET PROFILE
-    # --------------------------------------------------------
-
-    def _strategy_market_profile(self, close):
-
-        if not self.profile_ready:
-            return None
-
-        if breakout(close, self.vah):
-            return "BUY"
-
-        if breakdown(close, self.val):
-            return "SELL"
-
-        return None
-
-
-    # --------------------------------------------------------
-    # PUBLISH SIGNAL
-    # --------------------------------------------------------
-
-    def _publish_signal(self, side, price, timestamp, strategy):
-
-        global SIGNALS
-
-        signal_key = f"{self.symbol}_{strategy}_{timestamp}"
-
-        if signal_key == self.last_signal_key:
+        if self.signal_engine is None:
             return
 
-        # ----------------------------------------------------
-        # Publisher Filter
-        # ----------------------------------------------------
+        signals = self.signal_engine.signal_history
 
-        if self.publisher is not None:
-
-            allowed = self.publisher.allow_publish(self.token, strategy)
-
-            if not allowed:
-                return
-
-        # ----------------------------------------------------
-        # SIGNAL OBJECT
-        # ----------------------------------------------------
-
-        signal_dict = {
-
-            "symbol": self.symbol,
-            "token": self.token,
-            "side": side,
-            "entry_price": price,
-            "signal_time": timestamp,
-            "strategy": strategy
-
-        }
-
-        # ----------------------------------------------------
-        # GLOBAL SIGNAL BUS (TradeManager)
-        # ----------------------------------------------------
-
-        with SIGNAL_LOCK:
-
-            SIGNALS.append(signal_dict)
-
-            if len(SIGNALS) > 300:
-                SIGNALS.pop(0)
-
-        # ----------------------------------------------------
-        # LOCAL SIGNAL HISTORY (CandleChart)
-        # ----------------------------------------------------
-
-        self.signal_history.append(signal_dict)
-
-        if len(self.signal_history) > self._signal_history_limit:
-            self.signal_history.pop(0)
-
-        # ----------------------------------------------------
-
-        self.last_signal_key = signal_key
-
-        print(f"[SIGNAL] {self.symbol} → {side} | {strategy} | {price}")
-
-
-    # --------------------------------------------------------
-    # STRATEGY EVALUATION
-    # --------------------------------------------------------
-
-    def _evaluate(self, df):
-
-        close = df.iloc[-1]["close"]
-        timestamp = int(df.iloc[-1]["timestamp"].timestamp())
-
-        res = self._strategy_orb(close)
-
-        if res:
-            self._publish_signal(res, close, timestamp, "ORB")
+        if signals is None:
             return
 
-        res = self._strategy_vwap(df)
+        while self.last_signal_index < len(signals):
 
-        if res:
-            self._publish_signal(res, close, timestamp, "VWAP_DEV")
-            return
+            signal = signals[self.last_signal_index]
 
-        res = self._strategy_market_profile(close)
+            self.last_signal_index += 1
 
-        if res:
-            self._publish_signal(res, close, timestamp, "MP_BREAK")
-            return
+            ts = pd.to_datetime(signal["signal_time"], unit="s")
+
+            side = signal["side"]
+
+            price = signal["entry_price"]
+
+            if side == "BUY":
+
+                self.chart.marker(
+
+                    time=ts,
+                    position="belowBar",
+                    shape="arrowUp",
+                    color="green",
+                    text="BUY"
+
+                )
+
+            elif side == "SELL":
+
+                self.chart.marker(
+
+                    time=ts,
+                    position="aboveBar",
+                    shape="arrowDown",
+                    color="red",
+                    text="SELL"
+
+                )
 
 
-    # --------------------------------------------------------
-    # MAIN SIGNAL LOOP
-    # --------------------------------------------------------
+    # ========================================================
+    # UPDATE LOOP
+    # ========================================================
 
-    async def run(self):
+    async def _update_loop(self):
 
         while True:
 
-            buffer = self.market_data.get("1m")
+            try:
 
-            if buffer is None or len(buffer) == 0:
+                self._draw_candles()
 
-                await asyncio.sleep(0.2)
-                continue
+                self._draw_signals()
 
-            candle_time = buffer.time[-1]
+            except Exception as e:
 
-            if candle_time == self.last_candle_time:
+                print("[CHART ERROR]", e)
 
-                await asyncio.sleep(0.2)
-                continue
+            await asyncio.sleep(self.refresh_interval)
 
-            self.last_candle_time = candle_time
 
-            df = self._build_dataframe(buffer)
 
-            if df is None:
 
-                await asyncio.sleep(0.2)
-                continue
 
-            self._update_orb(df)
-            self._load_market_profile(df)
-            self._evaluate(df)
 
-            await asyncio.sleep(0.2)
+
+
+
+
+
+
+# ============================================================
+# CANDLE CHART
+# Lightweight Debug Chart
+# ============================================================
+
+import asyncio
+import pandas as pd
+from lightweight_charts import Chart
+
+
+# ============================================================
+# CANDLE CHART
+# ============================================================
+
+class CandleChart:
+
+    def __init__(self, engine, registry):
+
+        self.engine = engine
+        self.registry = registry
+
+        self.symbol = None
+        self.exchange = None
+        self.token = None
+        self.timeframe = None
+
+        self.market_data = None
+        self.signal_engine = None
+
+        self.chart = None
+
+        self.last_candle_time = None
+        self.last_signal_index = 0
+
+        self.refresh_interval = 0.36
+
+
+    # ========================================================
+    # START CHART
+    # ========================================================
+
+    async def start(self, symbol, exchange, timeframe):
+
+        print(f"[CHART] Starting chart for {symbol}")
+
+        self.symbol = symbol
+        self.exchange = exchange
+        self.timeframe = timeframe
+
+        token = self.registry.get_token(exchange, symbol)
+
+        if token is None:
+
+            print("[CHART] Symbol not found in registry")
+            return
+
+        self.token = token
+
+        # ----------------------------------------------------
+        # Find existing node (if charted symbol already used)
+        # ----------------------------------------------------
+
+        self.market_data = None
+        self.signal_engine = None
+
+        for md in self.engine.market_data_map.values():
+
+            if md.token == token:
+
+                self.market_data = md
+                break
+
+        # ----------------------------------------------------
+        # If node doesn't exist → create temporary pipeline
+        # ----------------------------------------------------
+
+        if self.market_data is None:
+
+            from market_data import MarketDataManager
+
+            print("[CHART] Creating standalone market data pipeline")
+
+            self.market_data = MarketDataManager(
+                self.engine,
+                exchange,
+                token
+            )
+
+            await self.market_data.start()
+
+        # ----------------------------------------------------
+        # Locate signal engine
+        # ----------------------------------------------------
+
+        if hasattr(self.market_data, "signal_engine"):
+            self.signal_engine = self.market_data.signal_engine
+
+        # ----------------------------------------------------
+        # Create chart window
+        # ----------------------------------------------------
+
+        self.chart = Chart()
+
+        self.chart.legend(True)
+
+        # ----------------------------------------------------
+        # Start update loop
+        # ----------------------------------------------------
+
+        asyncio.create_task(self._update_loop())
+
+
+    # ========================================================
+    # BUILD DATAFRAME
+    # ========================================================
+
+    def _build_dataframe(self, buffer):
+
+        if buffer is None or len(buffer) == 0:
+            return None
+
+        df = pd.DataFrame({
+
+            "time": list(buffer.time),
+            "open": list(buffer.open),
+            "high": list(buffer.high),
+            "low": list(buffer.low),
+            "close": list(buffer.close)
+
+        })
+
+        df["time"] = pd.to_datetime(df["time"], unit="s")
+
+        return df
+
+
+    # ========================================================
+    # DRAW CANDLES
+    # ========================================================
+
+    def _draw_candles(self):
+
+        buffer = self.market_data.get(self.timeframe)
+
+        if buffer is None or len(buffer) == 0:
+            return
+
+        candle_time = buffer.time[-1]
+
+        if candle_time == self.last_candle_time:
+            return
+
+        self.last_candle_time = candle_time
+
+        df = self._build_dataframe(buffer)
+
+        if df is None:
+            return
+
+        self.chart.set(df)
+
+
+    # ========================================================
+    # DRAW SIGNAL MARKERS
+    # ========================================================
+
+    def _draw_signals(self):
+
+        if self.signal_engine is None:
+            return
+
+        signals = self.signal_engine.signal_history
+
+        if signals is None:
+            return
+
+        while self.last_signal_index < len(signals):
+
+            signal = signals[self.last_signal_index]
+
+            self.last_signal_index += 1
+
+            ts = pd.to_datetime(signal["signal_time"], unit="s")
+
+            side = signal["side"]
+
+            price = signal["entry_price"]
+
+            if side == "BUY":
+
+                self.chart.marker(
+
+                    time=ts,
+                    position="belowBar",
+                    shape="arrowUp",
+                    color="green",
+                    text="BUY"
+
+                )
+
+            elif side == "SELL":
+
+                self.chart.marker(
+
+                    time=ts,
+                    position="aboveBar",
+                    shape="arrowDown",
+                    color="red",
+                    text="SELL"
+
+                )
+
+
+    # ========================================================
+    # UPDATE LOOP
+    # ========================================================
+
+    async def _update_loop(self):
+
+        while True:
+
+            try:
+
+                self._draw_candles()
+
+                self._draw_signals()
+
+            except Exception as e:
+
+                print("[CHART ERROR]", e)
+
+            await asyncio.sleep(self.refresh_interval)
 
 
 
             
-#_#_#_#_#_#_#_#_
+#_#_#_#_#_#_#_#_#_
