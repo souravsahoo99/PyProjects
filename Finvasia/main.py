@@ -29,7 +29,7 @@ from token_registry import TokenRegistry
 from instrument_node import InstrumentNode
 from trade_manager import TradeManager
 from signal_engine import SignalPublisher
-from candle_chart import CandleChart
+from Candle_charts import CandleChart
 
 
 # ============================================================

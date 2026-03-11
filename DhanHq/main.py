@@ -8,7 +8,7 @@ import signal
 import time
 import sys
 
-from helper_wraper import ShoonyaEngine
+from helper_wraper import APIEngine
 from token_registry import TokenRegistry
 from instrument_node import InstrumentNode
 from trade_manager import TradeManager
@@ -235,7 +235,7 @@ async def engine_bootloader():
 
     print("\n[ENGINE] Booting Trading Engine\n")
 
-    engine = ShoonyaEngine()
+    engine = APIEngine()
 
     print("[ENGINE] Loading instrument registry")
 

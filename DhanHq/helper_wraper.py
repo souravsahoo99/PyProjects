@@ -14,7 +14,7 @@ from dhanAPI_helper import DhanApi
 # SHOONYA ENGINE (Wrapper preserved)
 # ============================================================
 
-class ShoonyaEngine:
+class APIEngine:
 
     def __init__(self, client_id: str, access_token: str):
 
