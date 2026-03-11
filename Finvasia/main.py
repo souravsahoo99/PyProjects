@@ -1,3 +1,24 @@
+# ============================================================
+# MAIN TRADING ENGINE   v2.4
+# Production Orchestrator
+# ============================================================
+
+"""
+main.py
+
+Responsibilities
+----------------
+1. Initialize trading engine
+2. Load token registry
+3. Start WebSocket
+4. Build instrument nodes (signal pipelines)
+5. Build trade managers (execution layer)
+6. Inject signal publishers
+7. Optional debug chart
+8. Launch async tasks
+9. Supervisor restart protection
+"""
+
 import asyncio
 import signal
 import time
@@ -37,12 +58,13 @@ STRATEGY_CONFIG = [
 
 ]
 
+
 # Optional debug chart
 DEBUG_CHART_SYMBOL = None
 
 
 # ============================================================
-# SPOT PRICE FETCH
+# SAFE SPOT PRICE FETCH
 # ============================================================
 
 def wait_for_spot_price(engine, exchange, token, timeout=10):
@@ -215,7 +237,6 @@ def build_trade_managers(engine, registry):
             rest_ltp=None,
 
             max_retry=max_retry
-
         )
 
         if product_type == "OPT":
@@ -239,13 +260,12 @@ async def engine_bootloader():
     engine = ShoonyaEngine()
 
     # --------------------------------------------------------
-    # LOAD REGISTRY
+    # LOAD TOKEN REGISTRY
     # --------------------------------------------------------
 
     print("[ENGINE] Loading instrument registry")
 
     registry = TokenRegistry()
-
     registry.load_master("data/instruments.csv")
 
     print("[ENGINE] Registry loaded")
@@ -274,7 +294,7 @@ async def engine_bootloader():
         await node.initialize()
         node.start()
 
-    # expose nodes for chart access
+    # expose nodes to chart module
     engine.instrument_nodes = nodes
 
     print("[ENGINE] Signal layer initialized\n")
@@ -302,13 +322,11 @@ async def engine_bootloader():
             pe_token=tm.pe_token,
 
             product_type=tm.product_type
-
         )
 
         for node in nodes:
 
             if node.token == tm.parent_token:
-
                 node.signal_engine.publisher = publisher
 
     # --------------------------------------------------------
@@ -323,8 +341,7 @@ async def engine_bootloader():
 
         await chart.start(
             DEBUG_CHART_SYMBOL,
-            "NSE",
-            "1m"
+            "NSE"
         )
 
     # --------------------------------------------------------
@@ -419,4 +436,4 @@ if __name__ == "__main__":
 
 
 
-#_#_#_#_#_#_#_#_#_#_
+#_#_#_#_#_#_#_#_#_#_#_
