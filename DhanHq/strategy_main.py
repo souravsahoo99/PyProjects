@@ -1,424 +1,499 @@
 # ============================================================
-# SIGNAL ENGINE
-# Production Grade (Checkpoint 4.x Compatible)
-# Strategy Driven Pipelines
+# STRATEGY MAIN v3.0
+# Production Strategy Layer
+# Compatible with Checkpoint 5.0 Engine
 # ============================================================
 
-import asyncio
-import pandas as pd
-import threading
+from indicator_utils import VWAPBands, MarketProfile
+from strategy_utils import breakout, breakdown
 
-from strategy_main import StrategyExecutor
-from series_adapter import SeriesAdapter
-from indicator_utils import MarketProfile
+from datetime import datetime, time
 
 
 # ============================================================
-# GLOBAL SIGNAL BUS
+# BASE STRATEGY CLASS
 # ============================================================
 
-SIGNALS = []
-SIGNAL_LOCK = threading.Lock()
+class BaseStrategy:
 
+    name = "BASE"
 
-# ============================================================
-# SIGNAL PUBLISHER
-# ============================================================
+    # --------------------------------------------------------
+    # Declare required pipelines
+    # --------------------------------------------------------
 
-class SignalPublisher:
+    REQUIRED_TIMEFRAMES = ["1m"]
 
-    def __init__(
-        self,
-        parent_token=None,
-        child_token=None,
-        ce_token=None,
-        pe_token=None,
-        product_type=None,
-        allowed_strategies=None
-    ):
+    def evaluate(self, context):
 
-        self.parent_token = parent_token
-        self.child_token = child_token
-        self.ce_token = ce_token
-        self.pe_token = pe_token
-        self.product_type = product_type
-        self.allowed_strategies = allowed_strategies
-
-    def _is_allowed_token(self, token):
-
-        if self.product_type == "OPT":
-            return token in [self.parent_token, self.ce_token, self.pe_token]
-
-        if self.product_type == "FUT":
-            return token in [self.parent_token, self.child_token]
-
-        if self.product_type in ["SPOT", "STOCK"]:
-            return token == self.parent_token
-
-        return True
-
-    def _is_allowed_strategy(self, strategy):
-
-        if self.allowed_strategies is None:
-            return True
-
-        return strategy in self.allowed_strategies
-
-    def allow_publish(self, token, strategy):
-
-        return (
-            self._is_allowed_token(token)
-            and self._is_allowed_strategy(strategy)
-        )
+        return None
 
 
 # ============================================================
-# SIGNAL ENGINE
+# ORB STRATEGY
 # ============================================================
 
-class SignalEngine:
+class StrategyORB(BaseStrategy):
 
-    def __init__(self, market_data, symbol, token, publisher=None):
+    name = "ORB"
 
-        self.market_data = market_data
-        self.symbol = symbol
-        self.token = token
+    REQUIRED_TIMEFRAMES = ["1m"]
 
-        self.publisher = publisher
+    def evaluate(self, context):
 
-        # ----------------------------------------------------
-        # STRATEGY EXECUTOR
-        # ----------------------------------------------------
-
-        self.strategy_engine = StrategyExecutor()
-
-        # ----------------------------------------------------
-        # DISCOVER REQUIRED PIPELINES
-        # ----------------------------------------------------
-
-        self.required_timeframes = self._discover_required_timeframes()
-
-        # ----------------------------------------------------
-        # LOCAL SIGNAL HISTORY
-        # ----------------------------------------------------
-
-        self.signal_history = []
-        self._signal_history_limit = 2000
-        self._history_lock = threading.Lock()
-
-        # ----------------------------------------------------
-        # STATE TRACKING
-        # ----------------------------------------------------
-
-        self.last_candle_time = None
-        self.last_signal_key = None
-
-        # ----------------------------------------------------
-        # ORB STATE
-        # ----------------------------------------------------
-
-        self.orb_high = None
-        self.orb_low = None
-        self.orb_ready = False
-
-        # ----------------------------------------------------
-        # MARKET PROFILE STATE
-        # ----------------------------------------------------
-
-        self.vah = None
-        self.val = None
-        self.profile_ready = False
-
-        self._running = True
-
-
-    # ========================================================
-    # PIPELINE DISCOVERY
-    # ========================================================
-
-    def _discover_required_timeframes(self):
-
-        required = set()
-
-        strategies = getattr(self.strategy_engine, "strategies", [])
-
-        for strat in strategies:
-
-            tfs = getattr(strat, "REQUIRED_TIMEFRAMES", None)
-
-            if tfs:
-                required.update(tfs)
-
-        if not required:
-            required.add("1m")
-
-        return sorted(required)
-
-
-    def get_required_timeframes(self):
-
-        return list(self.required_timeframes)
-
-
-    # ========================================================
-    # ACCESSORS
-    # ========================================================
-
-    def get_signal_history(self):
-
-        with self._history_lock:
-            return list(self.signal_history)
-
-    def get_orb_levels(self):
-
-        if not self.orb_ready:
-            return None, None
-
-        return self.orb_high, self.orb_low
-
-    def get_profile_levels(self):
-
-        if not self.profile_ready:
-            return None, None
-
-        return self.vah, self.val
-
-
-    # ========================================================
-    # DATAFRAME BUILDER
-    # ========================================================
-
-    def _build_dataframe(self, buffer):
-
-        if buffer is None or len(buffer) == 0:
+        if not context["orb_ready"]:
             return None
 
-        df = pd.DataFrame({
+        close = context["close"][0]
 
-            "timestamp": list(buffer.time),
-            "open": list(buffer.open),
-            "high": list(buffer.high),
-            "low": list(buffer.low),
-            "close": list(buffer.close),
-            "volume": list(buffer.volume)
+        orb_high = context["orb_high"]
+        orb_low = context["orb_low"]
 
-        })
+        if breakout(close, orb_high):
+            return "BUY"
 
-        df["timestamp"] = pd.to_datetime(df["timestamp"], unit="s")
+        if breakdown(close, orb_low):
+            return "SELL"
 
-        return df.dropna()
+        return None
 
 
-    # ========================================================
-    # ORB UPDATE
-    # ========================================================
+# ============================================================
+# VWAP DEVIATION STRATEGY
+# ============================================================
 
-    def _update_orb(self, df):
+class StrategyVWAPDeviation(BaseStrategy):
+
+    name = "VWAP_DEV"
+
+    REQUIRED_TIMEFRAMES = ["1m"]
+
+    def evaluate(self, context):
+
+        df = context["df"]
+
+        if df is None or len(df) < 20:
+            return None
+
+        try:
+            bands = VWAPBands(df).calculate()
+        except Exception:
+            return None
+
+        if bands is None:
+            return None
+
+        close = context["close"][0]
+
+        upper = bands.get("upper1")
+        lower = bands.get("lower1")
+
+        if upper is None or lower is None:
+            return None
+
+        if close > upper:
+            return "BUY"
+
+        if close < lower:
+            return "SELL"
+
+        return None
+
+
+# ============================================================
+# MARKET PROFILE BREAK STRATEGY
+# ============================================================
+
+class StrategyMarketProfileBreak(BaseStrategy):
+
+    name = "MP_BREAK"
+
+    REQUIRED_TIMEFRAMES = ["1m"]
+
+    def evaluate(self, context):
+
+        if not context["profile_ready"]:
+            return None
+
+        close = context["close"][0]
+
+        vah = context["vah"]
+        val = context["val"]
+
+        if breakout(close, vah):
+            return "BUY"
+
+        if breakdown(close, val):
+            return "SELL"
+
+        return None
+
+
+# ============================================================
+# STRATEGY EXECUTION ENGINE
+# ============================================================
+
+class StrategyExecutor:
+
+    def __init__(self):
+
+        self.strategies = [
+
+            StrategyORB(),
+            StrategyVWAPDeviation(),
+            StrategyMarketProfileBreak()
+
+        ]
+
+    # --------------------------------------------------------
+    # REGISTER STRATEGY
+    # --------------------------------------------------------
+
+    def register(self, strategy):
+
+        if strategy is None:
+            return
+
+        self.strategies.append(strategy)
+
+    # --------------------------------------------------------
+    # DISCOVER REQUIRED TIMEFRAMES
+    # --------------------------------------------------------
+
+    def discover_required_timeframes(self):
+
+        timeframes = set()
+
+        for strategy in self.strategies:
+
+            if hasattr(strategy, "REQUIRED_TIMEFRAMES"):
+
+                for tf in strategy.REQUIRED_TIMEFRAMES:
+                    timeframes.add(tf)
+
+        if not timeframes:
+            timeframes.add("1m")
+
+        return sorted(list(timeframes))
+
+    # --------------------------------------------------------
+    # RUN STRATEGIES
+    # --------------------------------------------------------
+
+    def run(self, context):
+
+        if context is None:
+            return None, None
+
+        for strategy in self.strategies:
+
+            try:
+
+                result = strategy.evaluate(context)
+
+            except Exception:
+                continue
+
+            if result:
+                return strategy.name, result
+
+        return None, None
+
+
+# ============================================================
+# ------------------------------------------------------------
+# PLACEHOLDER STRATEGY TEMPLATES
+# ------------------------------------------------------------
+# ============================================================
+
+
+# ============================================================
+# MOMENTUM BURST STRATEGY
+# ============================================================
+
+class StrategyMomentumBurst(BaseStrategy):
+
+    name = "MOMENTUM_BURST"
+
+    REQUIRED_TIMEFRAMES = ["1m"]
+
+    def evaluate(self, context):
+
+        close = context["close"]
+
+        if close[0] is None or close[1] is None or close[2] is None:
+            return None
+
+        if close[0] > close[1] > close[2]:
+            return "BUY"
+
+        if close[0] < close[1] < close[2]:
+            return "SELL"
+
+        return None
+
+
+# ============================================================
+# TREND CONTINUATION STRATEGY
+# ============================================================
+
+class StrategyTrendContinuation(BaseStrategy):
+
+    name = "TREND_CONT"
+
+    REQUIRED_TIMEFRAMES = ["1m"]
+
+    def evaluate(self, context):
+
+        close = context["close"]
+
+        if close[0] is None or close[5] is None:
+            return None
+
+        if close[0] > close[5]:
+            return "BUY"
+
+        if close[0] < close[5]:
+            return "SELL"
+
+        return None
+
+
+# ============================================================
+# RANGE BREAK STRATEGY
+# ============================================================
+
+class StrategyRangeBreak(BaseStrategy):
+
+    name = "RANGE_BREAK"
+
+    REQUIRED_TIMEFRAMES = ["1m"]
+
+    def evaluate(self, context):
+
+        high = context["high"]
+        low = context["low"]
+        close = context["close"]
+
+        if high[1] is None or low[1] is None:
+            return None
+
+        range_high = high[1]
+        range_low = low[1]
+
+        if close[0] > range_high:
+            return "BUY"
+
+        if close[0] < range_low:
+            return "SELL"
+
+        return None
+
+
+# ============================================================
+# VOLUME SPIKE STRATEGY
+# ============================================================
+
+class StrategyVolumeSpike(BaseStrategy):
+
+    name = "VOL_SPIKE"
+
+    REQUIRED_TIMEFRAMES = ["1m"]
+
+    def evaluate(self, context):
+
+        volume = context["volume"]
+
+        if volume[0] is None or volume[1] is None:
+            return None
+
+        if volume[0] > volume[1] * 2:
+            return "BUY"
+
+        return None
+
+
+# ============================================================
+# REVERSAL PATTERN STRATEGY
+# ============================================================
+
+class StrategyReversalPattern(BaseStrategy):
+
+    name = "REVERSAL"
+
+    REQUIRED_TIMEFRAMES = ["1m"]
+
+    def evaluate(self, context):
+
+        high = context["high"]
+        low = context["low"]
+
+        if high[0] is None or high[1] is None:
+            return None
+
+        if high[0] < high[1] and low[0] > low[1]:
+            return "BUY"
+
+        if high[0] > high[1] and low[0] < low[1]:
+            return "SELL"
+
+        return None
+
+
+# ============================================================
+# TIME WINDOW STRATEGY
+# ============================================================
+
+class StrategyTimeWindow(BaseStrategy):
+
+    name = "TIME_WINDOW"
+
+    REQUIRED_TIMEFRAMES = ["1m"]
+
+    START_TIME = time(10, 0)
+    END_TIME = time(10, 30)
+
+    def evaluate(self, context):
+
+        df = context["df"]
+
+        if df is None or len(df) == 0:
+            return None
+
+        now = df.iloc[-1]["timestamp"].time()
+
+        if self.START_TIME <= now <= self.END_TIME:
+            return None
+
+        return None
+
+
+# ============================================================
+# DAY SPECIFIC STRATEGY
+# ============================================================
+
+class StrategyDaySpecific(BaseStrategy):
+
+    name = "DAY_SPECIFIC"
+
+    REQUIRED_TIMEFRAMES = ["1m"]
+
+    TARGET_DAY = 0  # Monday
+
+    def evaluate(self, context):
+
+        df = context["df"]
+
+        if df is None or len(df) == 0:
+            return None
 
         now = df.iloc[-1]["timestamp"]
 
-        start = now.replace(hour=9, minute=15, second=0)
-        end = now.replace(hour=9, minute=30, second=0)
+        if now.weekday() == self.TARGET_DAY:
 
-        if now <= end:
+            close = context["close"]
 
-            session_df = df[
-                (df["timestamp"] >= start)
-                & (df["timestamp"] <= end)
-            ]
+            if close[0] > close[1]:
+                return "BUY"
 
-            if len(session_df) > 0:
+        return None
 
-                self.orb_high = session_df["high"].max()
-                self.orb_low = session_df["low"].min()
 
-        if now > end and self.orb_high is not None:
+# ============================================================
+# DAY RANGE STRATEGY
+# ============================================================
 
-            self.orb_ready = True
+class StrategyDayRange(BaseStrategy):
 
+    name = "DAY_RANGE"
 
-    # ========================================================
-    # MARKET PROFILE
-    # ========================================================
+    REQUIRED_TIMEFRAMES = ["1m"]
 
-    def _load_market_profile(self, df):
+    START_DAY = 0
+    END_DAY = 2
 
-        if self.profile_ready:
-            return
+    def evaluate(self, context):
 
-        if len(df) < 30:
-            return
+        df = context["df"]
 
-        profile = MarketProfile(df)
+        if df is None or len(df) == 0:
+            return None
 
-        res = profile.calculate()
+        now = df.iloc[-1]["timestamp"]
 
-        if res is None:
-            return
+        weekday = now.weekday()
 
-        value_area = res["value_area"]
+        if self.START_DAY <= weekday <= self.END_DAY:
 
-        if len(value_area) == 0:
-            return
+            close = context["close"]
 
-        self.vah = max(value_area)
-        self.val = min(value_area)
+            if close[0] > close[2]:
+                return "BUY"
 
-        self.profile_ready = True
+        return None
 
 
-    # ========================================================
-    # STRATEGY EXECUTION
-    # ========================================================
+# ============================================================
+# TIME SPECIFIC STRATEGY
+# ============================================================
 
-    def _evaluate(self, df, buffer):
+class StrategyExactTime(BaseStrategy):
 
-        timestamp = int(df.iloc[-1]["timestamp"].timestamp())
+    name = "TIME_SPECIFIC"
 
-        adapter = SeriesAdapter({
+    REQUIRED_TIMEFRAMES = ["1m"]
 
-            "open": buffer.open,
-            "high": buffer.high,
-            "low": buffer.low,
-            "close": buffer.close,
-            "volume": buffer.volume
+    TARGET_TIME = time(9, 45)
 
-        })
+    def evaluate(self, context):
 
-        context = {
+        df = context["df"]
 
-            "df": df,
+        if df is None or len(df) == 0:
+            return None
 
-            "open": adapter.open(),
-            "high": adapter.high(),
-            "low": adapter.low(),
-            "close": adapter.close(),
-            "volume": adapter.volume(),
+        now = df.iloc[-1]["timestamp"].time()
 
-            "orb_high": self.orb_high,
-            "orb_low": self.orb_low,
-            "orb_ready": self.orb_ready,
+        if now.hour == self.TARGET_TIME.hour and now.minute == self.TARGET_TIME.minute:
 
-            "vah": self.vah,
-            "val": self.val,
-            "profile_ready": self.profile_ready
-        }
+            close = context["close"]
 
-        strategy, side = self.strategy_engine.run(context)
+            if close[0] > close[1]:
+                return "BUY"
 
-        if side:
+        return None
 
-            price = context["close"][0]
 
-            self._publish_signal(
-                side,
-                price,
-                timestamp,
-                strategy
-            )
+# ============================================================
+# TIME RANGE STRATEGY
+# ============================================================
 
+class StrategyTimeRange(BaseStrategy):
 
-    # ========================================================
-    # SIGNAL PUBLICATION
-    # ========================================================
+    name = "TIME_RANGE"
 
-    def _publish_signal(self, side, price, timestamp, strategy):
+    REQUIRED_TIMEFRAMES = ["1m"]
 
-        global SIGNALS
+    START_TIME = time(13, 0)
+    END_TIME = time(14, 30)
 
-        signal_key = f"{self.symbol}_{strategy}_{timestamp}"
+    def evaluate(self, context):
 
-        if signal_key == self.last_signal_key:
-            return
+        df = context["df"]
 
-        if self.publisher:
+        if df is None or len(df) == 0:
+            return None
 
-            allowed = self.publisher.allow_publish(
-                self.token,
-                strategy
-            )
+        now = df.iloc[-1]["timestamp"].time()
 
-            if not allowed:
-                return
+        if self.START_TIME <= now <= self.END_TIME:
 
-        signal_dict = {
+            close = context["close"]
 
-            "symbol": self.symbol,
-            "token": self.token,
-            "side": side,
-            "entry_price": price,
-            "signal_time": timestamp,
-            "strategy": strategy
-        }
+            if close[0] < close[1]:
+                return "SELL"
 
-        with SIGNAL_LOCK:
+        return None
 
-            SIGNALS.append(signal_dict)
 
-            if len(SIGNALS) > 300:
-                SIGNALS.pop(0)
-
-        with self._history_lock:
-
-            self.signal_history.append(signal_dict)
-
-            if len(self.signal_history) > self._signal_history_limit:
-                self.signal_history.pop(0)
-
-        self.last_signal_key = signal_key
-
-        print(f"[SIGNAL] {self.symbol} → {side} | {strategy} | {price}")
-
-
-    # ========================================================
-    # MAIN LOOP
-    # ========================================================
-
-    async def run(self):
-
-        while self._running:
-
-            buffer = self.market_data.get("1m")
-
-            if buffer is None or len(buffer) == 0:
-
-                await asyncio.sleep(0.2)
-                continue
-
-            candle_time = buffer.time[-1]
-
-            if candle_time == self.last_candle_time:
-
-                await asyncio.sleep(0.2)
-                continue
-
-            self.last_candle_time = candle_time
-
-            df = self._build_dataframe(buffer)
-
-            if df is None:
-
-                await asyncio.sleep(0.2)
-                continue
-
-            self._update_orb(df)
-
-            self._load_market_profile(df)
-
-            self._evaluate(df, buffer)
-
-            await asyncio.sleep(0.2)
-
-
-    # ========================================================
-    # STOP ENGINE
-    # ========================================================
-
-    def stop(self):
-
-        self._running = False
-
-
-
-
-#_#_
+#_
