@@ -1,13 +1,11 @@
 # ============================================================
-# STRATEGY MAIN v2.0
+# STRATEGY MAIN v1.1
 # Production Strategy Layer
-# Compatible with SignalEngine (Checkpoint 4.x)
+# Compatible with SignalEngine (Checkpoint 3.1)
 # ============================================================
 
 from indicator_utils import VWAPBands, MarketProfile
 from strategy_utils import breakout, breakdown
-
-from datetime import datetime, time
 
 
 # ============================================================
@@ -15,6 +13,27 @@ from datetime import datetime, time
 # ============================================================
 
 class BaseStrategy:
+    """
+    Base strategy interface.
+
+    All strategies must implement evaluate(context)
+
+    context dictionary contains:
+        df
+        open
+        high
+        low
+        close
+        volume
+
+        orb_high
+        orb_low
+        orb_ready
+
+        vah
+        val
+        profile_ready
+    """
 
     name = "BASE"
 
@@ -65,7 +84,9 @@ class StrategyVWAPDeviation(BaseStrategy):
             return None
 
         try:
+
             bands = VWAPBands(df).calculate()
+
         except Exception:
             return None
 
@@ -121,6 +142,14 @@ class StrategyMarketProfileBreak(BaseStrategy):
 # ============================================================
 
 class StrategyExecutor:
+    """
+    Central strategy runner.
+
+    Responsible for:
+        registering strategies
+        executing them sequentially
+        returning first valid signal
+    """
 
     def __init__(self):
 
@@ -132,12 +161,22 @@ class StrategyExecutor:
 
         ]
 
+
+    # --------------------------------------------------------
+    # REGISTER NEW STRATEGY
+    # --------------------------------------------------------
+
     def register(self, strategy):
 
         if strategy is None:
             return
 
         self.strategies.append(strategy)
+
+
+    # --------------------------------------------------------
+    # RUN STRATEGIES
+    # --------------------------------------------------------
 
     def run(self, context):
 
@@ -147,287 +186,14 @@ class StrategyExecutor:
         for strategy in self.strategies:
 
             try:
+
                 result = strategy.evaluate(context)
+
             except Exception:
                 continue
 
             if result:
+
                 return strategy.name, result
 
         return None, None
-
-
-# ============================================================
-# ------------------------------------------------------------
-# PLACEHOLDER STRATEGY TEMPLATES
-# ------------------------------------------------------------
-# ============================================================
-
-
-# ============================================================
-# MOMENTUM BURST STRATEGY
-# ============================================================
-
-class StrategyMomentumBurst(BaseStrategy):
-
-    name = "MOMENTUM_BURST"
-
-    def evaluate(self, context):
-
-        close = context["close"]
-
-        if close[0] is None or close[1] is None or close[2] is None:
-            return None
-
-        if close[0] > close[1] > close[2]:
-            return "BUY"
-
-        if close[0] < close[1] < close[2]:
-            return "SELL"
-
-        return None
-
-
-# ============================================================
-# TREND CONTINUATION STRATEGY
-# ============================================================
-
-class StrategyTrendContinuation(BaseStrategy):
-
-    name = "TREND_CONT"
-
-    def evaluate(self, context):
-
-        close = context["close"]
-
-        if close[0] is None or close[5] is None:
-            return None
-
-        if close[0] > close[5]:
-            return "BUY"
-
-        if close[0] < close[5]:
-            return "SELL"
-
-        return None
-
-
-# ============================================================
-# RANGE BREAK STRATEGY
-# ============================================================
-
-class StrategyRangeBreak(BaseStrategy):
-
-    name = "RANGE_BREAK"
-
-    def evaluate(self, context):
-
-        high = context["high"]
-        low = context["low"]
-        close = context["close"]
-
-        if high[1] is None or low[1] is None:
-            return None
-
-        range_high = high[1]
-        range_low = low[1]
-
-        if close[0] > range_high:
-            return "BUY"
-
-        if close[0] < range_low:
-            return "SELL"
-
-        return None
-
-
-# ============================================================
-# VOLUME SPIKE STRATEGY
-# ============================================================
-
-class StrategyVolumeSpike(BaseStrategy):
-
-    name = "VOL_SPIKE"
-
-    def evaluate(self, context):
-
-        volume = context["volume"]
-
-        if volume[0] is None or volume[1] is None:
-            return None
-
-        if volume[0] > volume[1] * 2:
-            return "BUY"
-
-        return None
-
-
-# ============================================================
-# REVERSAL PATTERN STRATEGY
-# ============================================================
-
-class StrategyReversalPattern(BaseStrategy):
-
-    name = "REVERSAL"
-
-    def evaluate(self, context):
-
-        high = context["high"]
-        low = context["low"]
-
-        if high[0] is None or high[1] is None:
-            return None
-
-        if high[0] < high[1] and low[0] > low[1]:
-            return "BUY"
-
-        if high[0] > high[1] and low[0] < low[1]:
-            return "SELL"
-
-        return None
-
-
-# ============================================================
-# TIME WINDOW STRATEGY TEMPLATE
-# ============================================================
-
-class StrategyTimeWindow(BaseStrategy):
-
-    name = "TIME_WINDOW"
-
-    START_TIME = time(10, 0)
-    END_TIME = time(10, 30)
-
-    def evaluate(self, context):
-
-        df = context["df"]
-
-        if df is None or len(df) == 0:
-            return None
-
-        now = df.iloc[-1]["timestamp"].time()
-
-        if self.START_TIME <= now <= self.END_TIME:
-            return None
-
-        return None
-
-
-# ============================================================
-# DAY SPECIFIC STRATEGY
-# ============================================================
-
-class StrategyDaySpecific(BaseStrategy):
-
-    name = "DAY_SPECIFIC"
-
-    TARGET_DAY = 0  # Monday
-
-    def evaluate(self, context):
-
-        df = context["df"]
-
-        if df is None or len(df) == 0:
-            return None
-
-        now = df.iloc[-1]["timestamp"]
-
-        if now.weekday() == self.TARGET_DAY:
-
-            close = context["close"]
-
-            if close[0] > close[1]:
-                return "BUY"
-
-        return None
-
-
-# ============================================================
-# DAY RANGE STRATEGY
-# ============================================================
-
-class StrategyDayRange(BaseStrategy):
-
-    name = "DAY_RANGE"
-
-    START_DAY = 0
-    END_DAY = 2
-
-    def evaluate(self, context):
-
-        df = context["df"]
-
-        if df is None or len(df) == 0:
-            return None
-
-        now = df.iloc[-1]["timestamp"]
-
-        weekday = now.weekday()
-
-        if self.START_DAY <= weekday <= self.END_DAY:
-
-            close = context["close"]
-
-            if close[0] > close[2]:
-                return "BUY"
-
-        return None
-
-
-# ============================================================
-# TIME SPECIFIC STRATEGY
-# ============================================================
-
-class StrategyExactTime(BaseStrategy):
-
-    name = "TIME_SPECIFIC"
-
-    TARGET_TIME = time(9, 45)
-
-    def evaluate(self, context):
-
-        df = context["df"]
-
-        if df is None or len(df) == 0:
-            return None
-
-        now = df.iloc[-1]["timestamp"].time()
-
-        if now.hour == self.TARGET_TIME.hour and now.minute == self.TARGET_TIME.minute:
-
-            close = context["close"]
-
-            if close[0] > close[1]:
-                return "BUY"
-
-        return None
-
-
-# ============================================================
-# TIME RANGE STRATEGY
-# ============================================================
-
-class StrategyTimeRange(BaseStrategy):
-
-    name = "TIME_RANGE"
-
-    START_TIME = time(13, 0)
-    END_TIME = time(14, 30)
-
-    def evaluate(self, context):
-
-        df = context["df"]
-
-        if df is None or len(df) == 0:
-            return None
-
-        now = df.iloc[-1]["timestamp"].time()
-
-        if self.START_TIME <= now <= self.END_TIME:
-
-            close = context["close"]
-
-            if close[0] < close[1]:
-                return "SELL"
-
-        return None
