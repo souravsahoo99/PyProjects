@@ -1,6 +1,7 @@
 # ============================================================
 # SIGNAL ENGINE
-# Production Grade (Checkpoint 3.1 Compatible)
+# Production Grade (Checkpoint 4.x Compatible)
+# Strategy Driven Pipelines
 # ============================================================
 
 import asyncio
@@ -85,8 +86,17 @@ class SignalEngine:
 
         self.publisher = publisher
 
-        # strategy engine
+        # ----------------------------------------------------
+        # STRATEGY EXECUTOR
+        # ----------------------------------------------------
+
         self.strategy_engine = StrategyExecutor()
+
+        # ----------------------------------------------------
+        # DISCOVER REQUIRED PIPELINES
+        # ----------------------------------------------------
+
+        self.required_timeframes = self._discover_required_timeframes()
 
         # ----------------------------------------------------
         # LOCAL SIGNAL HISTORY
@@ -120,6 +130,34 @@ class SignalEngine:
         self.profile_ready = False
 
         self._running = True
+
+
+    # ========================================================
+    # PIPELINE DISCOVERY
+    # ========================================================
+
+    def _discover_required_timeframes(self):
+
+        required = set()
+
+        strategies = getattr(self.strategy_engine, "strategies", [])
+
+        for strat in strategies:
+
+            tfs = getattr(strat, "REQUIRED_TIMEFRAMES", None)
+
+            if tfs:
+                required.update(tfs)
+
+        if not required:
+            required.add("1m")
+
+        return sorted(required)
+
+
+    def get_required_timeframes(self):
+
+        return list(self.required_timeframes)
 
 
     # ========================================================

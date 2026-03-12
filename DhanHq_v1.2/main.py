@@ -1,5 +1,5 @@
 # ============================================================
-# MAIN TRADING ENGINE   v2.5
+# MAIN TRADING ENGINE   v2.4
 # Production Orchestrator
 # ============================================================
 
@@ -13,9 +13,9 @@ from token_registry import TokenRegistry
 from instrument_node import InstrumentNode
 from trade_manager import TradeManager
 from signal_engine import SignalPublisher
-
-# ========  Candle_Chart  &  Display_monitor  =========
 from candle_chart import CandleChart
+
+# DISPLAY MONITOR (PATCH)
 from display_monitor import DisplayMonitor
 
 
@@ -251,15 +251,7 @@ async def engine_bootloader():
 
     print("[ENGINE] WebSocket connected\n")
 
-    # --------------------------------------------------------
-    # BUILD NODES
-    # --------------------------------------------------------
-
     nodes = build_signal_nodes(engine, registry)
-
-    if not nodes:
-        print("[ENGINE] No valid instruments found")
-        return
 
     print(f"[ENGINE] Signal nodes discovered → {len(nodes)}")
 
@@ -272,27 +264,18 @@ async def engine_bootloader():
 
     print("[ENGINE] Signal layer initialized\n")
 
-    # --------------------------------------------------------
-    # BUILD TRADE MANAGERS
-    # --------------------------------------------------------
-
     trade_managers = build_trade_managers(engine, registry)
 
     print(f"[ENGINE] Trade managers created → {len(trade_managers)}\n")
 
-    # --------------------------------------------------------
-    # DISPLAY MONITOR
-    # --------------------------------------------------------
+
+    # =========================================================
+    # DISPLAY MONITOR (SURGICAL PATCH)
+    # =========================================================
 
     monitor = DisplayMonitor(engine, trade_managers, nodes)
+    asyncio.create_task(asyncio.to_thread(monitor.start))
 
-    asyncio.create_task(
-        asyncio.to_thread(monitor.start)
-    )
-
-    # --------------------------------------------------------
-    # SIGNAL PUBLISHER INJECTION
-    # --------------------------------------------------------
 
     for tm in trade_managers:
 
@@ -312,9 +295,6 @@ async def engine_bootloader():
             if node.token == tm.parent_token:
                 node.signal_engine.publisher = publisher
 
-    # --------------------------------------------------------
-    # OPTIONAL DEBUG CHART
-    # --------------------------------------------------------
 
     chart = None
 
@@ -326,10 +306,6 @@ async def engine_bootloader():
             DEBUG_CHART_SYMBOL,
             "NSE"
         )
-
-    # --------------------------------------------------------
-    # TASK COLLECTION
-    # --------------------------------------------------------
 
     tasks = []
 
@@ -413,7 +389,6 @@ if __name__ == "__main__":
             loop.close()
 
     print("\n[ENGINE] Trading Engine stopped\n")
-
 
 
 

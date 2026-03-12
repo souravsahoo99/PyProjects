@@ -1,8 +1,7 @@
 # ============================================================
 # INSTRUMENT NODE
 # Production Node Controller
-# Refactored for Strategy Driven Pipelines
-# Checkpoint 4.x Compatible
+# Refactored for Checkpoint 2.0
 # ============================================================
 
 import asyncio
@@ -63,38 +62,26 @@ class InstrumentNode:
         self.engine.subscribe(self.exchange, self.token)
 
         # ----------------------------------------------------
-        # SIGNAL ENGINE
-        # ----------------------------------------------------
-
-        # SignalEngine now knows strategy requirements
-        self.signal_engine = SignalEngine(
-            None,
-            self.symbol,
-            self.token
-        )
-
-        required_timeframes = self.signal_engine.get_required_timeframes()
-
-        if not required_timeframes:
-            required_timeframes = ["1m"]
-
-        print(f"[NODE] {self.symbol} required pipelines → {required_timeframes}")
-
-        # ----------------------------------------------------
         # MARKET DATA MANAGER
         # ----------------------------------------------------
 
         self.market_data = MarketDataManager(
             self.engine,
             self.exchange,
-            self.token,
-            required_timeframes
+            self.token
         )
 
         await self.market_data.start()
 
-        # attach market data to signal engine
-        self.signal_engine.market_data = self.market_data
+        # ----------------------------------------------------
+        # SIGNAL ENGINE
+        # ----------------------------------------------------
+
+        self.signal_engine = SignalEngine(
+            self.market_data,
+            self.symbol,
+            self.token
+        )
 
 
     # ========================================================

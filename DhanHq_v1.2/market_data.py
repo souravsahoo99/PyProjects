@@ -1,7 +1,6 @@
 # ============================================================
 # MARKET DATA MANAGER
-# Production Grade (Step-1 Strategy Driven Pipelines)
-# Checkpoint 4.x Compatible
+# Production Grade (Checkpoint 2.2 Compatible)
 # ============================================================
 
 import time
@@ -146,25 +145,19 @@ class TickCandleAggregator:
 
 class RestCandleAggregator:
 
-    def __init__(self, engine, exchange, token, required_timeframes=None, maxlen=500):
+    def __init__(self, engine, exchange, token, maxlen=500):
 
         self.engine = engine
         self.exchange = exchange
         self.token = token
 
-        if required_timeframes is None:
-            required_timeframes = ["1m"]
-
-        self.required_timeframes = set(required_timeframes)
-
-        # -----------------------------------------------------
-        # DYNAMIC BUFFER CREATION
-        # -----------------------------------------------------
-
-        self.buffers = {}
-
-        for tf in self.required_timeframes:
-            self.buffers[tf] = CandleBuffer(maxlen)
+        self.buffers = {
+            "1m": CandleBuffer(maxlen),
+            "3m": CandleBuffer(maxlen),
+            "5m": CandleBuffer(maxlen),
+            "30m": CandleBuffer(maxlen),
+            "1D": CandleBuffer(maxlen),
+        }
 
         self._last_timestamp = {k: None for k in self.buffers}
 
@@ -286,21 +279,11 @@ class RestCandleAggregator:
 
         loop = asyncio.get_running_loop()
 
-        # intraday pipelines
-        if "1m" in self.required_timeframes:
-            self._tasks.append(loop.create_task(self._pipeline("1m", 1)))
-
-        if "3m" in self.required_timeframes:
-            self._tasks.append(loop.create_task(self._pipeline("3m", 3)))
-
-        if "5m" in self.required_timeframes:
-            self._tasks.append(loop.create_task(self._pipeline("5m", 5)))
-
-        if "30m" in self.required_timeframes:
-            self._tasks.append(loop.create_task(self._pipeline("30m", 30)))
-
-        if "1D" in self.required_timeframes:
-            self._tasks.append(loop.create_task(self._daily_pipeline()))
+        self._tasks.append(loop.create_task(self._pipeline("1m", 1)))
+        self._tasks.append(loop.create_task(self._pipeline("3m", 3)))
+        self._tasks.append(loop.create_task(self._pipeline("5m", 5)))
+        self._tasks.append(loop.create_task(self._pipeline("30m", 30)))
+        self._tasks.append(loop.create_task(self._daily_pipeline()))
 
     # ---------------------------------------------------------
     # STOP
@@ -334,14 +317,11 @@ class RestCandleAggregator:
 
 class MarketDataManager:
 
-    def __init__(self, engine, exchange, token, required_timeframes=None):
+    def __init__(self, engine, exchange, token):
 
         self.engine = engine
         self.exchange = exchange
         self.token = token
-
-        if required_timeframes is None:
-            required_timeframes = ["1m"]
 
         # register router
         self.engine.market_data_map[f"{exchange}|{token}"] = self
@@ -354,7 +334,6 @@ class MarketDataManager:
             engine,
             exchange,
             token,
-            required_timeframes
         )
 
         self._tick_task = None
@@ -411,9 +390,11 @@ class MarketDataManager:
         if timeframe in ["10s", "15s", "30s"]:
             return self.tick_agg.get(timeframe)
 
-        return self.rest_agg.get(timeframe)
+        if timeframe in ["1m", "3m", "5m", "30m", "1D"]:
+            return self.rest_agg.get(timeframe)
+
+        return None
 
 
 
-
-#_#_#_#_#_#
+#_#_#_#_#
