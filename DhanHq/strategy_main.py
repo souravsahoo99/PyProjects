@@ -1,11 +1,13 @@
 # ============================================================
-# STRATEGY MAIN
+# STRATEGY MAIN v2.0
 # Production Strategy Layer
-# Compatible with SignalEngine (Checkpoint 4.0)
+# Compatible with SignalEngine (Checkpoint 4.x)
 # ============================================================
 
 from indicator_utils import VWAPBands, MarketProfile
 from strategy_utils import breakout, breakdown
+
+from datetime import datetime, time
 
 
 # ============================================================
@@ -157,8 +159,7 @@ class StrategyExecutor:
 
 # ============================================================
 # ------------------------------------------------------------
-# FUTURE STRATEGY TEMPLATES
-# (PLACEHOLDER EXAMPLES)
+# PLACEHOLDER STRATEGY TEMPLATES
 # ------------------------------------------------------------
 # ============================================================
 
@@ -294,6 +295,34 @@ class StrategyTimeWindow(BaseStrategy):
 
     name = "TIME_WINDOW"
 
+    START_TIME = time(10, 0)
+    END_TIME = time(10, 30)
+
+    def evaluate(self, context):
+
+        df = context["df"]
+
+        if df is None or len(df) == 0:
+            return None
+
+        now = df.iloc[-1]["timestamp"].time()
+
+        if self.START_TIME <= now <= self.END_TIME:
+            return None
+
+        return None
+
+
+# ============================================================
+# DAY SPECIFIC STRATEGY
+# ============================================================
+
+class StrategyDaySpecific(BaseStrategy):
+
+    name = "DAY_SPECIFIC"
+
+    TARGET_DAY = 0  # Monday
+
     def evaluate(self, context):
 
         df = context["df"]
@@ -303,8 +332,105 @@ class StrategyTimeWindow(BaseStrategy):
 
         now = df.iloc[-1]["timestamp"]
 
-        # placeholder example
-        if now.hour == 10 and now.minute < 5:
-            return None
+        if now.weekday() == self.TARGET_DAY:
+
+            close = context["close"]
+
+            if close[0] > close[1]:
+                return "BUY"
 
         return None
+
+
+# ============================================================
+# DAY RANGE STRATEGY
+# ============================================================
+
+class StrategyDayRange(BaseStrategy):
+
+    name = "DAY_RANGE"
+
+    START_DAY = 0
+    END_DAY = 2
+
+    def evaluate(self, context):
+
+        df = context["df"]
+
+        if df is None or len(df) == 0:
+            return None
+
+        now = df.iloc[-1]["timestamp"]
+
+        weekday = now.weekday()
+
+        if self.START_DAY <= weekday <= self.END_DAY:
+
+            close = context["close"]
+
+            if close[0] > close[2]:
+                return "BUY"
+
+        return None
+
+
+# ============================================================
+# TIME SPECIFIC STRATEGY
+# ============================================================
+
+class StrategyExactTime(BaseStrategy):
+
+    name = "TIME_SPECIFIC"
+
+    TARGET_TIME = time(9, 45)
+
+    def evaluate(self, context):
+
+        df = context["df"]
+
+        if df is None or len(df) == 0:
+            return None
+
+        now = df.iloc[-1]["timestamp"].time()
+
+        if now.hour == self.TARGET_TIME.hour and now.minute == self.TARGET_TIME.minute:
+
+            close = context["close"]
+
+            if close[0] > close[1]:
+                return "BUY"
+
+        return None
+
+
+# ============================================================
+# TIME RANGE STRATEGY
+# ============================================================
+
+class StrategyTimeRange(BaseStrategy):
+
+    name = "TIME_RANGE"
+
+    START_TIME = time(13, 0)
+    END_TIME = time(14, 30)
+
+    def evaluate(self, context):
+
+        df = context["df"]
+
+        if df is None or len(df) == 0:
+            return None
+
+        now = df.iloc[-1]["timestamp"].time()
+
+        if self.START_TIME <= now <= self.END_TIME:
+
+            close = context["close"]
+
+            if close[0] < close[1]:
+                return "SELL"
+
+        return None
+
+
+#_
