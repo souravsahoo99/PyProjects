@@ -1,5 +1,5 @@
 # ============================================================
-# DHAN API HELPER  v1.1
+# DHAN API HELPER  v1.0
 # Superset Broker Wrapper
 # ============================================================
 
@@ -15,15 +15,29 @@ from typing import Optional, Dict, List
 
 logger = logging.getLogger(__name__)
 
-#logging.basicConfig(level=logging.DEBUG)
 
 # ============================================================
 # ORDER OBJECT (Official Dhan Format)
 # ============================================================
 
 class Order:
+    """
+    Order object following official Dhan parameters
+    """
 
-    def __init__(self,security_id: str ,exchange_segment ,transaction_type ,quantity: int ,order_type,product_type ,price: float = 0.0):
+    def __init__(
+        self,
+        security_id: str,
+        exchange_segment,
+        transaction_type,
+        quantity: int,
+        order_type,
+        product_type,
+        price: float = 0.0,
+        trigger_price: Optional[float] = None,
+        disclosed_quantity: int = 0,
+        validity: str = "DAY"
+    ):
 
         self.security_id = security_id
         self.exchange_segment = exchange_segment
@@ -32,12 +46,20 @@ class Order:
         self.order_type = order_type
         self.product_type = product_type
         self.price = price
+        self.trigger_price = trigger_price
+        self.disclosed_quantity = disclosed_quantity
+        self.validity = validity
+
 
 # ============================================================
-#  DHAN_hq API Class
+# DHAN API CLASS
 # ============================================================
 
 class DhanApi:
+
+    # ========================================================
+    # INITIALIZATION
+    # ========================================================
 
     def __init__(self, client_id: str, access_token: str):
 
@@ -87,16 +109,46 @@ class DhanApi:
 
     def Place_Order(self, order: Order):
 
-        return self.client.place_order(security_id=order.security_id,exchange_segment=order.exchange_segment,transaction_type=order.transaction_type,quantity=order.quantity,order_type=order.order_type,product_type=order.product_type,price=order.price)
+        return self.client.place_order(
+            security_id=order.security_id,
+            exchange_segment=order.exchange_segment,
+            transaction_type=order.transaction_type,
+            quantity=order.quantity,
+            order_type=order.order_type,
+            product_type=order.product_type,
+            price=order.price,
+            trigger_price=order.trigger_price,
+            disclosed_quantity=order.disclosed_quantity,
+            validity=order.validity
+        )
 
 
     # --------------------------------------------------------
     # MODIFY ORDER
     # --------------------------------------------------------
 
-    def Modify_Order(self,order_id,order_type,leg_name,quantity,price,trigger_price,disclosed_quantity,validity):
+    def Modify_Order(
+        self,
+        order_id,
+        order_type,
+        leg_name,
+        quantity,
+        price,
+        trigger_price,
+        disclosed_quantity,
+        validity
+    ):
 
-        return self.client.modify_order(order_id,order_type,leg_name,quantity,price,trigger_price,disclosed_quantity,validity)
+        return self.client.modify_order(
+            order_id,
+            order_type,
+            leg_name,
+            quantity,
+            price,
+            trigger_price,
+            disclosed_quantity,
+            validity
+        )
 
 
     # --------------------------------------------------------
@@ -116,6 +168,7 @@ class DhanApi:
 
         return self.client.get_positions()
 
+
     # --------------------------------------------------------
     # GET ORDERBOOK
     # --------------------------------------------------------
@@ -132,37 +185,48 @@ class DhanApi:
     def Get_TradeBook(self):
 
         return self.client.get_trade_book()
-    
-    # --------------------------------------------------------
-    # Get Order detail by [ Order ID ]
-    # --------------------------------------------------------
-    def Get_Order_By_ID(self,order_id):
 
-        return self.client.get_order_by_id(order_id)
-    # --------------------------------------------------------
-    def Get_Tbook_By_Orderid(self,order_id):
-
-        return self.client.get_trade_book(order_id)
 
     # ========================================================
-    # MARKET DATA [ REST ]
+    # MARKET DATA (REST)
     # ========================================================
 
     def Get_LTP(self, security_id, exchange_segment):
 
-        data = self.client.ohlc_data(securities={exchange_segment: [security_id]})
+        data = self.client.ohlc_data(
+            securities={exchange_segment: [security_id]}
+        )
 
         return data
 
 
     def Get_Intraday_Data(self, security_id, exchange_segment, instrument_type):
 
-        return self.client.intraday_minute_data(security_id,exchange_segment,instrument_type)
+        return self.client.intraday_minute_data(
+            security_id,
+            exchange_segment,
+            instrument_type
+        )
 
 
-    def Get_Daily_Data(self,security_id,exchange_segment,instrument_type,expiry_code,from_date,to_date):
+    def Get_Daily_Data(
+        self,
+        security_id,
+        exchange_segment,
+        instrument_type,
+        expiry_code,
+        from_date,
+        to_date
+    ):
 
-        return self.client.historical_daily_data(security_id,exchange_segment,instrument_type,expiry_code,from_date,to_date)
+        return self.client.historical_daily_data(
+            security_id,
+            exchange_segment,
+            instrument_type,
+            expiry_code,
+            from_date,
+            to_date
+        )
 
 
     # ========================================================
@@ -171,7 +235,12 @@ class DhanApi:
 
     def Start_Websocket(self, instruments: List):
 
-        self.market_feed = marketfeed.DhanFeed(self.client_id,self.access_token,instruments,"v2")
+        self.market_feed = marketfeed.DhanFeed(
+            self.client_id,
+            self.access_token,
+            instruments,
+            "v2"
+        )
 
         self._ws_running = True
 
@@ -232,7 +301,10 @@ class DhanApi:
 
     def Start_Order_Stream(self):
 
-        self.order_feed = orderupdate.OrderSocket(self.client_id,self.access_token)
+        self.order_feed = orderupdate.OrderSocket(
+            self.client_id,
+            self.access_token
+        )
 
         thread = threading.Thread(target=self._run_order_feed)
         thread.daemon = True
@@ -263,17 +335,43 @@ class DhanApi:
 
     def expiry_list(self, under_security_id, under_exchange_segment):
 
-        return self.client.expiry_list(under_security_id,under_exchange_segment)
+        return self.client.expiry_list(
+            under_security_id,
+            under_exchange_segment
+        )
 
 
     def option_chain(self, under_security_id, under_exchange_segment, expiry):
 
-        return self.client.option_chain(under_security_id,under_exchange_segment,expiry)
+        return self.client.option_chain(
+            under_security_id,
+            under_exchange_segment,
+            expiry
+        )
 
 
-    def place_forever(self,security_id,exchange_segment,transaction_type,product_type,order_type,quantity,price,trigger_price):
+    def place_forever(
+        self,
+        security_id,
+        exchange_segment,
+        transaction_type,
+        product_type,
+        order_type,
+        quantity,
+        price,
+        trigger_price
+    ):
 
-        return self.client.place_forever(security_id=security_id,exchange_segment=exchange_segment,transaction_type=transaction_type,product_type=product_type,order_type=order_type,quantity=quantity,price=price,trigger_price=trigger_price)
+        return self.client.place_forever(
+            security_id=security_id,
+            exchange_segment=exchange_segment,
+            transaction_type=transaction_type,
+            product_type=product_type,
+            order_type=order_type,
+            quantity=quantity,
+            price=price,
+            trigger_price=trigger_price
+        )
 
 
     def get_holdings(self):
@@ -299,10 +397,8 @@ class DhanApi:
     def edis_inquiry(self):
 
         return self.client.edis_inquiry()
-    
-
    
-    
+
 
 
 #_#

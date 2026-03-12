@@ -9,7 +9,7 @@ import pandas as pd
 import threading
 
 from strategy_main import StrategyExecutor
-from pineseries_adapter import SeriesAdapter
+from series_adapter import SeriesAdapter
 from indicator_utils import MarketProfile
 
 
