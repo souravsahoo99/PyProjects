@@ -1,15 +1,14 @@
 # ============================================================
 # SIGNAL ENGINE
-# Production Grade (Checkpoint 3.1 Compatible)
+# Production Grade (Checkpoint 2.3 Compatible)
 # ============================================================
 
 import asyncio
 import pandas as pd
 import threading
 
-from strategy_main import StrategyExecutor
-from series_adapter import SeriesAdapter
-from indicator_utils import MarketProfile
+from indicator_utils import VWAPBands, MarketProfile
+from strategy_utils import breakout, breakdown
 
 
 # ============================================================
@@ -43,6 +42,7 @@ class SignalPublisher:
         self.product_type = product_type
         self.allowed_strategies = allowed_strategies
 
+
     def _is_allowed_token(self, token):
 
         if self.product_type == "OPT":
@@ -56,12 +56,14 @@ class SignalPublisher:
 
         return True
 
+
     def _is_allowed_strategy(self, strategy):
 
         if self.allowed_strategies is None:
             return True
 
         return strategy in self.allowed_strategies
+
 
     def allow_publish(self, token, strategy):
 
@@ -85,36 +87,21 @@ class SignalEngine:
 
         self.publisher = publisher
 
-        # strategy engine
-        self.strategy_engine = StrategyExecutor()
-
-        # ----------------------------------------------------
-        # LOCAL SIGNAL HISTORY
-        # ----------------------------------------------------
-
+        # local signal history (for chart)
         self.signal_history = []
         self._signal_history_limit = 2000
         self._history_lock = threading.Lock()
 
-        # ----------------------------------------------------
-        # STATE TRACKING
-        # ----------------------------------------------------
-
+        # state tracking
         self.last_candle_time = None
         self.last_signal_key = None
 
-        # ----------------------------------------------------
-        # ORB STATE
-        # ----------------------------------------------------
-
+        # ORB state
         self.orb_high = None
         self.orb_low = None
         self.orb_ready = False
 
-        # ----------------------------------------------------
-        # MARKET PROFILE STATE
-        # ----------------------------------------------------
-
+        # market profile state
         self.vah = None
         self.val = None
         self.profile_ready = False
@@ -131,12 +118,14 @@ class SignalEngine:
         with self._history_lock:
             return list(self.signal_history)
 
+
     def get_orb_levels(self):
 
         if not self.orb_ready:
             return None, None
 
         return self.orb_high, self.orb_low
+
 
     def get_profile_levels(self):
 
@@ -156,14 +145,12 @@ class SignalEngine:
             return None
 
         df = pd.DataFrame({
-
             "timestamp": list(buffer.time),
             "open": list(buffer.open),
             "high": list(buffer.high),
             "low": list(buffer.low),
             "close": list(buffer.close),
             "volume": list(buffer.volume)
-
         })
 
         df["timestamp"] = pd.to_datetime(df["timestamp"], unit="s")
@@ -230,54 +217,88 @@ class SignalEngine:
 
 
     # ========================================================
-    # STRATEGY EXECUTION
+    # STRATEGY EVALUATION
     # ========================================================
 
-    def _evaluate(self, df, buffer):
+    def _evaluate(self, df):
 
+        close = df.iloc[-1]["close"]
         timestamp = int(df.iloc[-1]["timestamp"].timestamp())
 
-        adapter = SeriesAdapter({
+        # ORB strategy
+        if self.orb_ready:
 
-            "open": buffer.open,
-            "high": buffer.high,
-            "low": buffer.low,
-            "close": buffer.close,
-            "volume": buffer.volume
+            if breakout(close, self.orb_high):
 
-        })
+                self._publish_signal(
+                    "BUY",
+                    close,
+                    timestamp,
+                    "ORB"
+                )
 
-        context = {
+                return
 
-            "df": df,
+            if breakdown(close, self.orb_low):
 
-            "open": adapter.open(),
-            "high": adapter.high(),
-            "low": adapter.low(),
-            "close": adapter.close(),
-            "volume": adapter.volume(),
+                self._publish_signal(
+                    "SELL",
+                    close,
+                    timestamp,
+                    "ORB"
+                )
 
-            "orb_high": self.orb_high,
-            "orb_low": self.orb_low,
-            "orb_ready": self.orb_ready,
+                return
 
-            "vah": self.vah,
-            "val": self.val,
-            "profile_ready": self.profile_ready
-        }
+        # VWAP deviation
+        bands = VWAPBands(df).calculate()
 
-        strategy, side = self.strategy_engine.run(context)
+        if bands:
 
-        if side:
+            if close > bands["upper1"]:
 
-            price = context["close"][0]
+                self._publish_signal(
+                    "BUY",
+                    close,
+                    timestamp,
+                    "VWAP_DEV"
+                )
 
-            self._publish_signal(
-                side,
-                price,
-                timestamp,
-                strategy
-            )
+                return
+
+            if close < bands["lower1"]:
+
+                self._publish_signal(
+                    "SELL",
+                    close,
+                    timestamp,
+                    "VWAP_DEV"
+                )
+
+                return
+
+        # Market profile break
+        if self.profile_ready:
+
+            if breakout(close, self.vah):
+
+                self._publish_signal(
+                    "BUY",
+                    close,
+                    timestamp,
+                    "MP_BREAK"
+                )
+
+                return
+
+            if breakdown(close, self.val):
+
+                self._publish_signal(
+                    "SELL",
+                    close,
+                    timestamp,
+                    "MP_BREAK"
+                )
 
 
     # ========================================================
@@ -304,7 +325,6 @@ class SignalEngine:
                 return
 
         signal_dict = {
-
             "symbol": self.symbol,
             "token": self.token,
             "side": side,
@@ -367,7 +387,7 @@ class SignalEngine:
 
             self._load_market_profile(df)
 
-            self._evaluate(df, buffer)
+            self._evaluate(df)
 
             await asyncio.sleep(0.2)
 

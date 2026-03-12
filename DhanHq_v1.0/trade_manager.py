@@ -354,7 +354,7 @@ class TradeManager:
                     if signal.get("symbol") != self.signal_symbol:
                         continue
 
-                    if self.trade["strategy_state"] == None:
+                    if self.trade["strategy_state"] is None:
 
                         self.enter_trade(signal)
 
