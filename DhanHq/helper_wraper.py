@@ -1,47 +1,45 @@
 # ============================================================
-# HELPER WRAPPER  v1.0
+# HELPER WRAPPER  v1.1
 # Broker Wrapper Layer (Dhan Backend)
 # ============================================================
-
+import os
 import time
 import threading
 import pandas as pd
 
 from dhanAPI_helper import DhanApi
-
+from dotenv import find_dotenv, load_dotenv
 
 # ============================================================
-# SHOONYA ENGINE (Wrapper preserved)
+#  LOADING... Environment Variables & Fetching CREDENTIALS 
+# ============================================================
+
+dotenv_file: str = find_dotenv()
+load_dotenv(dotenv_file)
+
+# ============================================================
+#  DHAN API ENGINE (Wrapper preserved)
 # ============================================================
 
 class APIEngine:
 
-    def __init__(self, client_id: str, access_token: str):
+    def __init__(self):
 
-        # ----------------------------------------------------
+        client_id    = os.getenv("CLIENT_ID")
+        access_token = os.getenv("ACCESS_TOKEN")
+
         # API CLIENT
-        # ----------------------------------------------------
-
         self.api = DhanApi(client_id, access_token)
 
-        # ----------------------------------------------------
         # TICK CACHE
-        # ----------------------------------------------------
-
         self._tick_cache = {}
         self._tick_lock = threading.Lock()
 
-        # ----------------------------------------------------
         # WEBSOCKET STATE
-        # ----------------------------------------------------
-
         self._is_ws_connected = False
         self._subscribed_instruments = set()
 
-        # ----------------------------------------------------
         # ROUTING MAP
-        # ----------------------------------------------------
-
         self.market_data_map = {}
 
         self._login()
@@ -319,4 +317,8 @@ def get_best_ltp(ws_ltp, rest_ltp):
     return None
 
 
-#
+
+
+
+
+#_#_
