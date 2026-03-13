@@ -1,7 +1,6 @@
 # ============================================================
-# MAIN TRADING ENGINE v2.6
+# MAIN TRADING ENGINE   v2.5
 # Production Orchestrator
-# Checkpoint 2.1 Compatible
 # ============================================================
 
 import asyncio
@@ -15,6 +14,7 @@ from instrument_node import InstrumentNode
 from trade_manager import TradeManager
 from signal_engine import SignalPublisher
 
+# ========  Candle_Chart  &  Display_monitor  =========
 from candle_chart import CandleChart
 from display_monitor import DisplayMonitor
 
@@ -44,6 +44,7 @@ STRATEGY_CONFIG = [
     }
 
 ]
+
 
 DEBUG_CHART_SYMBOL = None
 
@@ -236,12 +237,6 @@ async def engine_bootloader():
 
     engine = APIEngine()
 
-    # --------------------------------------------------------
-    # MARKET DATA ROUTER
-    # --------------------------------------------------------
-
-    engine.market_data_map = {}
-
     print("[ENGINE] Loading instrument registry")
 
     registry = TokenRegistry()
@@ -306,8 +301,8 @@ async def engine_bootloader():
             parent_token=tm.parent_token,
             child_token=tm.child_token,
 
-            ce_token=getattr(tm, "ce_token", None),
-            pe_token=getattr(tm, "pe_token", None),
+            ce_token=tm.ce_token,
+            pe_token=tm.pe_token,
 
             product_type=tm.product_type
         )
@@ -315,13 +310,13 @@ async def engine_bootloader():
         for node in nodes:
 
             if node.token == tm.parent_token:
-
-                if node.signal_engine.publisher is None:
-                    node.signal_engine.publisher = publisher
+                node.signal_engine.publisher = publisher
 
     # --------------------------------------------------------
     # OPTIONAL DEBUG CHART
     # --------------------------------------------------------
+
+    chart = None
 
     if DEBUG_CHART_SYMBOL:
 
@@ -345,6 +340,79 @@ async def engine_bootloader():
         tasks.append(asyncio.create_task(tm.run()))
 
     await asyncio.gather(*tasks)
+
+
+# ============================================================
+# SHUTDOWN HANDLER
+# ============================================================
+
+def shutdown():
+
+    print("\n[ENGINE] Shutdown requested\n")
+
+
+# ============================================================
+# PROGRAM ENTRY
+# ============================================================
+
+if __name__ == "__main__":
+
+    if len(sys.argv) > 1:
+
+        DEBUG_CHART_SYMBOL = sys.argv[1]
+
+        print(f"[DEBUG] Chart mode enabled → {DEBUG_CHART_SYMBOL}")
+
+    restart_limit = 2
+    restart_delay = 5
+    restart_count = 0
+
+    running = True
+
+    while running:
+
+        print(f"\n[SUPERVISOR] Engine start attempt {restart_count + 1}\n")
+
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+
+        for sig in (signal.SIGINT, signal.SIGTERM):
+            loop.add_signal_handler(sig, shutdown)
+
+        try:
+
+            loop.run_until_complete(engine_bootloader())
+
+            running = False
+
+        except KeyboardInterrupt:
+
+            print("\n[ENGINE] Interrupted by user")
+            running = False
+
+        except Exception as e:
+
+            restart_count += 1
+
+            print(f"\n[ENGINE] Crash detected → {e}")
+            print(f"[SUPERVISOR] Restart {restart_count}/{restart_limit}")
+
+            if restart_count >= restart_limit:
+
+                print("[SUPERVISOR] Restart limit reached.")
+                running = False
+
+            else:
+
+                print(f"[SUPERVISOR] Restarting in {restart_delay} seconds\n")
+                time.sleep(restart_delay)
+
+        finally:
+
+            loop.stop()
+            loop.close()
+
+    print("\n[ENGINE] Trading Engine stopped\n")
 
 
 

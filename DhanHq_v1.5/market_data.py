@@ -1,7 +1,7 @@
 # ============================================================
 # MARKET DATA MANAGER
-# Production Grade
-# DataServant Compatible
+# Production Grade (Step-1 Strategy Driven Pipelines)
+# Checkpoint 4.x Compatible
 # ============================================================
 
 import time
@@ -157,6 +157,10 @@ class RestCandleAggregator:
 
         self.required_timeframes = set(required_timeframes)
 
+        # -----------------------------------------------------
+        # DYNAMIC BUFFER CREATION
+        # -----------------------------------------------------
+
         self.buffers = {}
 
         for tf in self.required_timeframes:
@@ -167,14 +171,9 @@ class RestCandleAggregator:
         self._running = False
         self._tasks = []
 
-    def add_timeframe(self, tf):
-
-        if tf in self.buffers:
-            return
-
-        self.buffers[tf] = CandleBuffer()
-        self._last_timestamp[tf] = None
-        self.required_timeframes.add(tf)
+    # ---------------------------------------------------------
+    # STORE CANDLE
+    # ---------------------------------------------------------
 
     def _store_candle(self, tf, candle):
 
@@ -195,13 +194,22 @@ class RestCandleAggregator:
 
         self._last_timestamp[tf] = ts
 
+    # ---------------------------------------------------------
+    # PROCESS RESPONSE
+    # ---------------------------------------------------------
+
     def _process_response(self, tf, df):
 
         if df is None or len(df) == 0:
             return
 
         for _, row in df.iterrows():
+
             self._store_candle(tf, row)
+
+    # ---------------------------------------------------------
+    # INTRADAY PIPELINE
+    # ---------------------------------------------------------
 
     async def _pipeline(self, tf, interval):
 
@@ -229,6 +237,46 @@ class RestCandleAggregator:
 
             await asyncio.sleep(sleep_time)
 
+    # ---------------------------------------------------------
+    # DAILY PIPELINE
+    # ---------------------------------------------------------
+
+    async def _daily_pipeline(self):
+
+        while self._running:
+
+            try:
+
+                df = self.engine.get_ohlc(
+                    exchange=self.exchange,
+                    token=self.token,
+                    interval="1D",
+                )
+
+                if df is not None and len(df) > 0:
+
+                    for _, candle in df.iterrows():
+
+                        ts = int(pd.to_datetime(candle["timestamp"]).timestamp())
+
+                        o = float(candle["open"])
+                        h = float(candle["high"])
+                        l = float(candle["low"])
+                        c = float(candle["close"])
+                        v = float(candle["volume"])
+
+                        self.buffers["1D"].append(o, h, l, c, v, ts)
+
+            except Exception as e:
+
+                print("[DAILY PIPELINE ERROR]", e)
+
+            await asyncio.sleep(3600)
+
+    # ---------------------------------------------------------
+    # START
+    # ---------------------------------------------------------
+
     async def start(self):
 
         if self._running:
@@ -238,18 +286,25 @@ class RestCandleAggregator:
 
         loop = asyncio.get_running_loop()
 
-        for tf in self.required_timeframes:
+        # intraday pipelines
+        if "1m" in self.required_timeframes:
+            self._tasks.append(loop.create_task(self._pipeline("1m", 1)))
 
-            if tf.endswith("m"):
+        if "3m" in self.required_timeframes:
+            self._tasks.append(loop.create_task(self._pipeline("3m", 3)))
 
-                interval = int(tf.replace("m", ""))
+        if "5m" in self.required_timeframes:
+            self._tasks.append(loop.create_task(self._pipeline("5m", 5)))
 
-                task = loop.create_task(
-                    self._pipeline(tf, interval),
-                    name=f"rest_pipeline_{tf}"
-                )
+        if "30m" in self.required_timeframes:
+            self._tasks.append(loop.create_task(self._pipeline("30m", 30)))
 
-                self._tasks.append(task)
+        if "1D" in self.required_timeframes:
+            self._tasks.append(loop.create_task(self._daily_pipeline()))
+
+    # ---------------------------------------------------------
+    # STOP
+    # ---------------------------------------------------------
 
     async def stop(self):
 
@@ -288,6 +343,7 @@ class MarketDataManager:
         if required_timeframes is None:
             required_timeframes = ["1m"]
 
+        # register router
         self.engine.market_data_map[f"{exchange}|{token}"] = self
 
         self.tick_queue = asyncio.Queue(maxsize=2000)
@@ -303,32 +359,6 @@ class MarketDataManager:
 
         self._tick_task = None
         self._running = False
-
-    # ========================================================
-    # ENSURE TIMEFRAME (DataServant Support)
-    # ========================================================
-
-    def ensure_timeframe(self, tf):
-
-        if tf in ["10s", "15s", "30s"]:
-            return
-
-        if tf not in self.rest_agg.buffers:
-
-            self.rest_agg.add_timeframe(tf)
-
-            if self._running:
-
-                loop = asyncio.get_running_loop()
-
-                interval = int(tf.replace("m", ""))
-
-                task = loop.create_task(
-                    self.rest_agg._pipeline(tf, interval),
-                    name=f"rest_pipeline_{tf}"
-                )
-
-                self.rest_agg._tasks.append(task)
 
     async def _tick_worker(self):
 
@@ -382,6 +412,7 @@ class MarketDataManager:
             return self.tick_agg.get(timeframe)
 
         return self.rest_agg.get(timeframe)
+
 
 
 

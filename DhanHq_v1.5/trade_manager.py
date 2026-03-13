@@ -36,7 +36,21 @@ mongo_collection = mongo_client['AlgoBot']['TradeLogs']
 
 class TradeManager:
 
-    def __init__(self,engine,parent_exchange,child_exchange,signal_symbol,trading_symbol,parent_token,child_token,product_type,qty,ws_ltp,rest_ltp,max_retry):
+    def __init__(
+        self,
+        engine,
+        parent_exchange,
+        child_exchange,
+        signal_symbol,
+        trading_symbol,
+        parent_token,
+        child_token,
+        product_type,
+        qty,
+        ws_ltp,
+        rest_ltp,
+        max_retry
+    ):
 
         self.engine = engine
 

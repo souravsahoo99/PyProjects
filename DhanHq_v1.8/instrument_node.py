@@ -5,96 +5,9 @@
 # ============================================================
 
 import asyncio
-import threading
 
 from market_data import MarketDataManager
 from signal_engine import SignalEngine
-
-
-# ============================================================
-# DATA SERVANT (Embedded)
-# ============================================================
-
-class DataServant:
-
-    def __init__(self, engine):
-
-        self.engine = engine
-
-        # exchange|token → MarketDataManager
-        self.pipeline_registry = {}
-
-        self._lock = threading.Lock()
-
-
-    # --------------------------------------------------------
-    # INTERNAL KEY
-    # --------------------------------------------------------
-
-    def _key(self, exchange, token):
-
-        return f"{exchange}|{token}"
-
-
-    # --------------------------------------------------------
-    # ENSURE PIPELINE
-    # --------------------------------------------------------
-
-    async def ensure_pipeline(self, exchange, token, timeframe):
-
-        key = self._key(exchange, token)
-
-        with self._lock:
-
-            md = self.pipeline_registry.get(key)
-
-            # create pipeline if missing
-            if md is None:
-
-                md = MarketDataManager(
-                    self.engine,
-                    exchange,
-                    token,
-                    required_timeframes=[timeframe]
-                )
-
-                self.pipeline_registry[key] = md
-
-                asyncio.create_task(md.start())
-
-                return md
-
-            # expand timeframe if needed
-            md.ensure_timeframe(timeframe)
-
-            return md
-
-
-    # --------------------------------------------------------
-    # GET CANDLES
-    # --------------------------------------------------------
-
-    async def get_candles(self, exchange, token, timeframe):
-
-        md = await self.ensure_pipeline(exchange, token, timeframe)
-
-        return md.get(timeframe)
-
-
-    # --------------------------------------------------------
-    # FAST ACCESS (CACHE)
-    # --------------------------------------------------------
-
-    def get_cached(self, exchange, token, timeframe):
-
-        key = self._key(exchange, token)
-
-        md = self.pipeline_registry.get(key)
-
-        if md is None:
-            return None
-
-        return md.get(timeframe)
 
 
 # ============================================================
@@ -126,7 +39,6 @@ class InstrumentNode:
 
         self.market_data = None
         self.signal_engine = None
-        self.servant = None
 
         # ----------------------------------------------------
         # ASYNC TASKS
@@ -148,12 +60,6 @@ class InstrumentNode:
         # ----------------------------------------------------
 
         self.engine.subscribe(self.exchange, self.token)
-
-        # ----------------------------------------------------
-        # CREATE DATA SERVANT
-        # ----------------------------------------------------
-
-        self.servant = DataServant(self.engine)
 
         # ----------------------------------------------------
         # SIGNAL ENGINE
@@ -178,6 +84,10 @@ class InstrumentNode:
         # BASE MARKET DATA PIPELINE
         # ----------------------------------------------------
 
+        # InstrumentNode only creates the BASE pipeline
+        # Additional pipelines are handled dynamically
+        # by the DataServant layer inside SignalEngine
+
         self.market_data = MarketDataManager(
             self.engine,
             self.exchange,
@@ -188,19 +98,10 @@ class InstrumentNode:
         await self.market_data.start()
 
         # ----------------------------------------------------
-        # REGISTER BASE PIPELINE WITH SERVANT
-        # ----------------------------------------------------
-
-        key = f"{self.exchange}|{self.token}"
-
-        self.servant.pipeline_registry[key] = self.market_data
-
-        # ----------------------------------------------------
-        # CONNECT TO SIGNAL ENGINE
+        # CONNECT DATA PIPELINE TO SIGNAL ENGINE
         # ----------------------------------------------------
 
         self.signal_engine.market_data = self.market_data
-        self.signal_engine.servant = self.servant
 
 
     # ========================================================

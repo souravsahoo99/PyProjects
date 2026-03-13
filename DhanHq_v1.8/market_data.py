@@ -167,6 +167,11 @@ class RestCandleAggregator:
         self._running = False
         self._tasks = []
 
+
+    # ========================================================
+    # ADD TIMEFRAME DYNAMICALLY
+    # ========================================================
+
     def add_timeframe(self, tf):
 
         if tf in self.buffers:
@@ -175,6 +180,11 @@ class RestCandleAggregator:
         self.buffers[tf] = CandleBuffer()
         self._last_timestamp[tf] = None
         self.required_timeframes.add(tf)
+
+
+    # ========================================================
+    # STORE CANDLE
+    # ========================================================
 
     def _store_candle(self, tf, candle):
 
@@ -195,13 +205,16 @@ class RestCandleAggregator:
 
         self._last_timestamp[tf] = ts
 
+
     def _process_response(self, tf, df):
 
         if df is None or len(df) == 0:
             return
 
         for _, row in df.iterrows():
+
             self._store_candle(tf, row)
+
 
     async def _pipeline(self, tf, interval):
 
@@ -229,6 +242,7 @@ class RestCandleAggregator:
 
             await asyncio.sleep(sleep_time)
 
+
     async def start(self):
 
         if self._running:
@@ -242,14 +256,12 @@ class RestCandleAggregator:
 
             if tf.endswith("m"):
 
-                interval = int(tf.replace("m", ""))
+                interval = int(tf.replace("m",""))
 
-                task = loop.create_task(
-                    self._pipeline(tf, interval),
-                    name=f"rest_pipeline_{tf}"
+                self._tasks.append(
+                    loop.create_task(self._pipeline(tf, interval))
                 )
 
-                self._tasks.append(task)
 
     async def stop(self):
 
@@ -304,13 +316,14 @@ class MarketDataManager:
         self._tick_task = None
         self._running = False
 
+
     # ========================================================
-    # ENSURE TIMEFRAME (DataServant Support)
+    # ENSURE TIMEFRAME (Servant Compatibility)
     # ========================================================
 
     def ensure_timeframe(self, tf):
 
-        if tf in ["10s", "15s", "30s"]:
+        if tf in ["10s","15s","30s"]:
             return
 
         if tf not in self.rest_agg.buffers:
@@ -319,16 +332,16 @@ class MarketDataManager:
 
             if self._running:
 
-                loop = asyncio.get_running_loop()
+                loop = asyncio.get_event_loop()
 
-                interval = int(tf.replace("m", ""))
+                interval = int(tf.replace("m",""))
 
                 task = loop.create_task(
-                    self.rest_agg._pipeline(tf, interval),
-                    name=f"rest_pipeline_{tf}"
+                    self.rest_agg._pipeline(tf, interval)
                 )
 
                 self.rest_agg._tasks.append(task)
+
 
     async def _tick_worker(self):
 
@@ -349,6 +362,7 @@ class MarketDataManager:
             except asyncio.TimeoutError:
                 continue
 
+
     async def start(self):
 
         if self._running:
@@ -361,6 +375,7 @@ class MarketDataManager:
         loop = asyncio.get_running_loop()
 
         self._tick_task = loop.create_task(self._tick_worker())
+
 
     async def stop(self):
 
@@ -376,12 +391,14 @@ class MarketDataManager:
         if key in self.engine.market_data_map:
             del self.engine.market_data_map[key]
 
+
     def get(self, timeframe):
 
-        if timeframe in ["10s", "15s", "30s"]:
+        if timeframe in ["10s","15s","30s"]:
             return self.tick_agg.get(timeframe)
 
         return self.rest_agg.get(timeframe)
+
 
 
 

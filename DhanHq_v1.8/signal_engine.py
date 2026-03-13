@@ -39,6 +39,10 @@ class DataServant:
         self._lock = asyncio.Lock()
 
 
+    # --------------------------------------------------------
+    # FETCH CANDLE BUFFER
+    # --------------------------------------------------------
+
     async def get_candles(self, exchange, token, timeframe):
 
         key = (exchange, token)
@@ -46,6 +50,10 @@ class DataServant:
         async with self._lock:
 
             md = self.pipeline_registry.get(key)
+
+            # ------------------------------------------------
+            # PIPELINE DOES NOT EXIST
+            # ------------------------------------------------
 
             if md is None:
 
@@ -61,6 +69,10 @@ class DataServant:
                 asyncio.create_task(md.start())
 
                 return md.get(timeframe)
+
+            # ------------------------------------------------
+            # PIPELINE EXISTS
+            # ------------------------------------------------
 
             if timeframe not in md.rest_agg.buffers:
 
@@ -157,8 +169,7 @@ class SignalEngine:
         # DATA SERVANT
         # ----------------------------------------------------
 
-        # injected by InstrumentNode
-        self.servant = None
+        self.servant = DataServant(engine)
 
         # ----------------------------------------------------
         # STRATEGY EXECUTOR
@@ -206,6 +217,10 @@ class SignalEngine:
         self._running = True
 
 
+    # ========================================================
+    # PIPELINE DISCOVERY
+    # ========================================================
+
     def _discover_required_timeframes(self):
 
         required = set()
@@ -230,6 +245,10 @@ class SignalEngine:
         return list(self.required_timeframes)
 
 
+    # ========================================================
+    # ACCESSORS
+    # ========================================================
+
     def get_signal_history(self):
 
         with self._history_lock:
@@ -252,6 +271,10 @@ class SignalEngine:
         return self.vah, self.val
 
 
+    # ========================================================
+    # DATAFRAME BUILDER
+    # ========================================================
+
     def _build_dataframe(self, buffer):
 
         if buffer is None or len(buffer) == 0:
@@ -272,6 +295,10 @@ class SignalEngine:
 
         return df.dropna()
 
+
+    # ========================================================
+    # ORB UPDATE
+    # ========================================================
 
     def _update_orb(self, df):
 
@@ -296,6 +323,10 @@ class SignalEngine:
 
             self.orb_ready = True
 
+
+    # ========================================================
+    # MARKET PROFILE
+    # ========================================================
 
     def _load_market_profile(self, df):
 
@@ -322,6 +353,10 @@ class SignalEngine:
 
         self.profile_ready = True
 
+
+    # ========================================================
+    # STRATEGY EXECUTION
+    # ========================================================
 
     def _evaluate(self, df, buffer):
 
@@ -355,6 +390,7 @@ class SignalEngine:
             "val": self.val,
             "profile_ready": self.profile_ready,
 
+            # servant exposed to strategies
             "servant": self.servant
         }
 
@@ -371,6 +407,10 @@ class SignalEngine:
                 strategy
             )
 
+
+    # ========================================================
+    # SIGNAL PUBLICATION
+    # ========================================================
 
     def _publish_signal(self, side, price, timestamp, strategy):
 
@@ -420,6 +460,10 @@ class SignalEngine:
         print(f"[SIGNAL] {self.symbol} → {side} | {strategy} | {price}")
 
 
+    # ========================================================
+    # MAIN LOOP
+    # ========================================================
+
     async def run(self):
 
         while self._running:
@@ -456,9 +500,14 @@ class SignalEngine:
             await asyncio.sleep(0.2)
 
 
+    # ========================================================
+    # STOP ENGINE
+    # ========================================================
+
     def stop(self):
 
         self._running = False
+
 
 
             

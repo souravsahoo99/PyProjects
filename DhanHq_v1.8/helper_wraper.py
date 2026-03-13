@@ -1,8 +1,7 @@
 # ============================================================
-# HELPER WRAPPER  v1.2
+# HELPER WRAPPER  v1.1
 # Broker Wrapper Layer (Dhan Backend)
 # ============================================================
-
 import os
 import time
 import threading
@@ -11,52 +10,55 @@ import pandas as pd
 from dhanAPI_helper import DhanApi
 from dotenv import find_dotenv, load_dotenv
 
-
 # ============================================================
-#  LOAD ENV
+#  LOADING... Environment Variables & Fetching CREDENTIALS 
 # ============================================================
 
 dotenv_file: str = find_dotenv()
 load_dotenv(dotenv_file)
 
-
 # ============================================================
-# API ENGINE
+#  DHAN API ENGINE (Wrapper preserved)
 # ============================================================
 
 class APIEngine:
 
     def __init__(self):
 
-        client_id = os.getenv("CLIENT_ID")
+        client_id    = os.getenv("CLIENT_ID")
         access_token = os.getenv("ACCESS_TOKEN")
 
+        # API CLIENT
         self.api = DhanApi(client_id, access_token)
 
+        # TICK CACHE
         self._tick_cache = {}
         self._tick_lock = threading.Lock()
 
+        # WEBSOCKET STATE
         self._is_ws_connected = False
         self._subscribed_instruments = set()
 
+        # ROUTING MAP
         self.market_data_map = {}
-
-        self._router_running = False
 
         self._login()
 
 
     # =========================================================
-    # LOGIN
+    # LOGIN (Compatibility Stub)
     # =========================================================
 
     def _login(self):
-
+        """
+        Dhan uses token-based authentication.
+        Client initialization already authenticates.
+        """
         return True
 
 
     # =========================================================
-    # RETRY
+    # RETRY WRAPPER
     # =========================================================
 
     def _retry(self, func, *args, retries=3, delay=2, **kwargs):
@@ -78,7 +80,7 @@ class APIEngine:
     # REST OHLC
     # =========================================================
 
-    def get_ohlc(self, exchange, token, interval=1):
+    def get_ohlc(self, exchange: str, token: str, interval: int = 1):
 
         raw = self._retry(
             self.api.Get_Intraday_Data,
@@ -104,7 +106,7 @@ class APIEngine:
             'volume': 'volume'
         })
 
-        df['timestamp'] = pd.to_datetime(df['timestamp'], errors="coerce")
+        df['timestamp'] = pd.to_datetime(df['timestamp'])
 
         return df[['timestamp','open','high','low','close','volume']]
 
@@ -113,7 +115,7 @@ class APIEngine:
     # REST LTP
     # =========================================================
 
-    def get_ltp_rest(self, exchange, token):
+    def get_ltp_rest(self, exchange: str, token: str):
 
         data = self._retry(
             self.api.Get_LTP,
@@ -131,44 +133,40 @@ class APIEngine:
 
 
     # =========================================================
-    # WEBSOCKET ROUTER
+    # WEBSOCKET CALLBACK
     # =========================================================
 
-    def _router_loop(self):
+    def _on_quote(self, message):
 
-        while self._router_running:
+        exchange = message.get("exchange_segment")
+        token = message.get("security_id")
 
-            try:
+        key = f"{exchange}|{token}"
 
-                cache = self.api._tick_cache
+        with self._tick_lock:
+            self._tick_cache[key] = message
 
-                for key, msg in cache.items():
+        md = self.market_data_map.get(key)
 
-                    md = self.market_data_map.get(key)
+        if md is None:
+            return
 
-                    if md is None:
-                        continue
+        try:
 
-                    try:
+            price = float(message["lp"])
 
-                        price = float(msg["lp"])
+            if md.tick_queue.full():
+                return
 
-                        if md.tick_queue.full():
+            md.tick_queue.put_nowait(price)
 
-                            try:
-                                md.tick_queue.get_nowait()
-                            except Exception:
-                                pass
+        except Exception:
+            pass
 
-                        md.tick_queue.put_nowait(price)
 
-                    except Exception:
-                        pass
+    def _on_open(self):
 
-            except Exception:
-                pass
-
-            time.sleep(0.01)
+        self._is_ws_connected = True
 
 
     # =========================================================
@@ -177,18 +175,16 @@ class APIEngine:
 
     def start_ws(self):
 
-        self.api.Start_Websocket([])
+        self._is_ws_connected = False
 
-        self._router_running = True
-
-        router = threading.Thread(target=self._router_loop)
-        router.daemon = True
-        router.start()
+        self.api.Start_Websocket(
+            subscribe_callback=self._on_quote
+        )
 
         self._is_ws_connected = True
 
 
-    def subscribe(self, exchange, token):
+    def subscribe(self, exchange: str, token: str):
 
         instrument = (exchange, token)
 
@@ -197,7 +193,7 @@ class APIEngine:
         self.api.Subscribe_inst([instrument])
 
 
-    def wait_for_ws(self, timeout=5.0):
+    def wait_for_ws(self, timeout: float = 5.0):
 
         start = time.time()
 
@@ -232,13 +228,13 @@ class APIEngine:
     # LIVE LTP
     # =========================================================
 
-    def get_ltp_live(self, exchange, token):
+    def get_ltp_live(self, exchange: str, token: str):
 
         key = f"{exchange}|{token}"
 
-        with self.api._tick_lock:
+        with self._tick_lock:
 
-            msg = self.api._tick_cache.get(key)
+            msg = self._tick_cache.get(key)
 
             if msg:
 
@@ -251,7 +247,7 @@ class APIEngine:
 
 
     # =========================================================
-    # BEST LTP
+    #  BEST LTP
     # =========================================================
 
     def get_best_ltp(self, exchange, token):
@@ -265,17 +261,19 @@ class APIEngine:
 
 
     # =========================================================
-    # SHUTDOWN
+    # WEBSOCKET SHUTDOWN
     # =========================================================
 
     def close_ws(self):
-
-        self._router_running = False
 
         self.api.Close_Websocket()
 
         self._is_ws_connected = False
 
+
+    # =========================================================
+    # ENGINE SHUTDOWN
+    # =========================================================
 
     def shutdown(self):
 
@@ -286,6 +284,41 @@ class APIEngine:
         print("[ENGINE] Shutdown complete.")
 
 
+# ============================================================
+# LTP HELPER
+# ============================================================
+
+def get_best_ltp(ws_ltp, rest_ltp):
+
+    try:
+
+        if ws_ltp is not None:
+
+            price = float(ws_ltp)
+
+            if price > 0:
+                return price
+
+    except Exception:
+        pass
+
+    try:
+
+        if rest_ltp is not None:
+
+            price = float(rest_ltp)
+
+            if price > 0:
+                return price
+
+    except Exception:
+        pass
+
+    return None
 
 
-#_#
+
+
+
+
+#

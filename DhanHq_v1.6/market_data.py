@@ -1,7 +1,7 @@
 # ============================================================
 # MARKET DATA MANAGER
-# Production Grade
-# DataServant Compatible
+# Production Grade (Step-1 Strategy Driven Pipelines)
+# Checkpoint 4.x Compatible
 # ============================================================
 
 import time
@@ -167,6 +167,11 @@ class RestCandleAggregator:
         self._running = False
         self._tasks = []
 
+
+    # ========================================================
+    # NEW: ADD TIMEFRAME DYNAMICALLY
+    # ========================================================
+
     def add_timeframe(self, tf):
 
         if tf in self.buffers:
@@ -175,6 +180,11 @@ class RestCandleAggregator:
         self.buffers[tf] = CandleBuffer()
         self._last_timestamp[tf] = None
         self.required_timeframes.add(tf)
+
+
+    # ---------------------------------------------------------
+    # STORE CANDLE
+    # ---------------------------------------------------------
 
     def _store_candle(self, tf, candle):
 
@@ -195,13 +205,16 @@ class RestCandleAggregator:
 
         self._last_timestamp[tf] = ts
 
+
     def _process_response(self, tf, df):
 
         if df is None or len(df) == 0:
             return
 
         for _, row in df.iterrows():
+
             self._store_candle(tf, row)
+
 
     async def _pipeline(self, tf, interval):
 
@@ -229,6 +242,7 @@ class RestCandleAggregator:
 
             await asyncio.sleep(sleep_time)
 
+
     async def start(self):
 
         if self._running:
@@ -238,18 +252,18 @@ class RestCandleAggregator:
 
         loop = asyncio.get_running_loop()
 
-        for tf in self.required_timeframes:
+        if "1m" in self.required_timeframes:
+            self._tasks.append(loop.create_task(self._pipeline("1m", 1)))
 
-            if tf.endswith("m"):
+        if "3m" in self.required_timeframes:
+            self._tasks.append(loop.create_task(self._pipeline("3m", 3)))
 
-                interval = int(tf.replace("m", ""))
+        if "5m" in self.required_timeframes:
+            self._tasks.append(loop.create_task(self._pipeline("5m", 5)))
 
-                task = loop.create_task(
-                    self._pipeline(tf, interval),
-                    name=f"rest_pipeline_{tf}"
-                )
+        if "30m" in self.required_timeframes:
+            self._tasks.append(loop.create_task(self._pipeline("30m", 30)))
 
-                self._tasks.append(task)
 
     async def stop(self):
 
@@ -304,8 +318,9 @@ class MarketDataManager:
         self._tick_task = None
         self._running = False
 
+
     # ========================================================
-    # ENSURE TIMEFRAME (DataServant Support)
+    # NEW: ENSURE TIMEFRAME
     # ========================================================
 
     def ensure_timeframe(self, tf):
@@ -313,22 +328,8 @@ class MarketDataManager:
         if tf in ["10s", "15s", "30s"]:
             return
 
-        if tf not in self.rest_agg.buffers:
+        self.rest_agg.add_timeframe(tf)
 
-            self.rest_agg.add_timeframe(tf)
-
-            if self._running:
-
-                loop = asyncio.get_running_loop()
-
-                interval = int(tf.replace("m", ""))
-
-                task = loop.create_task(
-                    self.rest_agg._pipeline(tf, interval),
-                    name=f"rest_pipeline_{tf}"
-                )
-
-                self.rest_agg._tasks.append(task)
 
     async def _tick_worker(self):
 
@@ -349,6 +350,7 @@ class MarketDataManager:
             except asyncio.TimeoutError:
                 continue
 
+
     async def start(self):
 
         if self._running:
@@ -361,6 +363,7 @@ class MarketDataManager:
         loop = asyncio.get_running_loop()
 
         self._tick_task = loop.create_task(self._tick_worker())
+
 
     async def stop(self):
 
@@ -376,12 +379,14 @@ class MarketDataManager:
         if key in self.engine.market_data_map:
             del self.engine.market_data_map[key]
 
+
     def get(self, timeframe):
 
         if timeframe in ["10s", "15s", "30s"]:
             return self.tick_agg.get(timeframe)
 
         return self.rest_agg.get(timeframe)
+
 
 
 

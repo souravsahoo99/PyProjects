@@ -1,7 +1,7 @@
 # ============================================================
 # SIGNAL ENGINE
-# Production Grade (Checkpoint 5.x Compatible)
-# Strategy Driven Pipelines + DataServant Layer
+# Production Grade (Checkpoint 4.x Compatible)
+# Strategy Driven Pipelines
 # ============================================================
 
 import asyncio
@@ -11,6 +11,8 @@ import threading
 from strategy_main import StrategyExecutor
 from pineseries_adapter import SeriesAdapter
 from indicator_utils import MarketProfile
+
+# NEW: servant needs pipeline creation
 from market_data import MarketDataManager
 
 
@@ -33,19 +35,25 @@ class DataServant:
 
         self.engine = engine
 
-        # (exchange, token) → MarketDataManager
+        # token → MarketDataManager
         self.pipeline_registry = {}
 
-        self._lock = asyncio.Lock()
+        self._lock = threading.Lock()
 
+
+    # --------------------------------------------------------
+    # GET CANDLES
+    # --------------------------------------------------------
 
     async def get_candles(self, exchange, token, timeframe):
 
-        key = (exchange, token)
+        with self._lock:
 
-        async with self._lock:
+            md = self.pipeline_registry.get(token)
 
-            md = self.pipeline_registry.get(key)
+            # ------------------------------------------------
+            # CREATE PIPELINE IF MISSING
+            # ------------------------------------------------
 
             if md is None:
 
@@ -56,27 +64,7 @@ class DataServant:
                     required_timeframes=[timeframe]
                 )
 
-                self.pipeline_registry[key] = md
-
-                asyncio.create_task(md.start())
-
-                return md.get(timeframe)
-
-            if timeframe not in md.rest_agg.buffers:
-
-                existing = list(md.rest_agg.buffers.keys())
-                new_tfs = list(set(existing + [timeframe]))
-
-                await md.stop()
-
-                md = MarketDataManager(
-                    self.engine,
-                    exchange,
-                    token,
-                    required_timeframes=new_tfs
-                )
-
-                self.pipeline_registry[key] = md
+                self.pipeline_registry[token] = md
 
                 asyncio.create_task(md.start())
 
@@ -147,7 +135,6 @@ class SignalEngine:
 
         self.engine = engine
         self.market_data = market_data
-
         self.symbol = symbol
         self.token = token
 
@@ -157,8 +144,7 @@ class SignalEngine:
         # DATA SERVANT
         # ----------------------------------------------------
 
-        # injected by InstrumentNode
-        self.servant = None
+        self.servant = DataServant(engine)
 
         # ----------------------------------------------------
         # STRATEGY EXECUTOR
@@ -206,6 +192,10 @@ class SignalEngine:
         self._running = True
 
 
+    # ========================================================
+    # PIPELINE DISCOVERY
+    # ========================================================
+
     def _discover_required_timeframes(self):
 
         required = set()
@@ -230,6 +220,10 @@ class SignalEngine:
         return list(self.required_timeframes)
 
 
+    # ========================================================
+    # ACCESSORS
+    # ========================================================
+
     def get_signal_history(self):
 
         with self._history_lock:
@@ -252,6 +246,10 @@ class SignalEngine:
         return self.vah, self.val
 
 
+    # ========================================================
+    # DATAFRAME BUILDER
+    # ========================================================
+
     def _build_dataframe(self, buffer):
 
         if buffer is None or len(buffer) == 0:
@@ -272,6 +270,10 @@ class SignalEngine:
 
         return df.dropna()
 
+
+    # ========================================================
+    # ORB UPDATE
+    # ========================================================
 
     def _update_orb(self, df):
 
@@ -296,6 +298,10 @@ class SignalEngine:
 
             self.orb_ready = True
 
+
+    # ========================================================
+    # MARKET PROFILE
+    # ========================================================
 
     def _load_market_profile(self, df):
 
@@ -322,6 +328,10 @@ class SignalEngine:
 
         self.profile_ready = True
 
+
+    # ========================================================
+    # STRATEGY EXECUTION
+    # ========================================================
 
     def _evaluate(self, df, buffer):
 
@@ -355,6 +365,7 @@ class SignalEngine:
             "val": self.val,
             "profile_ready": self.profile_ready,
 
+            # servant exposed to strategies
             "servant": self.servant
         }
 
@@ -371,6 +382,10 @@ class SignalEngine:
                 strategy
             )
 
+
+    # ========================================================
+    # SIGNAL PUBLICATION
+    # ========================================================
 
     def _publish_signal(self, side, price, timestamp, strategy):
 
@@ -420,6 +435,10 @@ class SignalEngine:
         print(f"[SIGNAL] {self.symbol} → {side} | {strategy} | {price}")
 
 
+    # ========================================================
+    # MAIN LOOP
+    # ========================================================
+
     async def run(self):
 
         while self._running:
@@ -456,9 +475,15 @@ class SignalEngine:
             await asyncio.sleep(0.2)
 
 
+    # ========================================================
+    # STOP ENGINE
+    # ========================================================
+
     def stop(self):
 
         self._running = False
+
+
 
 
             
