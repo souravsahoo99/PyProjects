@@ -1,8 +1,9 @@
+
 # ============================================================
-# TRADE MANAGER v3.5
+# TRADE MANAGER v3.4
 # Production Grade Execution Engine
 # Price-Level StopLoss & Target
-# TrailManager Integrated - Frequency Tuned
+# TrailManager Integrated - frequency tuned
 # ============================================================
 
 import time
@@ -368,33 +369,24 @@ class TradeManager:
 
             try:
 
-                state = self.trade["strategy_state"]
+                with SIGNAL_LOCK:
+                    signals = list(SIGNALS)
 
-                # ------------------------------------------------
-                # ENTRY STATE (Signal Bus Needed)
-                # ------------------------------------------------
+                for signal in signals:
 
-                if state is None:
+                    if signal.get("symbol") != self.signal_symbol:
+                        continue
 
-                    with SIGNAL_LOCK:
-                        signals = list(SIGNALS)
-
-                    for signal in signals:
-
-                        if signal.get("symbol") != self.signal_symbol:
-                            continue
+                    if self.trade["strategy_state"] is None:
 
                         self.enter_trade(signal)
 
-                # ------------------------------------------------
-                # ACTIVE STATE (No Signal Bus Access)
-                # ------------------------------------------------
+                    elif self.trade["strategy_state"] == "ACTIVE":
 
-                elif state == "ACTIVE":
+                        price = self._get_ltp()
 
-                    price = self._get_ltp()
-
-                    if price is not None:
+                        if price is None:
+                            continue
 
                         self.trail_manager(price)
 
@@ -437,4 +429,4 @@ class TradeManager:
 
 
 
-#_#_#_#_#_
+#_#_#_#
