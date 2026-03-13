@@ -1,8 +1,8 @@
 # ============================================================
-# TRADE MANAGER v3.2
+# TRADE MANAGER v3.3
 # Production Grade Execution Engine
+# Price-Level StopLoss & Target
 # TrailManager Integrated
-# Backward Compatible
 # ============================================================
 
 import time
@@ -92,7 +92,7 @@ class TradeManager:
         self.mongo_object_id = None
 
         # ----------------------------------------------------
-        # SIGNAL MEMORY (for trail manager)
+        # SIGNAL MEMORY
         # ----------------------------------------------------
 
         self.entry_signal = None
@@ -128,10 +128,13 @@ class TradeManager:
             "exit_price": None,
             "exit_time": None,
 
-            "stop_loss": -450,
-            "target": 1000,
+            # PRICE LEVELS (not PnL)
+            "stop_loss": None,
+            "target": None,
+
             "trailing_distance": 20,
 
+            # metrics only
             "net_pnl": 0,
             "max_pnl": 0,
             "min_pnl": 0,
@@ -192,27 +195,26 @@ class TradeManager:
     def trail_manager(self, price):
 
         """
-        Trailing intelligence module.
-        Only updates risk parameters.
-        Does NOT execute exits.
+        Price-based trailing engine.
+        Updates SL levels only.
+        No execution decisions here.
         """
 
         if self.trade["strategy_state"] != "ACTIVE":
             return
 
         entry = self.trade["entry_price"]
+        side = self.trade["side"]
 
         if entry is None:
             return
 
-        side = self.trade["side"]
+        # ----------------------------------------------------
+        # PnL metrics (logging only)
+        # ----------------------------------------------------
 
-        if side == "BUY":
-            pnl = price - entry
-        else:
-            pnl = entry - price
+        pnl = price - entry if side == "BUY" else entry - price
 
-        # update metrics
         self.trade["net_pnl"] = pnl
 
         if pnl > self.trade["max_pnl"]:
@@ -222,16 +224,25 @@ class TradeManager:
             self.trade["min_pnl"] = pnl
 
         # ----------------------------------------------------
-        # TRAILING LOGIC
+        # PRICE TRAILING
         # ----------------------------------------------------
 
-        trail_distance = self.trade.get("trailing_distance", 20)
+        trail = self.trade.get("trailing_distance", 20)
 
-        if pnl > trail_distance:
+        sl = self.trade["stop_loss"]
 
-            new_sl = pnl - trail_distance
+        if side == "BUY":
 
-            if new_sl > self.trade["stop_loss"]:
+            new_sl = price - trail
+
+            if sl is None or new_sl > sl:
+                self.trade["stop_loss"] = new_sl
+
+        elif side == "SELL":
+
+            new_sl = price + trail
+
+            if sl is None or new_sl < sl:
                 self.trade["stop_loss"] = new_sl
 
 
@@ -244,7 +255,6 @@ class TradeManager:
         if self.trade["strategy_state"] is not None:
             return
 
-        # signal expiry check
         if time.time() - signal["signal_time"] > self.signal_validity_seconds:
             return
 
@@ -290,6 +300,17 @@ class TradeManager:
 
         self.trade["entry_price"] = ltp
         self.trade["entry_time"] = time.time()
+
+        # Initialize price levels
+        trail = self.trade["trailing_distance"]
+
+        if side == "BUY":
+            self.trade["stop_loss"] = ltp - trail
+            self.trade["target"] = ltp + (trail * 5)
+
+        else:
+            self.trade["stop_loss"] = ltp + trail
+            self.trade["target"] = ltp - (trail * 5)
 
         self.trade["strategy_state"] = "ACTIVE"
 
@@ -371,18 +392,12 @@ class TradeManager:
                     if signal.get("symbol") != self.signal_symbol:
                         continue
 
-                    # ------------------------------------------------
-                    # ENTRY STATE
-                    # ------------------------------------------------
-
+                    # ENTRY
                     if self.trade["strategy_state"] is None:
 
                         self.enter_trade(signal)
 
-                    # ------------------------------------------------
-                    # ACTIVE STATE
-                    # ------------------------------------------------
-
+                    # ACTIVE
                     elif self.trade["strategy_state"] == "ACTIVE":
 
                         price = self._get_ltp()
@@ -390,24 +405,33 @@ class TradeManager:
                         if price is None:
                             continue
 
-                        # trailing intelligence
                         self.trail_manager(price)
 
-                        entry = self.trade["entry_price"]
+                        side = self.trade["side"]
+                        sl = self.trade["stop_loss"]
+                        tp = self.trade["target"]
 
-                        pnl = price - entry if self.trade["side"] == "BUY" else entry - price
+                        if side == "BUY":
 
-                        if pnl <= self.trade["stop_loss"]:
-                            self.exit_trade()
+                            if sl is not None and price <= sl:
+                                self.exit_trade()
 
-                        elif pnl >= self.trade["target"]:
-                            self.exit_trade()
+                            elif tp is not None and price >= tp:
+                                self.exit_trade()
+
+                        elif side == "SELL":
+
+                            if sl is not None and price >= sl:
+                                self.exit_trade()
+
+                            elif tp is not None and price <= tp:
+                                self.exit_trade()
 
             except Exception as e:
 
                 print("[TRADE MANAGER ERROR]", e)
 
-            await asyncio.sleep(0.3)
+            await asyncio
 
 
 
