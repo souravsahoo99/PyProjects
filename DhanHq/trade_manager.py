@@ -3,7 +3,7 @@
 # Production Grade Execution Engine
 # Price-Level StopLoss & Target
 # TrailManager Integrated - Frequency Tuned
-# Pointer Broadcast Restored
+# Pointer Broadcast Layer Enabled
 # ============================================================
 
 import time
@@ -129,11 +129,13 @@ class TradeManager:
             "exit_price": None,
             "exit_time": None,
 
+            # PRICE LEVELS
             "stop_loss": None,
             "target": None,
 
             "trailing_distance": 20,
 
+            # METRICS
             "net_pnl": 0,
             "max_pnl": 0,
             "min_pnl": 0,
@@ -149,7 +151,7 @@ class TradeManager:
 
 
     # ========================================================
-    # POINTER WRITE
+    # POINTER BROADCAST
     # ========================================================
 
     def _write_pointer(self):
@@ -320,7 +322,6 @@ class TradeManager:
         if side == "BUY":
             self.trade["stop_loss"] = ltp - trail
             self.trade["target"] = ltp + (trail * 5)
-
         else:
             self.trade["stop_loss"] = ltp + trail
             self.trade["target"] = ltp - (trail * 5)
@@ -399,6 +400,7 @@ class TradeManager:
 
                 state = self.trade["strategy_state"]
 
+                # ENTRY STATE
                 if state is None:
 
                     with SIGNAL_LOCK:
@@ -411,6 +413,7 @@ class TradeManager:
 
                         self.enter_trade(signal)
 
+                # ACTIVE STATE
                 elif state == "ACTIVE":
 
                     price = self._get_ltp()
@@ -443,6 +446,7 @@ class TradeManager:
 
                 print("[TRADE MANAGER ERROR]", e)
 
+            # LOOP FREQUENCY CONTROL
             if self.trade["strategy_state"] == "ACTIVE":
                 sleep_time = 0.03
             else:
@@ -454,4 +458,4 @@ class TradeManager:
 
 
 
-#_#_#_#_#_
+#_#_#_#_#_#_
