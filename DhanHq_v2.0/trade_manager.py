@@ -1,8 +1,6 @@
 # ============================================================
-# TRADE MANAGER v3.2
+# TRADE MANAGER v3.0
 # Production Grade Execution Engine
-# TrailManager Integrated
-# Backward Compatible
 # ============================================================
 
 import time
@@ -90,12 +88,6 @@ class TradeManager:
 
         self.mongo_collection = mongo_collection
         self.mongo_object_id = None
-
-        # ----------------------------------------------------
-        # SIGNAL MEMORY (for trail manager)
-        # ----------------------------------------------------
-
-        self.entry_signal = None
 
         # ----------------------------------------------------
         # TRADE DICT
@@ -186,56 +178,6 @@ class TradeManager:
 
 
     # ========================================================
-    # TRAIL MANAGER
-    # ========================================================
-
-    def trail_manager(self, price):
-
-        """
-        Trailing intelligence module.
-        Only updates risk parameters.
-        Does NOT execute exits.
-        """
-
-        if self.trade["strategy_state"] != "ACTIVE":
-            return
-
-        entry = self.trade["entry_price"]
-
-        if entry is None:
-            return
-
-        side = self.trade["side"]
-
-        if side == "BUY":
-            pnl = price - entry
-        else:
-            pnl = entry - price
-
-        # update metrics
-        self.trade["net_pnl"] = pnl
-
-        if pnl > self.trade["max_pnl"]:
-            self.trade["max_pnl"] = pnl
-
-        if pnl < self.trade["min_pnl"]:
-            self.trade["min_pnl"] = pnl
-
-        # ----------------------------------------------------
-        # TRAILING LOGIC
-        # ----------------------------------------------------
-
-        trail_distance = self.trade.get("trailing_distance", 20)
-
-        if pnl > trail_distance:
-
-            new_sl = pnl - trail_distance
-
-            if new_sl > self.trade["stop_loss"]:
-                self.trade["stop_loss"] = new_sl
-
-
-    # ========================================================
     # ENTER TRADE
     # ========================================================
 
@@ -258,8 +200,6 @@ class TradeManager:
         self.trade["strategy_state"] = "ENTERING"
         self.trade["side"] = side
         self.trade["strategy_name"] = signal.get("strategy")
-
-        self.entry_signal = signal
 
         txn = "BUY" if side == "BUY" else "SELL"
 
@@ -371,17 +311,9 @@ class TradeManager:
                     if signal.get("symbol") != self.signal_symbol:
                         continue
 
-                    # ------------------------------------------------
-                    # ENTRY STATE
-                    # ------------------------------------------------
-
                     if self.trade["strategy_state"] is None:
 
                         self.enter_trade(signal)
-
-                    # ------------------------------------------------
-                    # ACTIVE STATE
-                    # ------------------------------------------------
 
                     elif self.trade["strategy_state"] == "ACTIVE":
 
@@ -389,9 +321,6 @@ class TradeManager:
 
                         if price is None:
                             continue
-
-                        # trailing intelligence
-                        self.trail_manager(price)
 
                         entry = self.trade["entry_price"]
 
