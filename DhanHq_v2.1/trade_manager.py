@@ -1,9 +1,9 @@
-
 # ============================================================
-# TRADE MANAGER v3.4
+# TRADE MANAGER v3.5
 # Production Grade Execution Engine
 # Price-Level StopLoss & Target
-# TrailManager Integrated - frequency tuned
+# TrailManager Integrated - Frequency Tuned
+# Pointer Broadcast Restored
 # ============================================================
 
 import time
@@ -129,13 +129,11 @@ class TradeManager:
             "exit_price": None,
             "exit_time": None,
 
-            # PRICE LEVELS
             "stop_loss": None,
             "target": None,
 
             "trailing_distance": 20,
 
-            # metrics
             "net_pnl": 0,
             "max_pnl": 0,
             "min_pnl": 0,
@@ -151,6 +149,32 @@ class TradeManager:
 
 
     # ========================================================
+    # POINTER WRITE
+    # ========================================================
+
+    def _write_pointer(self):
+
+        pointer_data = {
+
+            "manager_name": self.trade["manager_name"],
+            "parent_symbol": self.signal_symbol,
+            "parent_token": self.parent_token,
+
+            "mongo_object_id": str(self.mongo_object_id),
+
+            "strategy_state": self.trade["strategy_state"],
+
+            "child_token": self.child_token,
+            "trading_symbol": self.trading_symbol,
+
+            "timestamp": time.time()
+        }
+
+        with open(self.pointer_file, "w") as f:
+            json.dump(pointer_data, f, indent=4)
+
+
+    # ========================================================
     # MONGO FUNCTIONS
     # ========================================================
 
@@ -161,6 +185,8 @@ class TradeManager:
         self.mongo_object_id = result.inserted_id
 
         self.trade["mongo_object_id"] = str(self.mongo_object_id)
+
+        self._write_pointer()
 
 
     def _mongo_update(self):
@@ -175,6 +201,8 @@ class TradeManager:
             {"_id": self.mongo_object_id},
             {"$set": self.trade}
         )
+
+        self._write_pointer()
 
 
     # ========================================================
@@ -369,24 +397,25 @@ class TradeManager:
 
             try:
 
-                with SIGNAL_LOCK:
-                    signals = list(SIGNALS)
+                state = self.trade["strategy_state"]
 
-                for signal in signals:
+                if state is None:
 
-                    if signal.get("symbol") != self.signal_symbol:
-                        continue
+                    with SIGNAL_LOCK:
+                        signals = list(SIGNALS)
 
-                    if self.trade["strategy_state"] is None:
+                    for signal in signals:
+
+                        if signal.get("symbol") != self.signal_symbol:
+                            continue
 
                         self.enter_trade(signal)
 
-                    elif self.trade["strategy_state"] == "ACTIVE":
+                elif state == "ACTIVE":
 
-                        price = self._get_ltp()
+                    price = self._get_ltp()
 
-                        if price is None:
-                            continue
+                    if price is not None:
 
                         self.trail_manager(price)
 
@@ -413,10 +442,6 @@ class TradeManager:
             except Exception as e:
 
                 print("[TRADE MANAGER ERROR]", e)
-
-            # ------------------------------------------------
-            # DYNAMIC LOOP FREQUENCY
-            # ------------------------------------------------
 
             if self.trade["strategy_state"] == "ACTIVE":
                 sleep_time = 0.03
