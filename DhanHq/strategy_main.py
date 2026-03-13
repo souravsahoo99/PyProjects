@@ -1,5 +1,5 @@
 # ============================================================
-# STRATEGY MAIN v4.1
+# STRATEGY MAIN v4.2
 # Production Strategy Layer
 # DataServant Compatible
 # ============================================================
@@ -7,12 +7,12 @@
 from indicator_utils import VWAPBands, MarketProfile
 from strategy_utils import breakout, breakdown
 
-from datetime import datetime, time
 import asyncio
+import pandas as pd
 
 
 # ============================================================
-# BASE STRATEGY CLASS
+# BASE STRATEGY
 # ============================================================
 
 class BaseStrategy:
@@ -26,12 +26,26 @@ class BaseStrategy:
 
 
     # --------------------------------------------------------
-    # DATA SERVANT ACCESS
+    # SERVANT ACCESS
     # --------------------------------------------------------
 
     def get_servant(self, context):
 
         return context.get("servant")
+
+
+    # --------------------------------------------------------
+    # SAFE TOKEN ACCESS
+    # --------------------------------------------------------
+
+    def get_token(self, context):
+
+        token = context.get("token")
+
+        if token is None:
+            token = context.get("symbol_token")
+
+        return token
 
 
     # --------------------------------------------------------
@@ -42,7 +56,7 @@ class BaseStrategy:
 
         servant = self.get_servant(context)
 
-        if servant is None:
+        if servant is None or token is None:
             return None
 
         try:
@@ -56,7 +70,7 @@ class BaseStrategy:
                     loop
                 )
 
-                return future.result(timeout=0.5)
+                return future.result(timeout=0.2)
 
             else:
 
@@ -65,7 +79,6 @@ class BaseStrategy:
                 )
 
         except Exception:
-
             return None
 
 
@@ -99,7 +112,7 @@ class StrategyORB(BaseStrategy):
 
 
 # ============================================================
-# VWAP DEVIATION STRATEGY
+# VWAP DEVIATION
 # ============================================================
 
 class StrategyVWAPDeviation(BaseStrategy):
@@ -141,7 +154,7 @@ class StrategyVWAPDeviation(BaseStrategy):
 
 
 # ============================================================
-# MARKET PROFILE BREAK STRATEGY
+# MARKET PROFILE BREAK
 # ============================================================
 
 class StrategyMarketProfileBreak(BaseStrategy):
@@ -170,8 +183,7 @@ class StrategyMarketProfileBreak(BaseStrategy):
 
 
 # ============================================================
-# DATA SERVANT STRATEGY 1
-# Multi-Timeframe Trend
+# MULTI TF TREND
 # ============================================================
 
 class StrategyMTFTrend(BaseStrategy):
@@ -182,7 +194,8 @@ class StrategyMTFTrend(BaseStrategy):
 
     def evaluate(self, context):
 
-        token = context.get("token")
+        token = self.get_token(context)
+
         exchange = "NSE"
 
         buffer = self.fetch_tf(context, exchange, token, "5m")
@@ -204,8 +217,7 @@ class StrategyMTFTrend(BaseStrategy):
 
 
 # ============================================================
-# DATA SERVANT STRATEGY 2
-# Higher TF Breakout
+# HIGHER TF BREAKOUT
 # ============================================================
 
 class StrategyHTFBreakout(BaseStrategy):
@@ -216,7 +228,8 @@ class StrategyHTFBreakout(BaseStrategy):
 
     def evaluate(self, context):
 
-        token = context.get("token")
+        token = self.get_token(context)
+
         exchange = "NSE"
 
         buffer = self.fetch_tf(context, exchange, token, "15m")
@@ -239,8 +252,7 @@ class StrategyHTFBreakout(BaseStrategy):
 
 
 # ============================================================
-# DATA SERVANT STRATEGY 3
-# VWAP Alignment
+# MTF VWAP ALIGNMENT
 # ============================================================
 
 class StrategyMTFVWAP(BaseStrategy):
@@ -251,15 +263,14 @@ class StrategyMTFVWAP(BaseStrategy):
 
     def evaluate(self, context):
 
-        token = context.get("token")
+        token = self.get_token(context)
+
         exchange = "NSE"
 
         buffer = self.fetch_tf(context, exchange, token, "3m")
 
         if buffer is None or len(buffer) < 20:
             return None
-
-        import pandas as pd
 
         df = pd.DataFrame({
             "open": list(buffer.open),
@@ -286,7 +297,7 @@ class StrategyMTFVWAP(BaseStrategy):
 
 
 # ============================================================
-# STRATEGY EXECUTION ENGINE
+# STRATEGY EXECUTOR
 # ============================================================
 
 class StrategyExecutor:
@@ -299,7 +310,6 @@ class StrategyExecutor:
             StrategyVWAPDeviation(),
             StrategyMarketProfileBreak(),
 
-            # DataServant strategies
             StrategyMTFTrend(),
             StrategyHTFBreakout(),
             StrategyMTFVWAP()
@@ -309,10 +319,8 @@ class StrategyExecutor:
 
     def register(self, strategy):
 
-        if strategy is None:
-            return
-
-        self.strategies.append(strategy)
+        if strategy:
+            self.strategies.append(strategy)
 
 
     def discover_required_timeframes(self):
@@ -329,7 +337,7 @@ class StrategyExecutor:
         if not timeframes:
             timeframes.add("1m")
 
-        return sorted(list(timeframes))
+        return sorted(timeframes)
 
 
     def run(self, context):
@@ -337,7 +345,9 @@ class StrategyExecutor:
         if context is None:
             return None, None
 
-        for strategy in self.strategies:
+        strategies = self.strategies
+
+        for strategy in strategies:
 
             try:
 
@@ -352,4 +362,4 @@ class StrategyExecutor:
         return None, None
 
 
-#_
+#_#_

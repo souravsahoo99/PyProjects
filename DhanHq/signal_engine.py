@@ -153,10 +153,6 @@ class SignalEngine:
 
         self.publisher = publisher
 
-        # ----------------------------------------------------
-        # DATA SERVANT
-        # ----------------------------------------------------
-
         # injected by InstrumentNode
         self.servant = None
 
@@ -206,6 +202,10 @@ class SignalEngine:
         self._running = True
 
 
+    # ========================================================
+    # DISCOVER REQUIRED TIMEFRAMES
+    # ========================================================
+
     def _discover_required_timeframes(self):
 
         required = set()
@@ -230,27 +230,9 @@ class SignalEngine:
         return list(self.required_timeframes)
 
 
-    def get_signal_history(self):
-
-        with self._history_lock:
-            return list(self.signal_history)
-
-
-    def get_orb_levels(self):
-
-        if not self.orb_ready:
-            return None, None
-
-        return self.orb_high, self.orb_low
-
-
-    def get_profile_levels(self):
-
-        if not self.profile_ready:
-            return None, None
-
-        return self.vah, self.val
-
+    # ========================================================
+    # DATAFRAME BUILDER
+    # ========================================================
 
     def _build_dataframe(self, buffer):
 
@@ -272,6 +254,10 @@ class SignalEngine:
 
         return df.dropna()
 
+
+    # ========================================================
+    # ORB UPDATE
+    # ========================================================
 
     def _update_orb(self, df):
 
@@ -296,6 +282,10 @@ class SignalEngine:
 
             self.orb_ready = True
 
+
+    # ========================================================
+    # MARKET PROFILE
+    # ========================================================
 
     def _load_market_profile(self, df):
 
@@ -322,6 +312,10 @@ class SignalEngine:
 
         self.profile_ready = True
 
+
+    # ========================================================
+    # STRATEGY EXECUTION
+    # ========================================================
 
     def _evaluate(self, df, buffer):
 
@@ -372,6 +366,10 @@ class SignalEngine:
             )
 
 
+    # ========================================================
+    # SIGNAL PUBLICATION
+    # ========================================================
+
     def _publish_signal(self, side, price, timestamp, strategy):
 
         global SIGNALS
@@ -420,7 +418,14 @@ class SignalEngine:
         print(f"[SIGNAL] {self.symbol} → {side} | {strategy} | {price}")
 
 
+    # ========================================================
+    # OPTIMIZED MAIN LOOP
+    # ========================================================
+
     async def run(self):
+
+        idle_sleep = 0.8
+        active_sleep = 0.05
 
         while self._running:
 
@@ -428,23 +433,24 @@ class SignalEngine:
 
             if buffer is None or len(buffer) == 0:
 
-                await asyncio.sleep(0.2)
+                await asyncio.sleep(idle_sleep)
                 continue
 
             candle_time = buffer.time[-1]
 
             if candle_time == self.last_candle_time:
 
-                await asyncio.sleep(0.2)
+                await asyncio.sleep(idle_sleep)
                 continue
 
+            # NEW CANDLE DETECTED
             self.last_candle_time = candle_time
 
             df = self._build_dataframe(buffer)
 
             if df is None:
 
-                await asyncio.sleep(0.2)
+                await asyncio.sleep(active_sleep)
                 continue
 
             self._update_orb(df)
@@ -453,8 +459,12 @@ class SignalEngine:
 
             self._evaluate(df, buffer)
 
-            await asyncio.sleep(0.2)
+            await asyncio.sleep(active_sleep)
 
+
+    # ========================================================
+    # STOP ENGINE
+    # ========================================================
 
     def stop(self):
 

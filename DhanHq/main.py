@@ -1,7 +1,6 @@
 # ============================================================
-# MAIN TRADING ENGINE v2.6
+# MAIN TRADING ENGINE v2.7
 # Production Orchestrator
-# Checkpoint 2.1 Compatible
 # ============================================================
 
 import asyncio
@@ -20,7 +19,7 @@ from display_monitor import DisplayMonitor
 
 
 # ============================================================
-# STRATEGY CONFIGURATION
+# STRATEGY CONFIG
 # ============================================================
 
 STRATEGY_CONFIG = [
@@ -49,10 +48,10 @@ DEBUG_CHART_SYMBOL = None
 
 
 # ============================================================
-# SAFE SPOT PRICE FETCH
+# SAFE SPOT FETCH (ASYNC SAFE)
 # ============================================================
 
-def wait_for_spot_price(engine, exchange, token, timeout=10):
+async def wait_for_spot_price(engine, exchange, token, timeout=10):
 
     start = time.time()
 
@@ -66,21 +65,21 @@ def wait_for_spot_price(engine, exchange, token, timeout=10):
         if time.time() - start > timeout:
             return None
 
-        time.sleep(0.2)
+        await asyncio.sleep(0.2)
 
 
 # ============================================================
 # ATM OPTION DISCOVERY
 # ============================================================
 
-def discover_atm_option_pair(engine, registry, symbol, exchange):
+async def discover_atm_option_pair(engine, registry, symbol, exchange):
 
     parent_token = registry.get_token(exchange, symbol)
 
     if parent_token is None:
         return None, None
 
-    spot = wait_for_spot_price(engine, exchange, parent_token)
+    spot = await wait_for_spot_price(engine, exchange, parent_token)
 
     if spot is None:
         return None, None
@@ -142,7 +141,7 @@ def build_signal_nodes(engine, registry):
 # BUILD TRADE MANAGERS
 # ============================================================
 
-def build_trade_managers(engine, registry):
+async def build_trade_managers(engine, registry):
 
     managers = []
 
@@ -167,17 +166,9 @@ def build_trade_managers(engine, registry):
         ce_token = None
         pe_token = None
 
-        if product_type == "FUT":
+        if product_type == "OPT":
 
-            fut = registry.get_current_future(parent_symbol)
-
-            if fut:
-                child_token = fut.token
-                trading_symbol = fut.symbol
-
-        elif product_type == "OPT":
-
-            ce_token, pe_token = discover_atm_option_pair(
+            ce_token, pe_token = await discover_atm_option_pair(
                 engine,
                 registry,
                 parent_symbol,
@@ -189,14 +180,9 @@ def build_trade_managers(engine, registry):
 
             child_token = ce_token
 
-        elif product_type in ["SPOT", "STOCK"]:
-
-            child_token = parent_token
-
         tm = TradeManager(
 
             engine=engine,
-
             parent_exchange=parent_exchange,
             child_exchange=child_exchange,
 
@@ -227,7 +213,7 @@ def build_trade_managers(engine, registry):
 
 
 # ============================================================
-# ENGINE BOOTLOADER
+# ENGINE BOOT
 # ============================================================
 
 async def engine_bootloader():
@@ -236,22 +222,14 @@ async def engine_bootloader():
 
     engine = APIEngine()
 
-    # --------------------------------------------------------
-    # MARKET DATA ROUTER
-    # --------------------------------------------------------
-
     engine.market_data_map = {}
 
-    print("[ENGINE] Loading instrument registry")
-
     registry = TokenRegistry()
+
     registry.load_master("data/instruments.csv")
 
-    print("[ENGINE] Registry loaded")
-
-    print("[ENGINE] Starting WebSocket")
-
     engine.start_ws()
+
     engine.wait_for_ws()
 
     print("[ENGINE] WebSocket connected\n")
@@ -262,12 +240,6 @@ async def engine_bootloader():
 
     nodes = build_signal_nodes(engine, registry)
 
-    if not nodes:
-        print("[ENGINE] No valid instruments found")
-        return
-
-    print(f"[ENGINE] Signal nodes discovered → {len(nodes)}")
-
     for node in nodes:
 
         await node.initialize()
@@ -275,28 +247,22 @@ async def engine_bootloader():
 
     engine.instrument_nodes = nodes
 
-    print("[ENGINE] Signal layer initialized\n")
-
     # --------------------------------------------------------
     # BUILD TRADE MANAGERS
     # --------------------------------------------------------
 
-    trade_managers = build_trade_managers(engine, registry)
-
-    print(f"[ENGINE] Trade managers created → {len(trade_managers)}\n")
+    trade_managers = await build_trade_managers(engine, registry)
 
     # --------------------------------------------------------
-    # DISPLAY MONITOR
+    # MONITOR
     # --------------------------------------------------------
 
     monitor = DisplayMonitor(engine, trade_managers, nodes)
 
-    asyncio.create_task(
-        asyncio.to_thread(monitor.start)
-    )
+    asyncio.create_task(asyncio.to_thread(monitor.start))
 
     # --------------------------------------------------------
-    # SIGNAL PUBLISHER INJECTION
+    # PUBLISHER INJECTION
     # --------------------------------------------------------
 
     for tm in trade_managers:
@@ -316,24 +282,10 @@ async def engine_bootloader():
 
             if node.token == tm.parent_token:
 
-                if node.signal_engine.publisher is None:
-                    node.signal_engine.publisher = publisher
+                node.signal_engine.publisher = publisher
 
     # --------------------------------------------------------
-    # OPTIONAL DEBUG CHART
-    # --------------------------------------------------------
-
-    if DEBUG_CHART_SYMBOL:
-
-        chart = CandleChart(engine, registry)
-
-        await chart.start(
-            DEBUG_CHART_SYMBOL,
-            "NSE"
-        )
-
-    # --------------------------------------------------------
-    # TASK COLLECTION
+    # TASKS
     # --------------------------------------------------------
 
     tasks = []
@@ -344,11 +296,9 @@ async def engine_bootloader():
     for tm in trade_managers:
         tasks.append(asyncio.create_task(tm.run()))
 
-    await asyncio.gather(*tasks)
+    await asyncio.gather(*tasks, return_exceptions=True)
 
-
-
-
+    engine.shutdown()
 
 
 
