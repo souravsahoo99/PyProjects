@@ -1,9 +1,9 @@
 # ============================================================
-# TRADE MANAGER v3.6
+# TRADE MANAGER v3.5
 # Production Grade Execution Engine
 # Price-Level StopLoss & Target
-# TrailManager Advanced - Frequency Tuned
-# Pointer Broadcast Restored
+# TrailManager Integrated - Frequency Tuned
+# Pointer Broadcast Layer Enabled
 # ============================================================
 
 import time
@@ -129,11 +129,13 @@ class TradeManager:
             "exit_price": None,
             "exit_time": None,
 
+            # PRICE LEVELS
             "stop_loss": None,
             "target": None,
 
             "trailing_distance": 20,
 
+            # METRICS
             "net_pnl": 0,
             "max_pnl": 0,
             "min_pnl": 0,
@@ -149,7 +151,7 @@ class TradeManager:
 
 
     # ========================================================
-    # POINTER WRITE
+    # POINTER BROADCAST
     # ========================================================
 
     def _write_pointer(self):
@@ -244,27 +246,6 @@ class TradeManager:
 
         trail = self.trade.get("trailing_distance", 20)
         sl = self.trade["stop_loss"]
-        target = self.trade["target"]
-
-        # ----------------------------------------------------
-        # TARGET EXTENSION LOGIC (SURGICAL PATCH)
-        # ----------------------------------------------------
-
-        if target is not None:
-
-            if side == "BUY":
-
-                if price >= target - trail:
-                    self.trade["target"] = target + (target / 2)
-
-            elif side == "SELL":
-
-                if price <= target + trail:
-                    self.trade["target"] = target - (target / 2)
-
-        # ----------------------------------------------------
-        # TRAILING STOP LOGIC (UNCHANGED)
-        # ----------------------------------------------------
 
         if side == "BUY":
 
@@ -419,6 +400,7 @@ class TradeManager:
 
                 state = self.trade["strategy_state"]
 
+                # ENTRY STATE
                 if state is None:
 
                     with SIGNAL_LOCK:
@@ -431,6 +413,7 @@ class TradeManager:
 
                         self.enter_trade(signal)
 
+                # ACTIVE STATE
                 elif state == "ACTIVE":
 
                     price = self._get_ltp()
@@ -463,6 +446,7 @@ class TradeManager:
 
                 print("[TRADE MANAGER ERROR]", e)
 
+            # LOOP FREQUENCY CONTROL
             if self.trade["strategy_state"] == "ACTIVE":
                 sleep_time = 0.03
             else:
@@ -474,4 +458,4 @@ class TradeManager:
 
 
 
-#_#_#_#_#_#_#_#
+#_#_#_#_#_#_
