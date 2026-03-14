@@ -1,6 +1,7 @@
 # ============================================================
-# SIGNAL ENGINE v3.5
-# Strategy Driven Pipelines + Shared DataServant Layer
+# SIGNAL ENGINE
+# Production Grade (Checkpoint 5.x Compatible)
+# Strategy Driven Pipelines + DataServant Layer
 # ============================================================
 
 import asyncio
@@ -12,14 +13,20 @@ from pineseries_adapter import SeriesAdapter
 from indicator_utils import MarketProfile
 from market_data import MarketDataManager
 
-from data_servant import DataServant
 
+# ============================================================
+# DATA SERVANT
+# ============================================================
+
+from instrument_node import DataServant as DataServant
 
 # ============================================================
 # GLOBAL SIGNAL BUS
 # ============================================================
 
+
 SIGNALS = []
+
 SIGNAL_LOCK = threading.Lock()
 
 
@@ -93,7 +100,7 @@ class SignalEngine:
 
         self.publisher = publisher
 
-        # injected from InstrumentNode
+        # injected by InstrumentNode
         self.servant = None
 
         # ----------------------------------------------------
@@ -409,8 +416,6 @@ class SignalEngine:
     def stop(self):
 
         self._running = False
-
-
 
 
             
