@@ -1,6 +1,7 @@
 # ============================================================
-# HELPER WRAPPER  v1.2
+# HELPER WRAPPER  v1.3
 # Broker Wrapper Layer (Dhan Backend)
+# Execution Verification Compatible With TradeManager v3.9+
 # ============================================================
 
 import os
@@ -265,6 +266,89 @@ class APIEngine:
 
 
     # =========================================================
+    # ORDER EXECUTION CONFIRMATION
+    # =========================================================
+
+    def confirm_order_execution(self, order_id):
+
+        """
+        Confirms whether an order was actually executed.
+
+        Uses three broker verification layers:
+        1. Order Status
+        2. Tradebook
+        3. Positions
+        """
+
+        if order_id is None:
+            return False
+
+        # -----------------------------------------------------
+        # CHECK ORDER STATUS
+        # -----------------------------------------------------
+
+        try:
+
+            order = self.api.Get_Order_By_ID(order_id)
+
+            if order:
+
+                status = None
+
+                if isinstance(order, dict):
+                    status = order.get("orderStatus") or order.get("status")
+
+                if status:
+
+                    status = str(status).upper()
+
+                    if status in ["TRADED", "FILLED", "COMPLETE", "EXECUTED"]:
+                        return True
+
+        except Exception:
+            pass
+
+
+        # -----------------------------------------------------
+        # CHECK TRADEBOOK
+        # -----------------------------------------------------
+
+        try:
+
+            trades = self.api.Get_Tbook_By_Orderid(order_id)
+
+            if trades:
+
+                if isinstance(trades, list) and len(trades) > 0:
+                    return True
+
+                if isinstance(trades, dict):
+                    return True
+
+        except Exception:
+            pass
+
+
+        # -----------------------------------------------------
+        # CHECK POSITIONS
+        # -----------------------------------------------------
+
+        try:
+
+            positions = self.api.Get_Positions()
+
+            if positions:
+
+                if isinstance(positions, list) and len(positions) > 0:
+                    return True
+
+        except Exception:
+            pass
+
+        return False
+
+
+    # =========================================================
     # SHUTDOWN
     # =========================================================
 
@@ -286,6 +370,9 @@ class APIEngine:
         print("[ENGINE] Shutdown complete.")
 
 
-
-
 #_#
+
+
+
+
+#_#_#_

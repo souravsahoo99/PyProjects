@@ -1,9 +1,10 @@
 # ============================================================
-# TRADE MANAGER v3.7
+# TRADE MANAGER v3.9+
 # Production Grade Execution Engine
 # Price-Level StopLoss & Target
 # TrailManager Advanced - Frequency Tuned
 # Pointer Broadcast Restored
+# Execution Verification Integrated
 # ============================================================
 
 import time
@@ -244,16 +245,11 @@ class TradeManager:
 
         trail = self.trade.get("trailing_distance", 20)
 
-        # acceleration tightening (surgical patch)
         if abs(price - entry) > trail * 5:
             trail = trail / 2
 
         sl = self.trade["stop_loss"]
         target = self.trade["target"]
-
-        # ----------------------------------------------------
-        # TARGET EXTENSION LOGIC
-        # ----------------------------------------------------
 
         if target is not None:
 
@@ -267,27 +263,29 @@ class TradeManager:
                 if price <= target + trail:
                     self.trade["target"] = target - (target / 2)
 
-        # ----------------------------------------------------
-        # TRAILING STOP LOGIC
-        # ----------------------------------------------------
-
         if side == "BUY":
 
             new_sl = price - trail
 
-            if sl is None or new_sl > sl:
+            if sl is None:
+                self.trade["stop_loss"] = new_sl
+
+            elif new_sl > sl:
                 self.trade["stop_loss"] = new_sl
 
         elif side == "SELL":
 
             new_sl = price + trail
 
-            if sl is None or new_sl < sl:
+            if sl is None:
+                self.trade["stop_loss"] = new_sl
+
+            elif new_sl < sl:
                 self.trade["stop_loss"] = new_sl
 
 
     # ========================================================
-    # ENTER TRADE
+    # ENTER TRADE (EXECUTION VERIFIED)
     # ========================================================
 
     def enter_trade(self, signal):
@@ -323,11 +321,36 @@ class TradeManager:
             price=0
         )
 
-        ret = self.engine.api.Place_Order(order)
+        attempt = 0
+        confirmed = False
 
-        if ret is None:
+        while attempt < 2:
 
-            print("[TRADE] Entry rejected")
+            ret = self.engine.api.Place_Order(order)
+
+            if ret is None:
+                attempt += 1
+
+            elif isinstance(ret, dict):
+
+                order_id = ret.get("orderId")
+
+                if order_id is None:
+                    attempt += 1
+
+                elif self.engine.confirm_order_execution(order_id):
+                    confirmed = True
+                    break
+
+                else:
+                    attempt += 1
+
+            else:
+                attempt += 1
+
+        if confirmed is False:
+
+            print("[TRADE] Entry confirmation failed")
             self.trade["strategy_state"] = None
             return
 
@@ -344,10 +367,12 @@ class TradeManager:
         trail = self.trade["trailing_distance"]
 
         if side == "BUY":
+
             self.trade["stop_loss"] = ltp - trail
             self.trade["target"] = ltp + (trail * 5)
 
-        else:
+        elif side == "SELL":
+
             self.trade["stop_loss"] = ltp + trail
             self.trade["target"] = ltp - (trail * 5)
 
@@ -362,7 +387,7 @@ class TradeManager:
 
 
     # ========================================================
-    # EXIT TRADE
+    # EXIT TRADE (EXECUTION VERIFIED)
     # ========================================================
 
     def exit_trade(self):
@@ -384,9 +409,36 @@ class TradeManager:
             price=0
         )
 
-        ret = self.engine.api.Place_Order(order)
+        attempt = 0
+        confirmed = False
 
-        if ret is None:
+        while attempt < 2:
+
+            ret = self.engine.api.Place_Order(order)
+
+            if ret is None:
+                attempt += 1
+
+            elif isinstance(ret, dict):
+
+                order_id = ret.get("orderId")
+
+                if order_id is None:
+                    attempt += 1
+
+                elif self.engine.confirm_order_execution(order_id):
+                    confirmed = True
+                    break
+
+                else:
+                    attempt += 1
+
+            else:
+                attempt += 1
+
+        if confirmed is False:
+
+            print("[TRADE] Exit confirmation failed")
             return
 
         ltp = self._get_ltp()
@@ -397,7 +449,8 @@ class TradeManager:
 
             if side == "BUY":
                 pnl = ltp - self.trade["entry_price"]
-            else:
+
+            elif side == "SELL":
                 pnl = self.trade["entry_price"] - ltp
 
         self.trade["exit_price"] = ltp
