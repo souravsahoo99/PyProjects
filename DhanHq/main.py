@@ -6,12 +6,10 @@
 # Supervisor Layer Integrated
 # ============================================================
 
-
 import asyncio
 import signal
 import time
 import sys
-
 
 from helper_wraper import APIEngine
 from token_registry import TokenRegistry
@@ -19,11 +17,8 @@ from instrument_node import InstrumentNode
 from trade_manager import TradeManager
 from signal_engine import SignalPublisher
 
-
 from candle_chart import CandleChart
 from display_monitor import DisplayMonitor
-
-
 
 # ============================================================
 # STRATEGY CONFIG
@@ -56,8 +51,6 @@ STRATEGY_CONFIG = [
 
 
 DEBUG_CHART_SYMBOL = None
-
-
 
 # ============================================================
 # SAFE SPOT FETCH (REST ONLY)
@@ -195,7 +188,6 @@ def build_signal_nodes(engine, registry):
         nodes.append(node)
 
     return nodes
-
 
 
 # ============================================================
