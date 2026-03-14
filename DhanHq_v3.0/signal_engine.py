@@ -1,7 +1,6 @@
 # ============================================================
-# SIGNAL ENGINE v3.6
+# SIGNAL ENGINE v3.5
 # Strategy Driven Pipelines + Shared DataServant Layer
-# Instrument-Aware Strategy Orchestrator
 # ============================================================
 
 import asyncio
@@ -84,15 +83,7 @@ class SignalPublisher:
 
 class SignalEngine:
 
-    def __init__(
-        self,
-        engine,
-        market_data,
-        symbol,
-        token,
-        publisher=None,
-        instrument_type=None
-    ):
+    def __init__(self, engine, market_data, symbol, token, publisher=None):
 
         self.engine = engine
         self.market_data = market_data
@@ -102,13 +93,7 @@ class SignalEngine:
 
         self.publisher = publisher
 
-        # ----------------------------------------------------
-        # NODE INTELLIGENCE (NEW)
-        # ----------------------------------------------------
-
-        self.instrument_type = instrument_type
-
-        # injected by InstrumentNode
+        # injected from InstrumentNode
         self.servant = None
 
         # ----------------------------------------------------
@@ -116,12 +101,6 @@ class SignalEngine:
         # ----------------------------------------------------
 
         self.strategy_engine = StrategyExecutor()
-
-        # ----------------------------------------------------
-        # FILTER STRATEGIES BASED ON INSTRUMENT
-        # ----------------------------------------------------
-
-        self._filter_strategies()
 
         # ----------------------------------------------------
         # DISCOVER REQUIRED PIPELINES
@@ -161,31 +140,6 @@ class SignalEngine:
         self.profile_ready = False
 
         self._running = True
-
-
-    # ========================================================
-    # STRATEGY FILTER
-    # ========================================================
-
-    def _filter_strategies(self):
-
-        if not self.instrument_type:
-            return
-
-        filtered = []
-
-        for strategy in self.strategy_engine.strategies:
-
-            scope = getattr(strategy, "INSTRUMENT_SCOPE", None)
-
-            if scope is None:
-                filtered.append(strategy)
-                continue
-
-            if self.instrument_type in scope:
-                filtered.append(strategy)
-
-        self.strategy_engine.strategies = filtered
 
 
     # ========================================================
@@ -335,8 +289,7 @@ class SignalEngine:
             "val": self.val,
             "profile_ready": self.profile_ready,
 
-            "servant": self.servant,
-            "token": self.token
+            "servant": self.servant
         }
 
         strategy, side = self.strategy_engine.run(context)

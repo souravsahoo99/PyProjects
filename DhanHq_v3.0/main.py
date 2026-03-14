@@ -2,7 +2,6 @@
 # MAIN TRADING ENGINE v3.7
 # Production Orchestrator
 # Shared DataServant Architecture
-# Instrument-Aware Signal Engine
 # ============================================================
 
 import asyncio
@@ -88,6 +87,10 @@ async def discover_atm_option_pair(engine, registry, symbol, exchange):
     if spot is None:
         return None, None
 
+    # --------------------------------------------------------
+    # SPOT REVALIDATION
+    # --------------------------------------------------------
+
     spot_confirm = engine.get_ltp_rest(exchange, underlying_token)
 
     if spot_confirm is not None:
@@ -148,7 +151,6 @@ def build_signal_nodes(engine, registry):
         exchange = config["parent_exchange"]
 
         parent_type = config.get("parent_type", "IDX")
-        product_type = config.get("product_type", "STOCK")
 
         token = resolve_parent_token(
             registry,
@@ -164,8 +166,7 @@ def build_signal_nodes(engine, registry):
             engine,
             exchange,
             symbol,
-            token,
-            instrument_type=product_type   # NEW
+            token
         )
 
         nodes.append(node)
@@ -426,4 +427,5 @@ if __name__ == "__main__":
 
 
 
-#_#_#_#_#_#_#_#_#_#_#
+
+#_#_#_#_#_#_#_#_#_#_#_#_#_#
