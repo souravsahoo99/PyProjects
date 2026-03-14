@@ -1,8 +1,8 @@
 # ============================================================
-# MAIN TRADING ENGINE v3.3
+# MAIN TRADING ENGINE v3.4
 # Production Orchestrator
 # parent_type Support Added (Backward Compatible)
-# REST-based Spot Discovery (Surgical Fix)
+# REST-based Spot Discovery + Spot Revalidation
 # ============================================================
 
 import asyncio
@@ -29,7 +29,7 @@ STRATEGY_CONFIG = [
     {
         "parent_symbol": "NIFTY",
         "parent_exchange": "NSE",
-        "parent_type": "FUT",   # FUT = NiftyFuture / IDX = NiftyIndex
+        "parent_type": "FUT",
         "child_exchange": "NFO",
         "product_type": "OPT",
         "qty": 65,
@@ -39,7 +39,7 @@ STRATEGY_CONFIG = [
     {
         "parent_symbol": "RELIANCE",
         "parent_exchange": "NSE",
-        "parent_type": "IDX",   # IDX = Equity / FUT = StockFuture
+        "parent_type": "IDX",
         "child_exchange": "NSE",
         "product_type": "STOCK",
         "qty": 10,
@@ -61,10 +61,6 @@ async def wait_for_spot_price(engine, exchange, token, timeout=10):
 
     while True:
 
-        # ------------------------------
-        # REST LTP ONLY (Surgical Fix)
-        # ------------------------------
-
         price = engine.get_ltp_rest(exchange, token)
 
         if price is not None:
@@ -82,16 +78,30 @@ async def wait_for_spot_price(engine, exchange, token, timeout=10):
 
 async def discover_atm_option_pair(engine, registry, symbol, exchange):
 
-    # Always fetch underlying index/equity
     underlying_token = registry.get_token(exchange, symbol)
 
     if underlying_token is None:
         return None, None
 
+    # -----------------------------------------
+    # REST SPOT FETCH
+    # -----------------------------------------
+
     spot = await wait_for_spot_price(engine, exchange, underlying_token)
 
     if spot is None:
         return None, None
+
+    # -----------------------------------------
+    # SPOT REVALIDATION (Surgical Addition)
+    # -----------------------------------------
+
+    spot_confirm = engine.get_ltp_rest(exchange, underlying_token)
+
+    if spot_confirm is not None:
+        spot = spot_confirm
+
+    # -----------------------------------------
 
     futures = registry.get_futures(symbol)
 
@@ -341,6 +351,7 @@ async def engine_bootloader():
     await asyncio.gather(*tasks, return_exceptions=True)
 
     engine.shutdown()
+
 
 
 
