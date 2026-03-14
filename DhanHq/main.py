@@ -2,7 +2,7 @@
 # MAIN TRADING ENGINE v3.3
 # Production Orchestrator
 # parent_type Support Added (Backward Compatible)
-# Underlying-based Option Discovery
+# REST-based Spot Discovery (Surgical Fix)
 # ============================================================
 
 import asyncio
@@ -52,7 +52,7 @@ DEBUG_CHART_SYMBOL = None
 
 
 # ============================================================
-# SAFE SPOT FETCH (ASYNC SAFE)
+# SAFE SPOT FETCH (REST ONLY)
 # ============================================================
 
 async def wait_for_spot_price(engine, exchange, token, timeout=10):
@@ -61,7 +61,11 @@ async def wait_for_spot_price(engine, exchange, token, timeout=10):
 
     while True:
 
-        price = engine.get_ltp_live(exchange, token)
+        # ------------------------------
+        # REST LTP ONLY (Surgical Fix)
+        # ------------------------------
+
+        price = engine.get_ltp_rest(exchange, token)
 
         if price is not None:
             return price
@@ -74,12 +78,11 @@ async def wait_for_spot_price(engine, exchange, token, timeout=10):
 
 # ============================================================
 # ATM OPTION DISCOVERY
-# (Always Based on Underlying Index / Equity)
 # ============================================================
 
 async def discover_atm_option_pair(engine, registry, symbol, exchange):
 
-    # Underlying token ALWAYS fetched from registry
+    # Always fetch underlying index/equity
     underlying_token = registry.get_token(exchange, symbol)
 
     if underlying_token is None:
@@ -128,7 +131,6 @@ def resolve_parent_token(registry, exchange, symbol, parent_type):
 
         return None
 
-    # Default IDX behaviour
     return registry.get_token(exchange, symbol)
 
 
@@ -275,7 +277,7 @@ async def engine_bootloader():
     print("[ENGINE] WebSocket connected\n")
 
     # --------------------------------------------------------
-    # BUILD SIGNAL NODES
+    # BUILD NODES
     # --------------------------------------------------------
 
     nodes = build_signal_nodes(engine, registry)
@@ -342,4 +344,5 @@ async def engine_bootloader():
 
 
 
-#_#_#_#_#_#_#_#_#_#_#_#_
+
+#_#_#_#_#_#_#_#_#_#_#_

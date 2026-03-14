@@ -1,6 +1,7 @@
 # ============================================================
-# MAIN TRADING ENGINE v2.7
+# MAIN TRADING ENGINE v3.5
 # Production Orchestrator
+# Supervisor Layer Integrated
 # ============================================================
 
 import asyncio
@@ -27,6 +28,7 @@ STRATEGY_CONFIG = [
     {
         "parent_symbol": "NIFTY",
         "parent_exchange": "NSE",
+        "parent_type": "FUT",
         "child_exchange": "NFO",
         "product_type": "OPT",
         "qty": 65,
@@ -36,6 +38,7 @@ STRATEGY_CONFIG = [
     {
         "parent_symbol": "RELIANCE",
         "parent_exchange": "NSE",
+        "parent_type": "IDX",
         "child_exchange": "NSE",
         "product_type": "STOCK",
         "qty": 10,
@@ -74,12 +77,12 @@ async def wait_for_spot_price(engine, exchange, token, timeout=10):
 
 async def discover_atm_option_pair(engine, registry, symbol, exchange):
 
-    parent_token = registry.get_token(exchange, symbol)
+    underlying_token = registry.get_token(exchange, symbol)
 
-    if parent_token is None:
+    if underlying_token is None:
         return None, None
 
-    spot = await wait_for_spot_price(engine, exchange, parent_token)
+    spot = await wait_for_spot_price(engine, exchange, underlying_token)
 
     if spot is None:
         return None, None
@@ -108,6 +111,24 @@ async def discover_atm_option_pair(engine, registry, symbol, exchange):
 
 
 # ============================================================
+# RESOLVE PARENT TOKEN
+# ============================================================
+
+def resolve_parent_token(registry, exchange, symbol, parent_type):
+
+    if parent_type == "FUT":
+
+        futures = registry.get_futures(symbol)
+
+        if futures:
+            return futures[0].token
+
+        return None
+
+    return registry.get_token(exchange, symbol)
+
+
+# ============================================================
 # BUILD SIGNAL NODES
 # ============================================================
 
@@ -120,7 +141,14 @@ def build_signal_nodes(engine, registry):
         symbol = config["parent_symbol"]
         exchange = config["parent_exchange"]
 
-        token = registry.get_token(exchange, symbol)
+        parent_type = config.get("parent_type", "IDX")
+
+        token = resolve_parent_token(
+            registry,
+            exchange,
+            symbol,
+            parent_type
+        )
 
         if token is None:
             continue
@@ -149,13 +177,21 @@ async def build_trade_managers(engine, registry):
 
         parent_symbol = config["parent_symbol"]
         parent_exchange = config["parent_exchange"]
-        child_exchange = config["child_exchange"]
 
+        parent_type = config.get("parent_type", "IDX")
+
+        child_exchange = config["child_exchange"]
         product_type = config["product_type"]
+
         qty = config["qty"]
         max_retry = config["max_retry"]
 
-        parent_token = registry.get_token(parent_exchange, parent_symbol)
+        parent_token = resolve_parent_token(
+            registry,
+            parent_exchange,
+            parent_symbol,
+            parent_type
+        )
 
         if parent_token is None:
             continue
@@ -229,41 +265,22 @@ async def engine_bootloader():
     registry.load_master("data/instruments.csv")
 
     engine.start_ws()
-
     engine.wait_for_ws()
 
     print("[ENGINE] WebSocket connected\n")
 
-    # --------------------------------------------------------
-    # BUILD NODES
-    # --------------------------------------------------------
-
     nodes = build_signal_nodes(engine, registry)
 
     for node in nodes:
-
         await node.initialize()
         node.start()
 
     engine.instrument_nodes = nodes
 
-    # --------------------------------------------------------
-    # BUILD TRADE MANAGERS
-    # --------------------------------------------------------
-
     trade_managers = await build_trade_managers(engine, registry)
 
-    # --------------------------------------------------------
-    # MONITOR
-    # --------------------------------------------------------
-
     monitor = DisplayMonitor(engine, trade_managers, nodes)
-
     asyncio.create_task(asyncio.to_thread(monitor.start))
-
-    # --------------------------------------------------------
-    # PUBLISHER INJECTION
-    # --------------------------------------------------------
 
     for tm in trade_managers:
 
@@ -281,12 +298,7 @@ async def engine_bootloader():
         for node in nodes:
 
             if node.token == tm.parent_token:
-
                 node.signal_engine.publisher = publisher
-
-    # --------------------------------------------------------
-    # TASKS
-    # --------------------------------------------------------
 
     tasks = []
 
@@ -301,5 +313,75 @@ async def engine_bootloader():
     engine.shutdown()
 
 
+# ============================================================
+# SUPERVISOR LAYER
+# ============================================================
 
-#_#_#_#_#_#_#_#_#_#_#_
+def shutdown():
+
+    print("\n[ENGINE] Shutdown requested\n")
+
+
+if __name__ == "__main__":
+
+    if len(sys.argv) > 1:
+
+        DEBUG_CHART_SYMBOL = sys.argv[1]
+
+        print(f"[DEBUG] Chart mode enabled → {DEBUG_CHART_SYMBOL}")
+
+    restart_limit = 3
+    restart_delay = 5
+    restart_count = 0
+
+    running = True
+
+    while running:
+
+        print(f"\n[SUPERVISOR] Engine start attempt {restart_count + 1}\n")
+
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+
+        for sig in (signal.SIGINT, signal.SIGTERM):
+            loop.add_signal_handler(sig, shutdown)
+
+        try:
+
+            loop.run_until_complete(engine_bootloader())
+
+            running = False
+
+        except KeyboardInterrupt:
+
+            print("\n[ENGINE] Interrupted by user")
+            running = False
+
+        except Exception as e:
+
+            restart_count += 1
+
+            print(f"\n[ENGINE] Crash detected → {e}")
+            print(f"[SUPERVISOR] Restart {restart_count}/{restart_limit}")
+
+            if restart_count >= restart_limit:
+
+                print("[SUPERVISOR] Restart limit reached.")
+                running = False
+
+            else:
+
+                print(f"[SUPERVISOR] Restarting in {restart_delay} seconds\n")
+                time.sleep(restart_delay)
+
+        finally:
+
+            loop.stop()
+            loop.close()
+
+    print("\n[ENGINE] Trading Engine stopped\n")
+
+
+
+
+#_#_#_#_#_#_#_#_#_#_#_#_#_
