@@ -1,5 +1,5 @@
 # ============================================================
-# TRADE MANAGER v3.6
+# TRADE MANAGER v3.7
 # Production Grade Execution Engine
 # Price-Level StopLoss & Target
 # TrailManager Advanced - Frequency Tuned
@@ -243,11 +243,16 @@ class TradeManager:
             self.trade["min_pnl"] = pnl
 
         trail = self.trade.get("trailing_distance", 20)
+
+        # acceleration tightening (surgical patch)
+        if abs(price - entry) > trail * 5:
+            trail = trail / 2
+
         sl = self.trade["stop_loss"]
         target = self.trade["target"]
 
         # ----------------------------------------------------
-        # TARGET EXTENSION LOGIC (SURGICAL PATCH)
+        # TARGET EXTENSION LOGIC
         # ----------------------------------------------------
 
         if target is not None:
@@ -263,7 +268,7 @@ class TradeManager:
                     self.trade["target"] = target - (target / 2)
 
         # ----------------------------------------------------
-        # TRAILING STOP LOGIC (UNCHANGED)
+        # TRAILING STOP LOGIC
         # ----------------------------------------------------
 
         if side == "BUY":
@@ -341,6 +346,7 @@ class TradeManager:
         if side == "BUY":
             self.trade["stop_loss"] = ltp - trail
             self.trade["target"] = ltp + (trail * 5)
+
         else:
             self.trade["stop_loss"] = ltp + trail
             self.trade["target"] = ltp - (trail * 5)
