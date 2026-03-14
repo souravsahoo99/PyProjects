@@ -1,7 +1,8 @@
 # ============================================================
-# MAIN TRADING ENGINE v3.2
+# MAIN TRADING ENGINE v3.3
 # Production Orchestrator
 # parent_type Support Added (Backward Compatible)
+# Underlying-based Option Discovery
 # ============================================================
 
 import asyncio
@@ -28,7 +29,7 @@ STRATEGY_CONFIG = [
     {
         "parent_symbol": "NIFTY",
         "parent_exchange": "NSE",
-        "parent_type": "FUT",   # FUT=NiftyFuture / IDX=NiftyIndex
+        "parent_type": "FUT",   # FUT = NiftyFuture / IDX = NiftyIndex
         "child_exchange": "NFO",
         "product_type": "OPT",
         "qty": 65,
@@ -38,7 +39,7 @@ STRATEGY_CONFIG = [
     {
         "parent_symbol": "RELIANCE",
         "parent_exchange": "NSE",
-        "parent_type": "IDX",   # IDX=Equity / FUT=StockFuture
+        "parent_type": "IDX",   # IDX = Equity / FUT = StockFuture
         "child_exchange": "NSE",
         "product_type": "STOCK",
         "qty": 10,
@@ -73,16 +74,18 @@ async def wait_for_spot_price(engine, exchange, token, timeout=10):
 
 # ============================================================
 # ATM OPTION DISCOVERY
+# (Always Based on Underlying Index / Equity)
 # ============================================================
 
 async def discover_atm_option_pair(engine, registry, symbol, exchange):
 
-    parent_token = registry.get_token(exchange, symbol)
+    # Underlying token ALWAYS fetched from registry
+    underlying_token = registry.get_token(exchange, symbol)
 
-    if parent_token is None:
+    if underlying_token is None:
         return None, None
 
-    spot = await wait_for_spot_price(engine, exchange, parent_token)
+    spot = await wait_for_spot_price(engine, exchange, underlying_token)
 
     if spot is None:
         return None, None
@@ -111,7 +114,7 @@ async def discover_atm_option_pair(engine, registry, symbol, exchange):
 
 
 # ============================================================
-# RESOLVE PARENT TOKEN (NEW INTELLIGENCE)
+# RESOLVE PARENT TOKEN
 # ============================================================
 
 def resolve_parent_token(registry, exchange, symbol, parent_type):
@@ -144,7 +147,12 @@ def build_signal_nodes(engine, registry):
 
         parent_type = config.get("parent_type", "IDX")
 
-        token = resolve_parent_token(registry, exchange, symbol, parent_type)
+        token = resolve_parent_token(
+            registry,
+            exchange,
+            symbol,
+            parent_type
+        )
 
         if token is None:
             continue
@@ -178,6 +186,7 @@ async def build_trade_managers(engine, registry):
 
         child_exchange = config["child_exchange"]
         product_type = config["product_type"]
+
         qty = config["qty"]
         max_retry = config["max_retry"]
 
@@ -266,7 +275,7 @@ async def engine_bootloader():
     print("[ENGINE] WebSocket connected\n")
 
     # --------------------------------------------------------
-    # BUILD NODES
+    # BUILD SIGNAL NODES
     # --------------------------------------------------------
 
     nodes = build_signal_nodes(engine, registry)
@@ -333,4 +342,4 @@ async def engine_bootloader():
 
 
 
-#_#_#_#_#_#_#_#_#_#_#_
+#_#_#_#_#_#_#_#_#_#_#_#_
