@@ -1,7 +1,7 @@
 # ============================================================
-# STRATEGY MAIN v4.2
+# STRATEGY MAIN v5.0
 # Production Strategy Layer
-# DataServant Compatible
+# Node-Scope + Instrument-Scope Compatible
 # ============================================================
 
 from indicator_utils import VWAPBands, MarketProfile
@@ -20,6 +20,13 @@ class BaseStrategy:
     name = "BASE"
 
     REQUIRED_TIMEFRAMES = ["1m"]
+
+    # --------------------------------------------------------
+    # NEW CLASSIFICATION
+    # --------------------------------------------------------
+
+    NODE_SCOPE = ["PARENT", "CHILD", "BOTH"]
+    INSTRUMENT_SCOPE = ["FUT", "OPT", "STOCK"]
 
     def evaluate(self, context):
         return None
@@ -92,6 +99,9 @@ class StrategyORB(BaseStrategy):
 
     REQUIRED_TIMEFRAMES = ["1m"]
 
+    NODE_SCOPE = ["PARENT"]
+    INSTRUMENT_SCOPE = ["FUT", "STOCK"]
+
     def evaluate(self, context):
 
         if not context["orb_ready"]:
@@ -120,6 +130,9 @@ class StrategyVWAPDeviation(BaseStrategy):
     name = "VWAP_DEV"
 
     REQUIRED_TIMEFRAMES = ["1m"]
+
+    NODE_SCOPE = ["PARENT"]
+    INSTRUMENT_SCOPE = ["FUT", "STOCK"]
 
     def evaluate(self, context):
 
@@ -163,6 +176,9 @@ class StrategyMarketProfileBreak(BaseStrategy):
 
     REQUIRED_TIMEFRAMES = ["1m"]
 
+    NODE_SCOPE = ["PARENT"]
+    INSTRUMENT_SCOPE = ["FUT", "STOCK"]
+
     def evaluate(self, context):
 
         if not context["profile_ready"]:
@@ -191,6 +207,9 @@ class StrategyMTFTrend(BaseStrategy):
     name = "MTF_TREND"
 
     REQUIRED_TIMEFRAMES = ["1m"]
+
+    NODE_SCOPE = ["CHILD"]
+    INSTRUMENT_SCOPE = ["OPT", "STOCK"]
 
     def evaluate(self, context):
 
@@ -226,6 +245,9 @@ class StrategyHTFBreakout(BaseStrategy):
 
     REQUIRED_TIMEFRAMES = ["1m"]
 
+    NODE_SCOPE = ["CHILD"]
+    INSTRUMENT_SCOPE = ["OPT", "STOCK"]
+
     def evaluate(self, context):
 
         token = self.get_token(context)
@@ -260,6 +282,9 @@ class StrategyMTFVWAP(BaseStrategy):
     name = "MTF_VWAP"
 
     REQUIRED_TIMEFRAMES = ["1m"]
+
+    NODE_SCOPE = ["CHILD"]
+    INSTRUMENT_SCOPE = ["OPT", "STOCK"]
 
     def evaluate(self, context):
 
@@ -317,11 +342,19 @@ class StrategyExecutor:
         ]
 
 
+    # --------------------------------------------------------
+    # REGISTER NEW STRATEGY
+    # --------------------------------------------------------
+
     def register(self, strategy):
 
         if strategy:
             self.strategies.append(strategy)
 
+
+    # --------------------------------------------------------
+    # DISCOVER REQUIRED TIMEFRAMES
+    # --------------------------------------------------------
 
     def discover_required_timeframes(self):
 
@@ -340,12 +373,47 @@ class StrategyExecutor:
         return sorted(timeframes)
 
 
-    def run(self, context):
+    # --------------------------------------------------------
+    # NEW STRATEGY FILTER FOR SIGNAL ENGINE
+    # --------------------------------------------------------
+
+    def get_strategies(self, instrument_type=None, node_scope=None):
+
+        filtered = []
+
+        for strategy in self.strategies:
+
+            inst_scope = getattr(strategy, "INSTRUMENT_SCOPE", None)
+            node_scope_s = getattr(strategy, "NODE_SCOPE", None)
+
+            inst_ok = (
+                inst_scope is None
+                or instrument_type in inst_scope
+            )
+
+            node_ok = (
+                node_scope_s is None
+                or node_scope in node_scope_s
+                or "BOTH" in node_scope_s
+            )
+
+            if inst_ok and node_ok:
+                filtered.append(strategy)
+
+        return filtered
+
+
+    # --------------------------------------------------------
+    # STRATEGY EXECUTION
+    # --------------------------------------------------------
+
+    def run(self, context, strategies=None):
 
         if context is None:
             return None, None
 
-        strategies = self.strategies
+        if strategies is None:
+            strategies = self.strategies
 
         for strategy in strategies:
 
@@ -362,4 +430,7 @@ class StrategyExecutor:
         return None, None
 
 
-#_#_#_
+
+
+
+#_#_#_#_

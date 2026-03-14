@@ -1,8 +1,8 @@
 # ============================================================
-# MAIN TRADING ENGINE v3.7
+# MAIN TRADING ENGINE v3.8
 # Production Orchestrator
 # Shared DataServant Architecture
-# Instrument-Aware Signal Engine
+# Strategy-Orchestration Compatible
 # ============================================================
 
 import asyncio
@@ -135,6 +135,18 @@ def resolve_parent_token(registry, exchange, symbol, parent_type):
 
 
 # ============================================================
+# NODE SCOPE RESOLVER
+# ============================================================
+
+def resolve_node_scope(product_type):
+
+    if product_type == "OPT":
+        return "CHILD"
+
+    return "PARENT"
+
+
+# ============================================================
 # BUILD SIGNAL NODES
 # ============================================================
 
@@ -150,6 +162,8 @@ def build_signal_nodes(engine, registry):
         parent_type = config.get("parent_type", "IDX")
         product_type = config.get("product_type", "STOCK")
 
+        node_scope = resolve_node_scope(product_type)
+
         token = resolve_parent_token(
             registry,
             exchange,
@@ -161,11 +175,14 @@ def build_signal_nodes(engine, registry):
             continue
 
         node = InstrumentNode(
+
             engine,
             exchange,
             symbol,
             token,
-            instrument_type=product_type   # NEW
+
+            instrument_type=product_type,
+            node_scope=node_scope
         )
 
         nodes.append(node)

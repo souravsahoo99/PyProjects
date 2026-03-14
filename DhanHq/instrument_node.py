@@ -1,7 +1,8 @@
 # ============================================================
-# INSTRUMENT NODE  v2.0
+# INSTRUMENT NODE v2.1
 # Production Node Controller
 # Compatible with Shared DataServant Architecture
+# Strategy-Orchestration Compatible
 # ============================================================
 
 import asyncio
@@ -22,7 +23,9 @@ class InstrumentNode:
         engine,
         exchange,
         symbol,
-        token
+        token,
+        instrument_type=None,
+        node_scope="PARENT"
     ):
 
         # ----------------------------------------------------
@@ -33,6 +36,13 @@ class InstrumentNode:
         self.exchange = exchange
         self.symbol = symbol
         self.token = token
+
+        # ----------------------------------------------------
+        # NODE INTELLIGENCE
+        # ----------------------------------------------------
+
+        self.instrument_type = instrument_type
+        self.node_scope = node_scope
 
         # ----------------------------------------------------
         # MODULE INSTANCES
@@ -74,11 +84,16 @@ class InstrumentNode:
         # ----------------------------------------------------
 
         self.signal_engine = SignalEngine(
+
             engine=self.engine,
             market_data=None,
             symbol=self.symbol,
             token=self.token,
-            publisher=None
+            publisher=None,
+
+            # NEW INTELLIGENCE
+            instrument_type=self.instrument_type,
+            node_scope=self.node_scope
         )
 
         required_timeframes = self.signal_engine.get_required_timeframes()
@@ -146,10 +161,6 @@ class InstrumentNode:
 
         return self.tasks
 
-
-# ============================================================
-# END
-# ============================================================
 
 
 

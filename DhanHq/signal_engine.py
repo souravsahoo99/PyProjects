@@ -1,7 +1,7 @@
 # ============================================================
-# SIGNAL ENGINE v3.6
+# SIGNAL ENGINE v3.7
 # Strategy Driven Pipelines + Shared DataServant Layer
-# Instrument-Aware Strategy Orchestrator
+# Node-Scope + Instrument-Scope Compatible
 # ============================================================
 
 import asyncio
@@ -91,7 +91,8 @@ class SignalEngine:
         symbol,
         token,
         publisher=None,
-        instrument_type=None
+        instrument_type=None,
+        node_scope="PARENT"
     ):
 
         self.engine = engine
@@ -103,10 +104,11 @@ class SignalEngine:
         self.publisher = publisher
 
         # ----------------------------------------------------
-        # NODE INTELLIGENCE (NEW)
+        # NODE INTELLIGENCE
         # ----------------------------------------------------
 
         self.instrument_type = instrument_type
+        self.node_scope = node_scope
 
         # injected by InstrumentNode
         self.servant = None
@@ -118,10 +120,13 @@ class SignalEngine:
         self.strategy_engine = StrategyExecutor()
 
         # ----------------------------------------------------
-        # FILTER STRATEGIES BASED ON INSTRUMENT
+        # LOAD FILTERED STRATEGIES
         # ----------------------------------------------------
 
-        self._filter_strategies()
+        self.strategies = self.strategy_engine.get_strategies(
+            instrument_type=self.instrument_type,
+            node_scope=self.node_scope
+        )
 
         # ----------------------------------------------------
         # DISCOVER REQUIRED PIPELINES
@@ -164,31 +169,6 @@ class SignalEngine:
 
 
     # ========================================================
-    # STRATEGY FILTER
-    # ========================================================
-
-    def _filter_strategies(self):
-
-        if not self.instrument_type:
-            return
-
-        filtered = []
-
-        for strategy in self.strategy_engine.strategies:
-
-            scope = getattr(strategy, "INSTRUMENT_SCOPE", None)
-
-            if scope is None:
-                filtered.append(strategy)
-                continue
-
-            if self.instrument_type in scope:
-                filtered.append(strategy)
-
-        self.strategy_engine.strategies = filtered
-
-
-    # ========================================================
     # DISCOVER REQUIRED TIMEFRAMES
     # ========================================================
 
@@ -196,9 +176,7 @@ class SignalEngine:
 
         required = set()
 
-        strategies = getattr(self.strategy_engine, "strategies", [])
-
-        for strat in strategies:
+        for strat in self.strategies:
 
             tfs = getattr(strat, "REQUIRED_TIMEFRAMES", None)
 
@@ -339,7 +317,10 @@ class SignalEngine:
             "token": self.token
         }
 
-        strategy, side = self.strategy_engine.run(context)
+        strategy, side = self.strategy_engine.run(
+            context,
+            strategies=self.strategies
+        )
 
         if side:
 
@@ -430,7 +411,6 @@ class SignalEngine:
                 await asyncio.sleep(idle_sleep)
                 continue
 
-            # NEW CANDLE DETECTED
             self.last_candle_time = candle_time
 
             df = self._build_dataframe(buffer)
@@ -441,7 +421,6 @@ class SignalEngine:
                 continue
 
             self._update_orb(df)
-
             self._load_market_profile(df)
 
             self._evaluate(df, buffer)
@@ -461,4 +440,4 @@ class SignalEngine:
 
 
             
-#_#_#_#_#_#_#_#_#_#_
+#_#_#_#_#_#_#_#_#_#_#_
