@@ -15,7 +15,7 @@ from datetime import datetime
 import pytz
 
 from indicator_utils import (OpeningRangeIndicator,VWAPIndicator,MarketProfileIndicator)
-from strategy_utils import (breakout,breakdown,VWAPBandState,VwapMemoryModule,TpoMemoryModule)
+from strategy_utils import (VWAPBandState,VwapMemoryModule,TpoMemoryModule,breakout,breakdown,cross, cross_over, cross_under, higher_high, lower_low,trend_state,pivot_high,pivot_low,swing_high,swing_low,highest,lowest,bars_since,value_when)
 
 
 # ============================================================

@@ -4,9 +4,7 @@
 # ============================================================
 
 import numpy as np
-
 from indicator_utils import VWAPIndicator, MarketProfileIndicator
-
 
 # ============================================================
 # CROSSOVER
