@@ -1,7 +1,8 @@
 # ============================================================
-# TRADE MANAGER v4.0
+# TRADE MANAGER v4.1
 # Production Grade Execution Engine
 # WebSocket Order Confirmation Integrated
+# Resilience Compatible (Checkpoint 7.0)
 # ============================================================
 
 import time
@@ -73,6 +74,18 @@ class TradeManager:
         self.strategy_name = None
 
         # ----------------------------------------------------
+        # SIGNAL MEMORY
+        # ----------------------------------------------------
+
+        self.last_signal_key = None
+
+        # ----------------------------------------------------
+        # MANAGER RUN CONTROL
+        # ----------------------------------------------------
+
+        self._running = True
+
+        # ----------------------------------------------------
         # POINTER SYSTEM
         # ----------------------------------------------------
 
@@ -87,12 +100,6 @@ class TradeManager:
 
         self.mongo_collection = mongo_collection
         self.mongo_object_id = None
-
-        # ----------------------------------------------------
-        # SIGNAL MEMORY
-        # ----------------------------------------------------
-
-        self.entry_signal = None
 
         # ----------------------------------------------------
         # TRADE DICT
@@ -143,6 +150,7 @@ class TradeManager:
             "last_update_time": None
         }
 
+
     # ========================================================
     # POINTER WRITE
     # ========================================================
@@ -168,6 +176,7 @@ class TradeManager:
         with open(self.pointer_file, "w") as f:
             json.dump(pointer_data, f, indent=4)
 
+
     # ========================================================
     # MONGO
     # ========================================================
@@ -180,6 +189,7 @@ class TradeManager:
         self.trade["mongo_object_id"] = str(self.mongo_object_id)
 
         self._write_pointer()
+
 
     def _mongo_update(self):
 
@@ -196,16 +206,18 @@ class TradeManager:
 
         self._write_pointer()
 
+
     # ========================================================
-    # FETCH LTP
+    # FETCH LTP (WS + REST fallback compatible)
     # ========================================================
 
     def _get_ltp(self):
 
-        return self.engine.get_ltp_live(
+        return self.engine.get_best_ltp(
             self.child_exchange,
             self.child_token
         )
+
 
     # ========================================================
     # TRAIL MANAGER
@@ -264,17 +276,25 @@ class TradeManager:
             if sl is None or new_sl < sl:
                 self.trade["stop_loss"] = new_sl
 
+
     # ========================================================
-    # ENTER TRADE (WEBSOCKET VERIFIED)
+    # ENTER TRADE
     # ========================================================
 
     def enter_trade(self, signal):
+
+        signal_key = f"{signal['symbol']}_{signal['strategy']}_{signal['signal_time']}"
+
+        if signal_key == self.last_signal_key:
+            return
 
         if self.trade["strategy_state"] is not None:
             return
 
         if time.time() - signal["signal_time"] > self.signal_validity_seconds:
             return
+
+        self.last_signal_key = signal_key
 
         side = signal.get("side")
 
@@ -312,7 +332,6 @@ class TradeManager:
 
                 if order_id:
 
-                    # wait websocket confirmation window
                     start = time.time()
 
                     while time.time() - start < 3:
@@ -350,7 +369,7 @@ class TradeManager:
             self.trade["stop_loss"] = ltp - trail
             self.trade["target"] = ltp + (trail * 5)
 
-        elif side == "SELL":
+        else:
             self.trade["stop_loss"] = ltp + trail
             self.trade["target"] = ltp - (trail * 5)
 
@@ -363,8 +382,9 @@ class TradeManager:
 
         print(f"[TRADE] {self.trading_symbol} entered @ {ltp}")
 
+
     # ========================================================
-    # EXIT TRADE (WEBSOCKET VERIFIED)
+    # EXIT TRADE
     # ========================================================
 
     def exit_trade(self):
@@ -428,8 +448,7 @@ class TradeManager:
 
             if side == "BUY":
                 pnl = ltp - self.trade["entry_price"]
-
-            elif side == "SELL":
+            else:
                 pnl = self.trade["entry_price"] - ltp
 
         self.trade["exit_price"] = ltp
@@ -444,13 +463,14 @@ class TradeManager:
 
         print(f"[TRADE] Exit @ {ltp} | PnL {pnl}")
 
+
     # ========================================================
     # MAIN LOOP
     # ========================================================
 
     async def run(self):
 
-        while True:
+        while self._running:
 
             try:
 
@@ -500,12 +520,18 @@ class TradeManager:
 
                 print("[TRADE MANAGER ERROR]", e)
 
-            if self.trade["strategy_state"] == "ACTIVE":
-                sleep_time = 0.03
-            else:
-                sleep_time = 0.3
+            sleep_time = 0.03 if self.trade["strategy_state"] == "ACTIVE" else 0.3
 
             await asyncio.sleep(sleep_time)
+
+
+    # ========================================================
+    # STOP MANAGER
+    # ========================================================
+
+    def stop(self):
+
+        self._running = False
 
 
 
