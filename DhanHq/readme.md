@@ -14,7 +14,7 @@
                                     │
                                     ▼
 ┌───────────────────────────────────────────────────────────────────────────────┐
-│                          INSTRUMENT NODE (RUNTIME UNIT)                        │
+│                          INSTRUMENT NODE (RUNTIME UNIT)                       │
 │                                                                               │
 │  Example Nodes                                                                │
 │                                                                               │
@@ -31,7 +31,7 @@
                                     │
                                     ▼
 ┌───────────────────────────────────────────────────────────────────────────────┐
-│                           DATA PIPELINE LAYER                                  │
+│                           DATA PIPELINE LAYER                                 │
 │                                                                               │
 │  DataServant                                                                  │
 │  (centralized candle gateway)                                                 │
@@ -59,9 +59,9 @@
                                     │
                                     ▼
 ┌───────────────────────────────────────────────────────────────────────────────┐
-│                        SERIES ADAPTER LAYER                                    │
+│                        SERIES ADAPTER LAYER                                   │
 │                                                                               │
-│  Converts CandleBuffers into PineScript-style series                         │
+│  Converts CandleBuffers into PineScript-style series                          │
 │                                                                               │
 │  SeriesAdapter                                                                │
 │                                                                               │
@@ -80,7 +80,7 @@
                                     │
                                     ▼
 ┌───────────────────────────────────────────────────────────────────────────────┐
-│                           SIGNAL ENGINE LOOP                                   │
+│                           SIGNAL ENGINE LOOP                                  │
 │                                                                               │
 │  Runs continuously inside each InstrumentNode                                 │
 │                                                                               │
@@ -107,7 +107,7 @@
                                     │
                                     ▼
 ┌───────────────────────────────────────────────────────────────────────────────┐
-│                         STRATEGY EXECUTION LAYER                               │
+│                         STRATEGY EXECUTION LAYER                              │
 │                                                                               │
 │  StrategyExecutor                                                             │
 │                                                                               │
@@ -141,7 +141,7 @@
                                     │
                                     ▼
 ┌───────────────────────────────────────────────────────────────────────────────┐
-│                              SIGNAL BUS                                        │
+│                              SIGNAL BUS                                       │
 │                                                                               │
 │  Global signal stream                                                         │
 │                                                                               │
@@ -180,7 +180,7 @@
                                     │
                                     ▼
 ┌───────────────────────────────────────────────────────────────────────────────┐
-│                            BROKER LAYER                                        │
+│                            BROKER LAYER                                       │
 │                                                                               │
 │  APIEngine                                                                    │
 │                                                                               │
