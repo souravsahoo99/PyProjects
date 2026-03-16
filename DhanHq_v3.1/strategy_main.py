@@ -1,8 +1,7 @@
 # ============================================================
-# STRATEGY MAIN v5.1
+# STRATEGY MAIN v5.0
 # Production Strategy Layer
 # Node-Scope + Instrument-Scope Compatible
-# Resilience Guards Enabled (Checkpoint 7.0)
 # ============================================================
 
 from indicator_utils import VWAPBands, MarketProfile
@@ -21,6 +20,10 @@ class BaseStrategy:
     name = "BASE"
 
     REQUIRED_TIMEFRAMES = ["1m"]
+
+    # --------------------------------------------------------
+    # NEW CLASSIFICATION
+    # --------------------------------------------------------
 
     NODE_SCOPE = ["PARENT", "CHILD", "BOTH"]
     INSTRUMENT_SCOPE = ["FUT", "OPT", "STOCK"]
@@ -93,6 +96,7 @@ class BaseStrategy:
 class StrategyORB(BaseStrategy):
 
     name = "ORB"
+
     REQUIRED_TIMEFRAMES = ["1m"]
 
     NODE_SCOPE = ["PARENT"]
@@ -124,6 +128,7 @@ class StrategyORB(BaseStrategy):
 class StrategyVWAPDeviation(BaseStrategy):
 
     name = "VWAP_DEV"
+
     REQUIRED_TIMEFRAMES = ["1m"]
 
     NODE_SCOPE = ["PARENT"]
@@ -168,6 +173,7 @@ class StrategyVWAPDeviation(BaseStrategy):
 class StrategyMarketProfileBreak(BaseStrategy):
 
     name = "MP_BREAK"
+
     REQUIRED_TIMEFRAMES = ["1m"]
 
     NODE_SCOPE = ["PARENT"]
@@ -199,6 +205,7 @@ class StrategyMarketProfileBreak(BaseStrategy):
 class StrategyMTFTrend(BaseStrategy):
 
     name = "MTF_TREND"
+
     REQUIRED_TIMEFRAMES = ["1m"]
 
     NODE_SCOPE = ["CHILD"]
@@ -235,6 +242,7 @@ class StrategyMTFTrend(BaseStrategy):
 class StrategyHTFBreakout(BaseStrategy):
 
     name = "HTF_BREAK"
+
     REQUIRED_TIMEFRAMES = ["1m"]
 
     NODE_SCOPE = ["CHILD"]
@@ -272,6 +280,7 @@ class StrategyHTFBreakout(BaseStrategy):
 class StrategyMTFVWAP(BaseStrategy):
 
     name = "MTF_VWAP"
+
     REQUIRED_TIMEFRAMES = ["1m"]
 
     NODE_SCOPE = ["CHILD"]
@@ -339,13 +348,8 @@ class StrategyExecutor:
 
     def register(self, strategy):
 
-        if strategy is None:
-            return
-
-        if not hasattr(strategy, "evaluate"):
-            return
-
-        self.strategies.append(strategy)
+        if strategy:
+            self.strategies.append(strategy)
 
 
     # --------------------------------------------------------
@@ -358,11 +362,9 @@ class StrategyExecutor:
 
         for strategy in self.strategies:
 
-            tfs = getattr(strategy, "REQUIRED_TIMEFRAMES", None)
+            if hasattr(strategy, "REQUIRED_TIMEFRAMES"):
 
-            if tfs:
-
-                for tf in tfs:
+                for tf in strategy.REQUIRED_TIMEFRAMES:
                     timeframes.add(tf)
 
         if not timeframes:
@@ -372,7 +374,7 @@ class StrategyExecutor:
 
 
     # --------------------------------------------------------
-    # STRATEGY FILTER
+    # NEW STRATEGY FILTER FOR SIGNAL ENGINE
     # --------------------------------------------------------
 
     def get_strategies(self, instrument_type=None, node_scope=None):
@@ -419,9 +421,6 @@ class StrategyExecutor:
 
                 result = strategy.evaluate(context)
 
-                if result not in ["BUY", "SELL", None]:
-                    continue
-
             except Exception:
                 continue
 
@@ -434,4 +433,4 @@ class StrategyExecutor:
 
 
 
-#_#_#_#_#_
+#_#_#_#_

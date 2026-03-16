@@ -288,23 +288,9 @@ async def engine_bootloader():
 
     registry.load_master("data/instruments.csv")
 
-    # --------------------------------------------------------
-    # STARTUP VALIDATION 1 — REGISTRY
-    # --------------------------------------------------------
-
-    if not getattr(registry, "instruments", None):
-        raise RuntimeError("Startup validation failed: instrument registry not loaded")
-
     engine.start_ws()
 
     engine.wait_for_ws()
-
-    # --------------------------------------------------------
-    # STARTUP VALIDATION 2 — WEBSOCKET
-    # --------------------------------------------------------
-
-    if not getattr(engine, "ws_connected", True):
-        raise RuntimeError("Startup validation failed: websocket not connected")
 
     print("[ENGINE] WebSocket connected\n")
 
@@ -313,13 +299,6 @@ async def engine_bootloader():
     # --------------------------------------------------------
 
     nodes = build_signal_nodes(engine, registry)
-
-    # --------------------------------------------------------
-    # STARTUP VALIDATION 3 — NODE CREATION
-    # --------------------------------------------------------
-
-    if not nodes:
-        raise RuntimeError("Startup validation failed: no instrument nodes created")
 
     for node in nodes:
 

@@ -1,8 +1,7 @@
 # ============================================================
-# MARKET DATA MANAGER v2.3
+# MARKET DATA MANAGER
 # Production Grade
 # DataServant Compatible
-# Market Data Integrity Guards Enabled (Checkpoint 6.1)
 # ============================================================
 
 import time
@@ -28,17 +27,6 @@ class CandleBuffer:
         self.time = deque(maxlen=maxlen)
 
     def append(self, o, h, l, c, v, t):
-
-        # ----------------------------------------------------
-        # DUPLICATE CANDLE PROTECTION
-        # ----------------------------------------------------
-
-        if len(self.time) > 0:
-
-            last = self.time[-1]
-
-            if t <= last:
-                return
 
         self.open.append(o)
         self.high.append(h)
@@ -130,13 +118,6 @@ class TickCandleAggregator:
             candle["close"] = price
             return
 
-        # ----------------------------------------------------
-        # TIMESTAMP REGRESSION PROTECTION
-        # ----------------------------------------------------
-
-        if bucket < candle["start"]:
-            return
-
         if bucket > candle["start"]:
 
             self.buffers[tf].append(
@@ -200,10 +181,6 @@ class RestCandleAggregator:
         ts = int(pd.to_datetime(candle["timestamp"]).timestamp())
 
         last_ts = self._last_timestamp[tf]
-
-        # ----------------------------------------------------
-        # TIMESTAMP REGRESSION PROTECTION
-        # ----------------------------------------------------
 
         if last_ts is not None and ts <= last_ts:
             return
@@ -405,6 +382,7 @@ class MarketDataManager:
             return self.tick_agg.get(timeframe)
 
         return self.rest_agg.get(timeframe)
+
 
 
 #_#_#_#_#_#

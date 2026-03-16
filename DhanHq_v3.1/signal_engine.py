@@ -1,19 +1,18 @@
 # ============================================================
-# SIGNAL ENGINE v3.8
+# SIGNAL ENGINE v3.7
 # Strategy Driven Pipelines + Shared DataServant Layer
 # Node-Scope + Instrument-Scope Compatible
-# Strategy Timeout Guard Enabled (Checkpoint 6.1)
 # ============================================================
 
 import asyncio
 import pandas as pd
 import threading
-import concurrent.futures
 
 from strategy_main import StrategyExecutor
 from pineseries_adapter import SeriesAdapter
 from indicator_utils import MarketProfile
 from market_data import MarketDataManager
+
 from data_servant import DataServant
 
 
@@ -104,42 +103,69 @@ class SignalEngine:
 
         self.publisher = publisher
 
+        # ----------------------------------------------------
+        # NODE INTELLIGENCE
+        # ----------------------------------------------------
+
         self.instrument_type = instrument_type
         self.node_scope = node_scope
 
+        # injected by InstrumentNode
         self.servant = None
 
+        # ----------------------------------------------------
+        # STRATEGY EXECUTOR
+        # ----------------------------------------------------
+
         self.strategy_engine = StrategyExecutor()
+
+        # ----------------------------------------------------
+        # LOAD FILTERED STRATEGIES
+        # ----------------------------------------------------
 
         self.strategies = self.strategy_engine.get_strategies(
             instrument_type=self.instrument_type,
             node_scope=self.node_scope
         )
 
+        # ----------------------------------------------------
+        # DISCOVER REQUIRED PIPELINES
+        # ----------------------------------------------------
+
         self.required_timeframes = self._discover_required_timeframes()
+
+        # ----------------------------------------------------
+        # LOCAL SIGNAL HISTORY
+        # ----------------------------------------------------
 
         self.signal_history = []
         self._signal_history_limit = 2000
         self._history_lock = threading.Lock()
 
+        # ----------------------------------------------------
+        # STATE TRACKING
+        # ----------------------------------------------------
+
         self.last_candle_time = None
         self.last_signal_key = None
+
+        # ----------------------------------------------------
+        # ORB STATE
+        # ----------------------------------------------------
 
         self.orb_high = None
         self.orb_low = None
         self.orb_ready = False
+
+        # ----------------------------------------------------
+        # MARKET PROFILE STATE
+        # ----------------------------------------------------
 
         self.vah = None
         self.val = None
         self.profile_ready = False
 
         self._running = True
-
-        # ----------------------------------------------------
-        # STRATEGY EXECUTION THREAD POOL
-        # ----------------------------------------------------
-
-        self._executor = concurrent.futures.ThreadPoolExecutor(max_workers=2)
 
 
     # ========================================================
@@ -252,33 +278,6 @@ class SignalEngine:
 
 
     # ========================================================
-    # SAFE STRATEGY EXECUTION
-    # ========================================================
-
-    def _safe_run_strategy(self, context):
-
-        try:
-
-            future = self._executor.submit(
-                self.strategy_engine.run,
-                context,
-                self.strategies
-            )
-
-            return future.result(timeout=0.05)
-
-        except concurrent.futures.TimeoutError:
-
-            print(f"[STRATEGY TIMEOUT] {self.symbol}")
-
-            return None, None
-
-        except Exception:
-
-            return None, None
-
-
-    # ========================================================
     # STRATEGY EXECUTION
     # ========================================================
 
@@ -318,7 +317,10 @@ class SignalEngine:
             "token": self.token
         }
 
-        strategy, side = self._safe_run_strategy(context)
+        strategy, side = self.strategy_engine.run(
+            context,
+            strategies=self.strategies
+        )
 
         if side:
 
@@ -385,7 +387,7 @@ class SignalEngine:
 
 
     # ========================================================
-    # MAIN LOOP
+    # OPTIMIZED MAIN LOOP
     # ========================================================
 
     async def run(self):
@@ -438,4 +440,4 @@ class SignalEngine:
 
 
             
-#_#_#_#_#_#_#_#_#_#_#
+#_#_#_#_#_#_#_#_#_#_#_

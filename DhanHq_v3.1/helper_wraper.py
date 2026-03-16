@@ -1,8 +1,8 @@
 # ============================================================
-# HELPER WRAPPER  v1.5
+# HELPER WRAPPER  v1.4
 # Broker Wrapper Layer (Dhan Backend)
 # Order Execution WebSocket Integrated
-# WebSocket Auto-Reconnect Enabled (Checkpoint 6.1)
+# Compatible with TradeManager Checkpoint 4.0
 # ============================================================
 
 import os
@@ -53,13 +53,6 @@ class APIEngine:
         self._order_lock = threading.Lock()
 
         self._order_stream_running = False
-
-        # -----------------------------------------------------
-        # WS HEALTH MONITOR
-        # -----------------------------------------------------
-
-        self._ws_monitor_running = False
-        self._last_tick_time = time.time()
 
         self._login()
 
@@ -160,9 +153,6 @@ class APIEngine:
 
                 cache = self.api._tick_cache
 
-                if cache:
-                    self._last_tick_time = time.time()
-
                 for key, msg in cache.items():
 
                     md = self.market_data_map.get(key)
@@ -229,37 +219,6 @@ class APIEngine:
 
 
     # =========================================================
-    # WS HEALTH MONITOR
-    # =========================================================
-
-    def _ws_monitor(self):
-
-        while self._ws_monitor_running:
-
-            try:
-
-                if not self._is_ws_connected:
-                    time.sleep(1)
-                    continue
-
-                idle_time = time.time() - self._last_tick_time
-
-                # No ticks received for 15 seconds
-                if idle_time > 15:
-
-                    print("[WS] Tick stream stalled. Restarting...")
-
-                    self.restart_ws()
-
-                    self._last_tick_time = time.time()
-
-            except Exception:
-                pass
-
-            time.sleep(5)
-
-
-    # =========================================================
     # WEBSOCKET CONTROL
     # =========================================================
 
@@ -286,16 +245,6 @@ class APIEngine:
         router = threading.Thread(target=self._router_loop)
         router.daemon = True
         router.start()
-
-        # -----------------------------------------------------
-        # START WS MONITOR
-        # -----------------------------------------------------
-
-        self._ws_monitor_running = True
-
-        monitor = threading.Thread(target=self._ws_monitor)
-        monitor.daemon = True
-        monitor.start()
 
         self._is_ws_connected = True
 
@@ -409,7 +358,6 @@ class APIEngine:
 
         self._router_running = False
         self._order_stream_running = False
-        self._ws_monitor_running = False
 
         self.api.Close_Websocket()
 
@@ -427,4 +375,4 @@ class APIEngine:
 
 
 
-#_#_#_#
+#_#_#

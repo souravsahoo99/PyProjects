@@ -1,9 +1,8 @@
 # ============================================================
-# INSTRUMENT NODE v2.2
+# INSTRUMENT NODE v2.1
 # Production Node Controller
 # Compatible with Shared DataServant Architecture
 # Strategy-Orchestration Compatible
-# Resilience Guards Enabled (Checkpoint 7.0)
 # ============================================================
 
 import asyncio
@@ -59,36 +58,12 @@ class InstrumentNode:
 
         self.tasks = []
 
-        # ----------------------------------------------------
-        # LIFECYCLE CONTROL
-        # ----------------------------------------------------
-
-        self._initialized = False
-        self._running = False
-
-
-    # ========================================================
-    # SAFE SIGNAL ENGINE START
-    # ========================================================
-
-    async def _safe_signal_loop(self):
-
-        try:
-            await self.signal_engine.run()
-
-        except Exception as e:
-
-            print(f"[NODE ERROR] SignalEngine crashed → {self.symbol} | {e}")
-
 
     # ========================================================
     # INITIALIZE NODE
     # ========================================================
 
     async def initialize(self):
-
-        if self._initialized:
-            return
 
         print(f"[NODE] Initializing → {self.symbol}")
 
@@ -116,6 +91,7 @@ class InstrumentNode:
             token=self.token,
             publisher=None,
 
+            # NEW INTELLIGENCE
             instrument_type=self.instrument_type,
             node_scope=self.node_scope
         )
@@ -155,8 +131,6 @@ class InstrumentNode:
         self.signal_engine.market_data = self.market_data
         self.signal_engine.servant = self.servant
 
-        self._initialized = True
-
 
     # ========================================================
     # START NODE
@@ -164,22 +138,16 @@ class InstrumentNode:
 
     def start(self):
 
-        if not self._initialized:
-            print(f"[NODE] Cannot start uninitialized node → {self.symbol}")
-            return
-
-        if self._running:
-            return
-
         print(f"[NODE] Starting signal loop → {self.symbol}")
 
+        if self.signal_engine is None:
+            return
+
         task = asyncio.create_task(
-            self._safe_signal_loop()
+            self.signal_engine.run()
         )
 
         self.tasks.append(task)
-
-        self._running = True
 
 
     # ========================================================
@@ -192,25 +160,6 @@ class InstrumentNode:
             return []
 
         return self.tasks
-
-
-    # ========================================================
-    # STOP NODE
-    # ========================================================
-
-    def stop(self):
-
-        self._running = False
-
-        if self.signal_engine:
-            self.signal_engine.stop()
-
-        print(f"[NODE] Stopped → {self.symbol}")
-
-
-# ============================================================
-# END
-# ============================================================
 
 
 
