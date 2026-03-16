@@ -1,150 +1,432 @@
 # ============================================================
-# INDICATOR UTILS
+# INDICATOR UTILITIES
+# Core Indicator Engines
+# Parent Classes Only
 # ============================================================
 
 import numpy as np
 import pandas as pd
-from datetime import datetime as dt
+from datetime import datetime
+import pytz
 
 
 # ============================================================
-# VWAP WITH STANDARD DEVIATIONS
+# OPENING RANGE INDICATOR
 # ============================================================
 
-class VWAPBands:
+class OpeningRangeIndicator:
 
-    def __init__(self, df):
+    IST = pytz.timezone("Asia/Kolkata")
 
-        self.df = df
+    HOLIDAYS = [
+        "2026-01-26",
+        "2026-08-15",
+        "2026-10-02",
+    ]
 
+    PERCENT_THRESHOLD = 0.004
+    FIXED_THRESHOLD = 100
+    MAX_RANGE = 600
 
-    def calculate(self):
+    def __init__(self, timeframe, instrument, candle_buffer):
 
-        price = (self.df["high"] + self.df["low"] + self.df["close"]) / 3
-
-        volume = self.df["volume"]
-
-        vwap = (price * volume).cumsum() / volume.cumsum()
-
-        std = price.std()
-
-        bands = {
-            "vwap": vwap.iloc[-1],
-            "upper1": vwap.iloc[-1] + std,
-            "lower1": vwap.iloc[-1] - std,
-            "upper2": vwap.iloc[-1] + (2 * std),
-            "lower2": vwap.iloc[-1] - (2 * std),
-            "upper3": vwap.iloc[-1] + (3 * std),
-            "lower3": vwap.iloc[-1] - (3 * std),
-        }
-
-        return bands
-
-
-# ============================================================
-# OPENING RANGE BREAKOUT
-# ============================================================
-
-class OpeningRangeBreakout:
-
-    def __init__(self, df, timeframe="1min"):
-
-        self.df = df
         self.timeframe = timeframe
+        self.instrument = instrument
+        self.candle_buffer = candle_buffer
 
-        self.range_high = None
-        self.range_low = None
+        self.session_date = None
+        self.cached_orb = None
+
+        self.prevDayClose = None
+        self.rangeTooBig = False
 
 
-    def calculate(self):
+    # --------------------------------------------------------
+    # TRADING DAY VALIDATION
+    # --------------------------------------------------------
 
-        if len(self.df) == 0:
+    def is_trading_day(self):
 
+        now = datetime.now(self.IST)
+
+        if now.weekday() == 6:
+            return False
+
+        if now.strftime("%Y-%m-%d") in self.HOLIDAYS:
+            return False
+
+        return True
+
+
+    # --------------------------------------------------------
+    # FIRST CANDLE DETECTOR
+    # --------------------------------------------------------
+
+    def get_first_candle(self):
+
+        if self.candle_buffer is None or len(self.candle_buffer) < 2:
             return None
 
-        first_candle = self.df.iloc[0]
+        current = self.candle_buffer.iloc[-1]
+        previous = self.candle_buffer.iloc[-2]
 
-        self.range_high = first_candle["high"]
+        if current["datetime"].date() != previous["datetime"].date():
+            return current
 
-        self.range_low = first_candle["low"]
-
-        return {
-            "high": self.range_high,
-            "low": self.range_low
-        }
+        return None
 
 
-# ============================================================
-# MARKET PROFILE (TPO)
-# ============================================================
+    # --------------------------------------------------------
+    # LONG CANDLE DETECTOR
+    # --------------------------------------------------------
 
-class MarketProfile:
+    def is_long_candle(self, high, low):
 
-    def __init__(self, df):
+        candle_range = high - low
+        halfback = (high + low) / 2
 
-        self.df = df
+        percent_threshold = halfback * self.PERCENT_THRESHOLD
+        threshold = max(percent_threshold, self.FIXED_THRESHOLD)
 
-
-    def calculate(self):
-
-        price_levels = np.round(self.df["close"], 1)
-
-        counts = price_levels.value_counts()
-
-        poc = counts.idxmax()
-
-        value_area = counts.nlargest(int(len(counts) * 0.7)).index
-
-        return {
-            "poc": poc,
-            "value_area": value_area.tolist()
-        }
+        return candle_range >= threshold
 
 
-# ============================================================
-# ANCHORED VOLUME PROFILE
-# ============================================================
-
-class AnchoredVolumeProfile:
-
-    def __init__(self, df, anchor_index):
-
-        self.df = df.iloc[anchor_index:]
-
+    # --------------------------------------------------------
+    # MAIN CALCULATION
+    # --------------------------------------------------------
 
     def calculate(self):
 
-        volume_profile = self.df.groupby("close")["volume"].sum()
+        if not self.is_trading_day():
+            return None
 
-        poc = volume_profile.idxmax()
+        if self.candle_buffer is None or len(self.candle_buffer) < 2:
+            return None
+
+        today = self.candle_buffer.iloc[-1]["datetime"].date()
+
+        if self.session_date == today and self.cached_orb is not None:
+            return self.cached_orb
+
+        first = self.get_first_candle()
+
+        if first is None:
+            return None
+
+        self.prevDayClose = self.candle_buffer.iloc[-2]["close"]
+
+        open_price = first["open"]
+        high = first["high"]
+        low = first["low"]
+        close = first["close"]
+
+        if (high - low) > self.MAX_RANGE:
+            self.rangeTooBig = True
+
+        if self.rangeTooBig and len(self.candle_buffer) >= 3:
+
+            second = self.candle_buffer.iloc[-1]
+
+            open_price = second["open"]
+            high = second["high"]
+            low = second["low"]
+            close = second["close"]
+
+            self.rangeTooBig = False
+
+        halfback = (high + low) / 2
+        orbHigh = high
+        orbLow = low
+
+        if not self.is_long_candle(orbHigh, orbLow):
+
+            result = {
+                "type": "normal_opening_candle",
+                "orbHigh": orbHigh,
+                "orbLow": orbLow,
+                "halfback": halfback,
+                "prevDayClose": self.prevDayClose
+            }
+
+        elif close >= halfback:
+
+            result = {
+                "type": "bullish_long_opening",
+                "orbHigh": orbHigh,
+                "orbLow": halfback,
+                "prevDayClose": self.prevDayClose
+            }
+
+        else:
+
+            result = {
+                "type": "bearish_long_opening",
+                "orbHigh": halfback,
+                "orbLow": orbLow,
+                "prevDayClose": self.prevDayClose
+            }
+
+        self.session_date = today
+        self.cached_orb = result
+
+        return result
+
+
+# ============================================================
+# VWAP INDICATOR (PARENT)
+# ============================================================
+
+class VWAPIndicator:
+
+    def __init__(self, timeframe, instrument, candle_buffer,
+                 calc_mode="Standard Deviation"):
+
+        self.timeframe = timeframe
+        self.instrument = instrument
+        self.candle_buffer = candle_buffer
+
+        self.calc_mode = calc_mode
+
+        self.band_mult_1 = 0.5
+        self.band_mult_2 = 1.0
+        self.band_mult_3 = 1.5
+
+
+    # --------------------------------------------------------
+    # VALIDATION
+    # --------------------------------------------------------
+
+    def _validate(self):
+
+        if self.candle_buffer is None:
+            return False
+
+        if len(self.candle_buffer) == 0:
+            return False
+
+        required = {"datetime", "high", "low", "close", "volume"}
+
+        return required.issubset(self.candle_buffer.columns)
+
+
+    # --------------------------------------------------------
+    # EXTRACT SESSION
+    # --------------------------------------------------------
+
+    def get_today_candles(self):
+
+        if not self._validate():
+            return None
+
+        latest = self.candle_buffer.iloc[-1]
+        today = latest["datetime"].date()
+
+        df = self.candle_buffer[
+            self.candle_buffer["datetime"].dt.date == today
+        ]
+
+        if df.empty:
+            return None
+
+        return df
+
+
+    # --------------------------------------------------------
+    # VWAP CORE ENGINE
+    # --------------------------------------------------------
+
+    def _compute_vwap_core(self):
+
+        df = self.get_today_candles()
+
+        if df is None:
+            return None
+
+        price = (df["high"] + df["low"] + df["close"]) / 3
+        volume = df["volume"]
+
+        pv = (price * volume).cumsum()
+        cum_vol = volume.cumsum()
+
+        vwap_series = pv / cum_vol
+        vwap = float(vwap_series.iloc[-1])
+
+        deviation = price - vwap_series
+        variance = (volume * deviation ** 2).cumsum() / cum_vol
+        std = float(np.sqrt(variance.iloc[-1]))
+
+        basis = std if self.calc_mode == "Standard Deviation" else vwap * 0.01
 
         return {
-            "poc": poc,
-            "profile": volume_profile
+
+            "vwap": vwap,
+
+            "up1": vwap + basis * self.band_mult_1,
+            "dn1": vwap - basis * self.band_mult_1,
+
+            "up2": vwap + basis * self.band_mult_2,
+            "dn2": vwap - basis * self.band_mult_2,
+
+            "up3": vwap + basis * self.band_mult_3,
+            "dn3": vwap - basis * self.band_mult_3
         }
 
 
-# ============================================================
-# SESSION VOLUME PROFILE
-# ============================================================
-
-class SessionVolumeProfile:
-
-    def __init__(self, df):
-
-        self.df = df
-
+    # --------------------------------------------------------
+    # PUBLIC INTERFACE
+    # --------------------------------------------------------
 
     def calculate(self):
 
-        volume_profile = self.df.groupby("close")["volume"].sum()
+        return self._compute_vwap_core()
 
-        poc = volume_profile.idxmax()
+
+# ============================================================
+# MARKET PROFILE INDICATOR (PARENT)
+# ============================================================
+
+class MarketProfileIndicator:
+
+    IST = pytz.timezone("Asia/Kolkata")
+
+    def __init__(self, timeframe, instrument, candle_buffer,
+                 tpo_size=20, value_area_percent=70):
+
+        self.timeframe = timeframe
+        self.instrument = instrument
+        self.candle_buffer = candle_buffer
+
+        self.tpo_size = tpo_size
+        self.value_area_percent = value_area_percent
+
+        self.session_date = None
+        self.cached_profile = None
+
+
+    # --------------------------------------------------------
+    # SESSION EXTRACTION
+    # --------------------------------------------------------
+
+    def get_session_candles(self):
+
+        if self.candle_buffer is None or len(self.candle_buffer) == 0:
+            return None
+
+        today = self.candle_buffer.iloc[-1]["datetime"].date()
+
+        df = self.candle_buffer[
+            self.candle_buffer["datetime"].dt.date == today
+        ]
+
+        if df.empty:
+            return None
+
+        return df
+
+
+    # --------------------------------------------------------
+    # CORE TPO CALCULATION
+    # --------------------------------------------------------
+
+    def _compute_profile_core(self):
+
+        df = self.get_session_candles()
+
+        if df is None:
+            return None
+
+        session_high = df["high"].max()
+        session_low = df["low"].min()
+
+        session_range = session_high - session_low
+
+        if session_range == 0:
+            return None
+
+        tpo_diff = session_range / self.tpo_size
+
+        tpo_values = []
+        tpo_counts = []
+
+        for x in range(self.tpo_size + 1):
+
+            level = session_low + x * tpo_diff
+            visits = 0
+
+            for _, row in df.iterrows():
+
+                if row["low"] <= level <= row["high"]:
+                    visits += 1
+
+            tpo_values.append(level)
+            tpo_counts.append(visits)
+
+        tpo_counts = np.array(tpo_counts)
+
+        poc_index = np.argmax(tpo_counts)
+        poc_value = tpo_values[poc_index]
+
+        total_tpo = tpo_counts.sum()
+        target = total_tpo * self.value_area_percent / 100
+
+        value_area = tpo_counts[poc_index]
+
+        va_high = poc_index
+        va_low = poc_index
+
+        while value_area < target:
+
+            up = min(self.tpo_size, va_high + 1)
+            dn = max(0, va_low - 1)
+
+            if tpo_counts[up] >= tpo_counts[dn]:
+                va_high = up
+                value_area += tpo_counts[up]
+            else:
+                va_low = dn
+                value_area += tpo_counts[dn]
+
+        vah = session_low + va_high * tpo_diff
+        val = session_low + va_low * tpo_diff
 
         return {
-            "poc": poc,
-            "profile": volume_profile
+
+            "instrument": self.instrument,
+            "timeframe": self.timeframe,
+
+            "sessionHigh": session_high,
+            "sessionLow": session_low,
+
+            "poc": poc_value,
+            "vah": vah,
+            "val": val,
+
+            "tpo_values": tpo_values,
+            "tpo_counts": tpo_counts.tolist(),
+            "tpo_diff": tpo_diff
         }
+
+
+    # --------------------------------------------------------
+    # PUBLIC INTERFACE
+    # --------------------------------------------------------
+
+    def calculate(self):
+
+        if self.candle_buffer is None or len(self.candle_buffer) == 0:
+            return None
+
+        today = self.candle_buffer.iloc[-1]["datetime"].date()
+
+        if self.session_date == today and self.cached_profile is not None:
+            return self.cached_profile
+
+        result = self._compute_profile_core()
+
+        self.session_date = today
+        self.cached_profile = result
+
+        return result
     
 
-#_
+#_#_

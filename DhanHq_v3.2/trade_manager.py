@@ -536,5 +536,4 @@ class TradeManager:
 
 
 
-
 #_#_#_#_#_#_#_#

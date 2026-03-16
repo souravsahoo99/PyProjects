@@ -1,32 +1,15 @@
 # ============================================================
-# STRATEGY MAIN v6.0
+# STRATEGY MAIN v5.1
 # Production Strategy Layer
-# Bridge Between State-Aware Signal Engine and Utility Universe
-# Compatible With:
-#   - indicator_utils (parent indicators)
-#   - strategy_utils (helpers + indicator child modules)
-#   - SeriesAdapter
-#   - MarketDataManager
+# Node-Scope + Instrument-Scope Compatible
+# Resilience Guards Enabled (Checkpoint 7.0)
 # ============================================================
 
-from indicator_utils import (
-    OpeningRangeIndicator,
-    VWAPIndicator,
-    MarketProfileIndicator
-)
-
-from strategy_utils import (
-    breakout,
-    breakdown,
-    VWAPBandState,
-    VwapMemoryModule,
-    TpoMemoryModule
-)
+from indicator_utils import VWAPBands, MarketProfile
+from strategy_utils import breakout, breakdown
 
 import asyncio
 import pandas as pd
-from datetime import datetime
-import pytz
 
 
 # ============================================================
@@ -41,8 +24,6 @@ class BaseStrategy:
 
     NODE_SCOPE = ["PARENT", "CHILD", "BOTH"]
     INSTRUMENT_SCOPE = ["FUT", "OPT", "STOCK"]
-
-    IST = pytz.timezone("Asia/Kolkata")
 
     def evaluate(self, context):
         return None
@@ -105,38 +86,6 @@ class BaseStrategy:
             return None
 
 
-    # --------------------------------------------------------
-    # SESSION FILTER
-    # --------------------------------------------------------
-
-    def in_session(self, context, start, end):
-
-        df = context.get("df")
-
-        if df is None or len(df) == 0:
-            return False
-
-        try:
-
-            ts = df.iloc[-1]["datetime"]
-
-            if not isinstance(ts, datetime):
-                return False
-
-            ts = ts.astimezone(self.IST)
-
-            start_h, start_m = map(int, start.split(":"))
-            end_h, end_m = map(int, end.split(":"))
-
-            start_dt = ts.replace(hour=start_h, minute=start_m, second=0)
-            end_dt = ts.replace(hour=end_h, minute=end_m, second=0)
-
-            return start_dt <= ts <= end_dt
-
-        except Exception:
-            return False
-
-
 # ============================================================
 # ORB STRATEGY
 # ============================================================
@@ -144,7 +93,6 @@ class BaseStrategy:
 class StrategyORB(BaseStrategy):
 
     name = "ORB"
-
     REQUIRED_TIMEFRAMES = ["1m"]
 
     NODE_SCOPE = ["PARENT"]
@@ -152,34 +100,13 @@ class StrategyORB(BaseStrategy):
 
     def evaluate(self, context):
 
-        if not self.in_session(context, "09:15", "09:30"):
-            return None
-
-        df = context.get("df")
-
-        if df is None or len(df) < 3:
-            return None
-
-        try:
-
-            indicator = OpeningRangeIndicator(
-                timeframe="1m",
-                instrument=context.get("symbol"),
-                candle_buffer=df
-            )
-
-            orb = indicator.calculate()
-
-        except Exception:
-            return None
-
-        if orb is None:
+        if not context["orb_ready"]:
             return None
 
         close = context["close"][0]
 
-        orb_high = orb.get("orbHigh")
-        orb_low = orb.get("orbLow")
+        orb_high = context["orb_high"]
+        orb_low = context["orb_low"]
 
         if breakout(close, orb_high):
             return "BUY"
@@ -197,7 +124,6 @@ class StrategyORB(BaseStrategy):
 class StrategyVWAPDeviation(BaseStrategy):
 
     name = "VWAP_DEV"
-
     REQUIRED_TIMEFRAMES = ["1m"]
 
     NODE_SCOPE = ["PARENT"]
@@ -205,24 +131,13 @@ class StrategyVWAPDeviation(BaseStrategy):
 
     def evaluate(self, context):
 
-        if not self.in_session(context, "09:30", "11:30"):
-            return None
-
-        df = context.get("df")
+        df = context["df"]
 
         if df is None or len(df) < 20:
             return None
 
         try:
-
-            indicator = VWAPBandState(
-                timeframe="1m",
-                instrument=context.get("symbol"),
-                candle_buffer=df
-            )
-
-            bands = indicator.calculate()
-
+            bands = VWAPBands(df).calculate()
         except Exception:
             return None
 
@@ -231,8 +146,8 @@ class StrategyVWAPDeviation(BaseStrategy):
 
         close = context["close"][0]
 
-        upper = bands.get("up1")
-        lower = bands.get("dn1")
+        upper = bands.get("upper1")
+        lower = bands.get("lower1")
 
         if upper is None or lower is None:
             return None
@@ -253,7 +168,6 @@ class StrategyVWAPDeviation(BaseStrategy):
 class StrategyMarketProfileBreak(BaseStrategy):
 
     name = "MP_BREAK"
-
     REQUIRED_TIMEFRAMES = ["1m"]
 
     NODE_SCOPE = ["PARENT"]
@@ -261,34 +175,13 @@ class StrategyMarketProfileBreak(BaseStrategy):
 
     def evaluate(self, context):
 
-        if not self.in_session(context, "09:30", "11:30"):
-            return None
-
-        df = context.get("df")
-
-        if df is None or len(df) < 30:
-            return None
-
-        try:
-
-            indicator = MarketProfileIndicator(
-                timeframe="1m",
-                instrument=context.get("symbol"),
-                candle_buffer=df
-            )
-
-            profile = indicator.calculate()
-
-        except Exception:
-            return None
-
-        if profile is None:
+        if not context["profile_ready"]:
             return None
 
         close = context["close"][0]
 
-        vah = profile.get("vah")
-        val = profile.get("val")
+        vah = context["vah"]
+        val = context["val"]
 
         if breakout(close, vah):
             return "BUY"
@@ -306,7 +199,6 @@ class StrategyMarketProfileBreak(BaseStrategy):
 class StrategyMTFTrend(BaseStrategy):
 
     name = "MTF_TREND"
-
     REQUIRED_TIMEFRAMES = ["1m"]
 
     NODE_SCOPE = ["CHILD"]
@@ -343,7 +235,6 @@ class StrategyMTFTrend(BaseStrategy):
 class StrategyHTFBreakout(BaseStrategy):
 
     name = "HTF_BREAK"
-
     REQUIRED_TIMEFRAMES = ["1m"]
 
     NODE_SCOPE = ["CHILD"]
@@ -381,7 +272,6 @@ class StrategyHTFBreakout(BaseStrategy):
 class StrategyMTFVWAP(BaseStrategy):
 
     name = "MTF_VWAP"
-
     REQUIRED_TIMEFRAMES = ["1m"]
 
     NODE_SCOPE = ["CHILD"]
@@ -406,30 +296,17 @@ class StrategyMTFVWAP(BaseStrategy):
             "volume": list(buffer.volume)
         })
 
-        try:
+        bands = VWAPBands(df).calculate()
 
-            indicator = VWAPIndicator(
-                timeframe="3m",
-                instrument=context.get("symbol"),
-                candle_buffer=df
-            )
-
-            vwap_data = indicator.calculate()
-
-        except Exception:
-            return None
-
-        if vwap_data is None:
+        if bands is None:
             return None
 
         price = context["close"][0]
 
-        vwap = vwap_data.get("vwap")
-
-        if price > vwap:
+        if price > bands["vwap"]:
             return "BUY"
 
-        if price < vwap:
+        if price < bands["vwap"]:
             return "SELL"
 
         return None
@@ -456,6 +333,10 @@ class StrategyExecutor:
         ]
 
 
+    # --------------------------------------------------------
+    # REGISTER NEW STRATEGY
+    # --------------------------------------------------------
+
     def register(self, strategy):
 
         if strategy is None:
@@ -467,6 +348,10 @@ class StrategyExecutor:
         self.strategies.append(strategy)
 
 
+    # --------------------------------------------------------
+    # DISCOVER REQUIRED TIMEFRAMES
+    # --------------------------------------------------------
+
     def discover_required_timeframes(self):
 
         timeframes = set()
@@ -476,6 +361,7 @@ class StrategyExecutor:
             tfs = getattr(strategy, "REQUIRED_TIMEFRAMES", None)
 
             if tfs:
+
                 for tf in tfs:
                     timeframes.add(tf)
 
@@ -484,6 +370,10 @@ class StrategyExecutor:
 
         return sorted(timeframes)
 
+
+    # --------------------------------------------------------
+    # STRATEGY FILTER
+    # --------------------------------------------------------
 
     def get_strategies(self, instrument_type=None, node_scope=None):
 
@@ -511,6 +401,10 @@ class StrategyExecutor:
         return filtered
 
 
+    # --------------------------------------------------------
+    # STRATEGY EXECUTION
+    # --------------------------------------------------------
+
     def run(self, context, strategies=None):
 
         if context is None:
@@ -535,7 +429,6 @@ class StrategyExecutor:
                 return strategy.name, result
 
         return None, None
-
 
 
 
