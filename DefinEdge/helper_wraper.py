@@ -28,8 +28,8 @@ class APIEngine:
 
     def __init__(self):
 
-        api_token = os.getenv("API_TOKEN")
-        api_secret = os.getenv("API_SECRET")
+        api_token = os.getenv("EDGE_API_TOKEN")
+        api_secret = os.getenv("EDGE_API_SECRET")
         
 
         self.api = EdgeApi(api_token, api_secret)
@@ -375,12 +375,6 @@ class APIEngine:
         self.close_ws()
 
         print("[ENGINE] Shutdown complete.")
-
-
-# ============================================================
-# END
-# ============================================================
-
 
 
 

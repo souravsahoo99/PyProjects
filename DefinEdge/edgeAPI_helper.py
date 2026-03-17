@@ -121,7 +121,7 @@ class EdgeApi:
 
         except KeyError:
 
-            totp_secret = os.getenv("TOTP_SECRET")
+            totp_secret = os.getenv("EDGE_TOTP_SECRET")
             totp_ = pyotp.TOTP(totp_secret).now()
 
             conn.login(
