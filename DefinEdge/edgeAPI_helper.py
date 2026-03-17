@@ -1,0 +1,440 @@
+# ============================================================
+# DEFINEEDGE API HELPER v2.0
+# Production Broker Adapter
+# Engine Compatible
+# ============================================================
+
+from integrate import ConnectToIntegrate, IntegrateOrders, IntegrateData, IntegrateWebSocket
+
+import os
+import io
+import threading
+import logging
+import pyotp
+import pandas as pd
+import requests
+import zipfile
+
+from datetime import datetime
+from dotenv import find_dotenv, load_dotenv
+
+
+logger = logging.getLogger(__name__)
+
+
+# ============================================================
+# ORDER OBJECT (Engine Compatible)
+# ============================================================
+
+class Order:
+
+    def __init__(
+        self,
+        security_id: str,
+        exchange_segment,
+        transaction_type,
+        quantity: int,
+        order_type,
+        product_type,
+        price: float = 0.0
+    ):
+        self.security_id = security_id
+        self.exchange_segment = exchange_segment
+        self.transaction_type = transaction_type
+        self.quantity = quantity
+        self.order_type = order_type
+        self.product_type = product_type
+        self.price = price
+
+
+# ============================================================
+# DEFINEEDGE API CLASS
+# ============================================================
+
+class EdgeApi:
+
+    # --------------------------------------------------------
+    # INIT
+    # --------------------------------------------------------
+
+    def __init__(self, api_token: str, api_secret: str):
+
+        dotenv_file = find_dotenv()
+        load_dotenv(dotenv_file)
+
+        self.api_token = api_token
+        self.api_secret = api_secret
+
+        # ----------------------------------------------------
+        # CORE CONNECTION
+        # ----------------------------------------------------
+
+        self.conn = self._login()
+
+        # ----------------------------------------------------
+        # REST MODULES
+        # ----------------------------------------------------
+
+        self.orders = IntegrateOrders(self.conn)
+        self.data = IntegrateData(self.conn)
+
+        # ----------------------------------------------------
+        # WEBSOCKET MODULE
+        # ----------------------------------------------------
+
+        self.ws = IntegrateWebSocket(self.conn)
+
+        # ----------------------------------------------------
+        # INTERNAL STATE
+        # ----------------------------------------------------
+
+        self._ws_running = False
+
+        self._tick_cache = {}
+        self._tick_lock = threading.Lock()
+
+        self._order_buffer = {}
+        self._order_lock = threading.Lock()
+
+        self._subscribed = set()
+
+        # ----------------------------------------------------
+        # BIND CALLBACKS
+        # ----------------------------------------------------
+
+        self.ws.on_tick_update = self._on_tick_update
+        self.ws.on_order_update = self._on_order_update
+        self.ws.on_open = self._on_ws_open
+        self.ws.on_close = self._on_ws_close
+        self.ws.on_error = self._on_ws_error
+
+
+    # ========================================================
+    # LOGIN (SESSION AWARE)
+    # ========================================================
+
+    def _login(self):
+
+        conn = ConnectToIntegrate()
+
+        try:
+
+            uid = os.environ["INTEGRATE_UID"]
+            actid = os.environ["INTEGRATE_ACTID"]
+            api_session = os.environ["INTEGRATE_API_SESSION_KEY"]
+            ws_session = os.environ["INTEGRATE_WS_SESSION_KEY"]
+
+            conn.set_session_keys(uid, actid, api_session, ws_session)
+
+            logger.info("Reusing existing Integrate session.")
+
+        except KeyError:
+
+            totp_secret = os.getenv("TOTP")
+            totp = pyotp.TOTP(totp_secret).now()
+
+            conn.login(
+                api_token=self.api_token,
+                api_secret=self.api_secret,
+                totp=totp
+            )
+
+            uid, actid, api_session, ws_session = conn.get_session_keys()
+
+            os.environ["INTEGRATE_UID"] = uid
+            os.environ["INTEGRATE_ACTID"] = actid
+            os.environ["INTEGRATE_API_SESSION_KEY"] = api_session
+            os.environ["INTEGRATE_WS_SESSION_KEY"] = ws_session
+
+            logger.info("New Integrate login successful.")
+
+        return conn
+
+
+    # ========================================================
+    # WEBSOCKET CALLBACKS
+    # ========================================================
+
+    def _on_ws_open(self, iws):
+
+        logger.info("DefineEdge WebSocket connected")
+
+        try:
+            iws.login()
+        except Exception as e:
+            logger.error(f"WS login error: {e}")
+
+
+    def _on_ws_close(self, iws, code, reason):
+
+        logger.warning(f"WebSocket closed: {code} {reason}")
+        self._ws_running = False
+
+
+    def _on_ws_error(self, iws, code, reason):
+
+        logger.error(f"WebSocket error: {code} {reason}")
+
+
+    def _on_tick_update(self, iws, tick):
+
+        try:
+
+            exchange = tick.get("e") or "NSE"
+            token = tick.get("tk")
+
+            if token is None:
+                return
+
+            key = f"{exchange}|{token}"
+
+            # normalize price field
+            price = tick.get("lp") or tick.get("ltp")
+
+            if price is None:
+                return
+
+            tick["lp"] = float(price)
+
+            with self._tick_lock:
+                self._tick_cache[key] = tick
+
+        except Exception as e:
+
+            logger.error(f"Tick handler error: {e}")
+
+
+    def _on_order_update(self, iws, order):
+
+        try:
+
+            order_id = order.get("orderId") or order.get("norenordno")
+            status = order.get("status")
+
+            if order_id is None:
+                return
+
+            with self._order_lock:
+                self._order_buffer[str(order_id)] = str(status).upper()
+
+        except Exception as e:
+
+            logger.error(f"Order update handler error: {e}")
+
+
+    # ========================================================
+    # ENGINE COMPATIBILITY METHODS
+    # ========================================================
+
+    def Place_Order(self, order: Order):
+
+        return self.orders.place_order(
+            exchange=order.exchange_segment,
+            order_type=order.transaction_type,
+            price=order.price,
+            price_type="MARKET",
+            product_type=order.product_type,
+            quantity=order.quantity,
+            tradingsymbol=order.security_id
+        )
+
+
+    def Modify_Order(
+        self,
+        order_id,
+        order_type,
+        leg_name,
+        quantity,
+        price,
+        trigger_price,
+        disclosed_quantity,
+        validity
+    ):
+
+        return self.orders.modify_order(
+            exchange="NSE",
+            order_id=order_id,
+            order_type=order_type,
+            price=price,
+            price_type="LIMIT",
+            product_type="INTRADAY",
+            quantity=quantity,
+            tradingsymbol=leg_name,
+            trigger_price=trigger_price,
+            disclosed_quantity=disclosed_quantity,
+            validity=validity
+        )
+
+
+    def Cancel_Order(self, order_id):
+
+        return self.orders.cancel_order(order_id)
+
+
+    def Get_Positions(self):
+
+        return self.orders.positions()
+
+
+    def Get_Orderbook(self):
+
+        return self.orders.orders()
+
+
+    def Get_TradeBook(self):
+
+        return self.orders.trades()
+
+
+    def Get_Order_By_ID(self, order_id):
+
+        return self.orders.order(order_id)
+
+
+    def Get_Tbook_By_Orderid(self, order_id):
+
+        return None
+
+
+    # ========================================================
+    # MARKET DATA (REST)
+    # ========================================================
+
+    def Get_LTP(self, trading_symbol, exchange):
+
+        return self.data.quotes(exchange, trading_symbol)
+
+
+    def Get_Intraday_Data(
+        self,
+        trading_symbol,
+        exchange,
+        timeframe,
+        start,
+        end
+    ):
+
+        if timeframe == "min":
+
+            tf = self.conn.TIMEFRAME_TYPE_MIN
+
+        elif timeframe == "day":
+
+            tf = self.conn.TIMEFRAME_TYPE_DAY
+
+        else:
+
+            tf = timeframe
+
+        return self.data.historical_data(
+            exchange=exchange,
+            trading_symbol=trading_symbol,
+            timeframe=tf,
+            start=start,
+            end=end
+        )
+
+
+    def Get_Daily_Data(
+        self,
+        trading_symbol,
+        exchange,
+        start,
+        end
+    ):
+
+        return self.data.historical_data(
+            exchange=exchange,
+            trading_symbol=trading_symbol,
+            timeframe=self.conn.TIMEFRAME_TYPE_DAY,
+            start=start,
+            end=end
+        )
+
+
+    # ========================================================
+    # WEBSOCKET CONTROL
+    # ========================================================
+
+    def Start_Websocket(self):
+
+        if self._ws_running:
+            return
+
+        self.ws.connect(daemonize=True)
+
+        self._ws_running = True
+
+
+    def Subscribe_inst(self, tokens):
+
+        if not tokens:
+            return
+
+        self.ws.subscribe(
+            self.conn.SUBSCRIPTION_TYPE_TICK,
+            tokens
+        )
+
+        for token in tokens:
+            self._subscribed.add(token)
+
+
+    def Unsubscribe_inst(self, tokens):
+
+        if not tokens:
+            return
+
+        self.ws.unsubscribe(
+            self.conn.SUBSCRIPTION_TYPE_TICK,
+            tokens
+        )
+
+        for token in tokens:
+            self._subscribed.discard(token)
+
+
+    def Close_Websocket(self):
+
+        self._ws_running = False
+
+        self.ws.close()
+
+
+    # ========================================================
+    # ORDER STREAM
+    # ========================================================
+
+    def Start_Order_Stream(self):
+
+        self.ws.subscribe(
+            self.conn.SUBSCRIPTION_TYPE_ORDER
+        )
+
+
+    # ========================================================
+    # MASTER INSTRUMENT ZIP (HTTP)
+    # ========================================================
+
+    def download_master_zip(
+        self,
+        url="https://app.definedgesecurities.com/public/allmaster.zip"
+    ):
+
+        response = requests.get(url)
+
+        response.raise_for_status()
+
+        with zipfile.ZipFile(io.BytesIO(response.content)) as z:
+
+            name = z.namelist()[0]
+
+            with z.open(name) as f:
+
+                df = pd.read_csv(f, header=None, low_memory=False)
+
+        return df
+    
+
+
+#_
