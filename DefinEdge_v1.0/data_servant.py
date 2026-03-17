@@ -1,5 +1,5 @@
 # ============================================================
-# DATA SERVANT v1.0   
+# DATA SERVANT v1.0
 # Unified Candle Data Gateway
 # Shared Module
 # Production Grade

@@ -1,23 +1,27 @@
 # ============================================================
-# HELPER WRAPPER  v2.1
+# HELPER WRAPPER  v2.0
 # Broker Wrapper Layer (DefineEdge Backend)
 # Order Execution WebSocket Integrated
 # WebSocket Auto-Reconnect Enabled
+# Retry Enabled
 # ============================================================
-
-from edgeAPI_helper import EdgeApi
 
 import os
 import time
 import threading
 import pandas as pd
-from datetime import datetime
 from retry import retry
 from dotenv import find_dotenv, load_dotenv
 
+from edgeAPI_helper import EdgeApi
+
+
+# ============================================================
+# LOAD ENV
+# ============================================================
 
 dotenv_file: str = find_dotenv()
-load_dotenv(dotenv_file)  
+load_dotenv(dotenv_file)
 
 
 # ============================================================
@@ -28,11 +32,13 @@ class APIEngine:
 
     def __init__(self):
 
-        api_token = os.getenv("API_TOKEN")
-        api_secret = os.getenv("API_SECRET")
-        
+        api_token = os.getenv("INTEGRATE_API_TOKEN")
+        api_secret = os.getenv("INTEGRATE_API_SECRET")
 
         self.api = EdgeApi(api_token, api_secret)
+
+        self._tick_cache = {}
+        self._tick_lock = threading.Lock()
 
         self._is_ws_connected = False
         self._subscribed_instruments = set()
@@ -54,6 +60,19 @@ class APIEngine:
 
         self._ws_monitor_running = False
         self._last_tick_time = time.time()
+
+        self._login()
+
+
+    # =========================================================
+    # LOGIN
+    # =========================================================
+
+    def _login(self):
+
+        # login handled inside EdgeApi
+        return True
+
 
     # =========================================================
     # REST OHLC
@@ -123,9 +142,7 @@ class APIEngine:
 
             try:
 
-                # thread-safe snapshot
-                with self.api._tick_lock:
-                    cache = dict(self.api._tick_cache)
+                cache = self.api._tick_cache
 
                 if cache:
                     self._last_tick_time = time.time()
@@ -168,17 +185,18 @@ class APIEngine:
 
             try:
 
-                with self.api._order_lock:
-                    buffer = dict(self.api._order_buffer)
+                buffer = self.api._order_buffer
 
                 if not buffer:
                     time.sleep(0.01)
                     continue
 
-                for order_id, status in buffer.items():
+                with self.api._order_lock:
 
-                    with self._order_lock:
-                        self._order_buffer[order_id] = status
+                    for order_id, status in buffer.items():
+
+                        with self._order_lock:
+                            self._order_buffer[order_id] = status
 
             except Exception:
                 pass
@@ -231,21 +249,24 @@ class APIEngine:
 
         self._order_stream_running = True
 
-        order_router = threading.Thread(target=self._order_router, daemon=True)
+        order_router = threading.Thread(target=self._order_router)
+        order_router.daemon = True
         order_router.start()
 
         # -----------------------------------------------------
 
         self._router_running = True
 
-        router = threading.Thread(target=self._router_loop, daemon=True)
+        router = threading.Thread(target=self._router_loop)
+        router.daemon = True
         router.start()
 
         # -----------------------------------------------------
 
         self._ws_monitor_running = True
 
-        monitor = threading.Thread(target=self._ws_monitor, daemon=True)
+        monitor = threading.Thread(target=self._ws_monitor)
+        monitor.daemon = True
         monitor.start()
 
         self._is_ws_connected = True
@@ -377,14 +398,4 @@ class APIEngine:
         print("[ENGINE] Shutdown complete.")
 
 
-# ============================================================
-# END
-# ============================================================
-
-
-
-
-
-
-
-#_#
+#_

@@ -1,8 +1,7 @@
 # ============================================================
-# DEFINEEDGE API HELPER v2.1
+# DEFINEEDGE API HELPER v2.0
 # Production Broker Adapter
 # Engine Compatible
-# WebSocket Hardened
 # ============================================================
 
 from integrate import ConnectToIntegrate, IntegrateOrders, IntegrateData, IntegrateWebSocket
@@ -15,11 +14,10 @@ import pyotp
 import pandas as pd
 import requests
 import zipfile
+
 from datetime import datetime
 from dotenv import find_dotenv, load_dotenv
 
-dotenv_file: str = find_dotenv()
-load_dotenv(dotenv_file)
 
 logger = logging.getLogger(__name__)
 
@@ -55,10 +53,21 @@ class Order:
 
 class EdgeApi:
 
+    # --------------------------------------------------------
+    # INIT
+    # --------------------------------------------------------
+
     def __init__(self, api_token: str, api_secret: str):
+
+        dotenv_file = find_dotenv()
+        load_dotenv(dotenv_file)
 
         self.api_token = api_token
         self.api_secret = api_secret
+
+        # ----------------------------------------------------
+        # CORE CONNECTION
+        # ----------------------------------------------------
 
         self.conn = self._login()
 
@@ -121,13 +130,13 @@ class EdgeApi:
 
         except KeyError:
 
-            totp_secret = os.getenv("TOTP_SECRET")
-            totp_ = pyotp.TOTP(totp_secret).now()
+            totp_secret = os.getenv("TOTP")
+            totp = pyotp.TOTP(totp_secret).now()
 
             conn.login(
                 api_token=self.api_token,
                 api_secret=self.api_secret,
-                totp=totp_
+                totp=totp
             )
 
             uid, actid, api_session, ws_session = conn.get_session_keys()
@@ -167,10 +176,6 @@ class EdgeApi:
         logger.error(f"WebSocket error: {code} {reason}")
 
 
-    # --------------------------------------------------------
-    # TICK UPDATE
-    # --------------------------------------------------------
-
     def _on_tick_update(self, iws, tick):
 
         try:
@@ -183,17 +188,13 @@ class EdgeApi:
 
             key = f"{exchange}|{token}"
 
+            # normalize price field
             price = tick.get("lp") or tick.get("ltp")
 
             if price is None:
                 return
 
-            try:
-                price = float(price)
-            except Exception:
-                return
-
-            tick["lp"] = price
+            tick["lp"] = float(price)
 
             with self._tick_lock:
                 self._tick_cache[key] = tick
@@ -203,10 +204,6 @@ class EdgeApi:
             logger.error(f"Tick handler error: {e}")
 
 
-    # --------------------------------------------------------
-    # ORDER UPDATE
-    # --------------------------------------------------------
-
     def _on_order_update(self, iws, order):
 
         try:
@@ -214,7 +211,7 @@ class EdgeApi:
             order_id = order.get("orderId") or order.get("norenordno")
             status = order.get("status")
 
-            if order_id is None or status is None:
+            if order_id is None:
                 return
 
             with self._order_lock:
@@ -273,7 +270,6 @@ class EdgeApi:
 
         return self.orders.cancel_order(order_id)
 
-    # =======================================================
 
     def Get_Positions(self):
 
@@ -295,6 +291,11 @@ class EdgeApi:
         return self.orders.order(order_id)
 
 
+    def Get_Tbook_By_Orderid(self, order_id):
+
+        return None
+
+
     # ========================================================
     # MARKET DATA (REST)
     # ========================================================
@@ -314,10 +315,15 @@ class EdgeApi:
     ):
 
         if timeframe == "min":
+
             tf = self.conn.TIMEFRAME_TYPE_MIN
+
         elif timeframe == "day":
+
             tf = self.conn.TIMEFRAME_TYPE_DAY
+
         else:
+
             tf = timeframe
 
         return self.data.historical_data(
@@ -355,16 +361,9 @@ class EdgeApi:
         if self._ws_running:
             return
 
-        try:
+        self.ws.connect(daemonize=True)
 
-            self.ws.connect(daemonize=True)
-
-            self._ws_running = True
-
-        except Exception as e:
-
-            logger.error(f"WebSocket start error: {e}")
-            self._ws_running = False
+        self._ws_running = True
 
 
     def Subscribe_inst(self, tokens):
@@ -372,19 +371,13 @@ class EdgeApi:
         if not tokens:
             return
 
-        try:
+        self.ws.subscribe(
+            self.conn.SUBSCRIPTION_TYPE_TICK,
+            tokens
+        )
 
-            self.ws.subscribe(
-                self.conn.SUBSCRIPTION_TYPE_TICK,
-                tokens
-            )
-
-            for token in tokens:
-                self._subscribed.add(token)
-
-        except Exception as e:
-
-            logger.error(f"Subscribe error: {e}")
+        for token in tokens:
+            self._subscribed.add(token)
 
 
     def Unsubscribe_inst(self, tokens):
@@ -392,32 +385,20 @@ class EdgeApi:
         if not tokens:
             return
 
-        try:
+        self.ws.unsubscribe(
+            self.conn.SUBSCRIPTION_TYPE_TICK,
+            tokens
+        )
 
-            self.ws.unsubscribe(
-                self.conn.SUBSCRIPTION_TYPE_TICK,
-                tokens
-            )
-
-            for token in tokens:
-                self._subscribed.discard(token)
-
-        except Exception as e:
-
-            logger.error(f"Unsubscribe error: {e}")
+        for token in tokens:
+            self._subscribed.discard(token)
 
 
     def Close_Websocket(self):
 
-        try:
+        self._ws_running = False
 
-            self._ws_running = False
-
-            self.ws.close()
-
-        except Exception as e:
-
-            logger.error(f"WebSocket close error: {e}")
+        self.ws.close()
 
 
     # ========================================================
@@ -426,15 +407,9 @@ class EdgeApi:
 
     def Start_Order_Stream(self):
 
-        try:
-
-            self.ws.subscribe(
-                self.conn.SUBSCRIPTION_TYPE_ORDER
-            )
-
-        except Exception as e:
-
-            logger.error(f"Order stream subscribe error: {e}")
+        self.ws.subscribe(
+            self.conn.SUBSCRIPTION_TYPE_ORDER
+        )
 
 
     # ========================================================
@@ -459,9 +434,7 @@ class EdgeApi:
                 df = pd.read_csv(f, header=None, low_memory=False)
 
         return df
-
-
-
+    
 
 
 #_
