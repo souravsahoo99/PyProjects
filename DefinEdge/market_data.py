@@ -396,7 +396,7 @@ class RestCandleAggregator:
 
             self.fetch_daily_candle()
 
-            await asyncio.sleep(86400)
+            await asyncio.sleep(43200)
 
     # ========================================================
     # START
