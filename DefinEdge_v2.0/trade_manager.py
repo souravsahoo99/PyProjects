@@ -1,8 +1,8 @@
 # ============================================================
-# TRADE MANAGER v5.2
+# TRADE MANAGER v5.0
 # Production Grade Execution Engine
 # Threaded Runtime Version
-# WebSocket Order Confirmation Compatible
+# WebSocket Order Confirmation Integrated
 # ============================================================
 
 import time
@@ -18,13 +18,16 @@ from signal_engine import SIGNALS, SIGNAL_LOCK
 
 
 # ============================================================
-# ENVIRONMENT
+# LOAD ENV
 # ============================================================
 
 dotenvfile = find_dotenv()
 load_dotenv(dotenvfile)
 
 CONNECTION_STR = os.getenv("CONNECTION_STRING")
+
+mongo_client = MongoClient(CONNECTION_STR)
+mongo_collection = mongo_client["AlgoBot"]["TradeLogs"]
 
 
 # ============================================================
@@ -68,6 +71,8 @@ class TradeManager:
         self.max_retry = max_retry
         self.retry_count = 0
 
+        self.strategy_name = None
+
         # ----------------------------------------------------
         # SIGNAL MEMORY
         # ----------------------------------------------------
@@ -82,7 +87,7 @@ class TradeManager:
         self._thread = None
 
         # ----------------------------------------------------
-        # POINTER FILE SYSTEM
+        # POINTER SYSTEM
         # ----------------------------------------------------
 
         self.state_dir = "state"
@@ -91,29 +96,22 @@ class TradeManager:
         self.pointer_file = f"{self.state_dir}/{self.signal_symbol}_manager.json"
 
         # ----------------------------------------------------
-        # MONGO CONNECTION
+        # MONGO
         # ----------------------------------------------------
 
-        self.mongo_collection = None
+        self.mongo_collection = mongo_collection
         self.mongo_object_id = None
 
-        if CONNECTION_STR:
-
-            client = MongoClient(CONNECTION_STR)
-
-            self.mongo_collection = client["AlgoBot"]["TradeLogs"]
-
         # ----------------------------------------------------
-        # TRADE STATE
+        # TRADE DICT
         # ----------------------------------------------------
 
         self.trade = {
 
+            "strategy_state": None,
             "manager_name": "TradeManager",
 
-            "strategy_state": None,
             "strategy_name": None,
-
             "side": None,
 
             "parentsignal_symbol": signal_symbol,
@@ -154,9 +152,9 @@ class TradeManager:
         }
 
 
-# ============================================================
-# POINTER FILE
-# ============================================================
+    # ========================================================
+    # POINTER WRITE
+    # ========================================================
 
     def _write_pointer(self):
 
@@ -180,14 +178,11 @@ class TradeManager:
             json.dump(pointer_data, f, indent=4)
 
 
-# ============================================================
-# MONGO INSERT
-# ============================================================
+    # ========================================================
+    # MONGO
+    # ========================================================
 
     def _mongo_insert(self):
-
-        if not self.mongo_collection:
-            return
 
         result = self.mongo_collection.insert_one(self.trade)
 
@@ -197,13 +192,9 @@ class TradeManager:
         self._write_pointer()
 
 
-# ============================================================
-# MONGO UPDATE
-# ============================================================
-
     def _mongo_update(self):
 
-        if not self.mongo_collection or not self.mongo_object_id:
+        if self.mongo_object_id is None:
             return
 
         self.trade["retry_count"] = self.retry_count
@@ -217,27 +208,21 @@ class TradeManager:
         self._write_pointer()
 
 
-# ============================================================
-# GET LTP
-# ============================================================
+    # ========================================================
+    # FETCH LTP
+    # ========================================================
 
     def _get_ltp(self):
 
-        try:
-
-            return self.engine.get_best_ltp(
-                self.child_exchange,
-                self.child_token
-            )
-
-        except Exception:
-
-            return None
+        return self.engine.get_best_ltp(
+            self.child_exchange,
+            self.child_token
+        )
 
 
-# ============================================================
-# TRAIL MANAGER
-# ============================================================
+    # ========================================================
+    # TRAIL MANAGER
+    # ========================================================
 
     def trail_manager(self, price):
 
@@ -276,9 +261,9 @@ class TradeManager:
                 self.trade["stop_loss"] = new_sl
 
 
-# ============================================================
-# ENTER TRADE
-# ============================================================
+    # ========================================================
+    # ENTER TRADE
+    # ========================================================
 
     def enter_trade(self, signal):
 
@@ -321,19 +306,15 @@ class TradeManager:
 
         self.trade["entry_price"] = ltp
         self.trade["entry_time"] = time.time()
-
         self.trade["side"] = side
         self.trade["strategy_state"] = "ACTIVE"
 
         trail = self.trade["trailing_distance"]
 
         if side == "BUY":
-
             self.trade["stop_loss"] = ltp - trail
             self.trade["target"] = ltp + trail * 5
-
         else:
-
             self.trade["stop_loss"] = ltp + trail
             self.trade["target"] = ltp - trail * 5
 
@@ -342,9 +323,9 @@ class TradeManager:
         print(f"[TRADE] {self.trading_symbol} entered @ {ltp}")
 
 
-# ============================================================
-# EXIT TRADE
-# ============================================================
+    # ========================================================
+    # EXIT TRADE
+    # ========================================================
 
     def exit_trade(self):
 
@@ -366,6 +347,8 @@ class TradeManager:
 
         ltp = self._get_ltp()
 
+        pnl = None
+
         if ltp:
 
             if side == "BUY":
@@ -373,21 +356,19 @@ class TradeManager:
             else:
                 pnl = self.trade["entry_price"] - ltp
 
-            self.trade["net_pnl"] = pnl
-
         self.trade["exit_price"] = ltp
         self.trade["exit_time"] = time.time()
-
+        self.trade["net_pnl"] = pnl
         self.trade["strategy_state"] = "EXITED"
 
         self._mongo_update()
 
-        print(f"[TRADE] Exit @ {ltp}")
+        print(f"[TRADE] Exit @ {ltp} | PnL {pnl}")
 
 
-# ============================================================
-# ENGINE LOOP
-# ============================================================
+    # ========================================================
+    # THREAD LOOP
+    # ========================================================
 
     def _run_loop(self):
 
@@ -396,10 +377,6 @@ class TradeManager:
             try:
 
                 state = self.trade["strategy_state"]
-
-                # ------------------------------------------------
-                # WAITING FOR SIGNAL
-                # ------------------------------------------------
 
                 if state is None:
 
@@ -412,10 +389,6 @@ class TradeManager:
                             continue
 
                         self.enter_trade(signal)
-
-                # ------------------------------------------------
-                # ACTIVE TRADE MANAGEMENT
-                # ------------------------------------------------
 
                 elif state == "ACTIVE":
 
@@ -454,9 +427,9 @@ class TradeManager:
             time.sleep(sleep_time)
 
 
-# ============================================================
-# START
-# ============================================================
+    # ========================================================
+    # START
+    # ========================================================
 
     def start(self):
 
@@ -473,9 +446,9 @@ class TradeManager:
         self._thread.start()
 
 
-# ============================================================
-# STOP
-# ============================================================
+    # ========================================================
+    # STOP
+    # ========================================================
 
     def stop(self):
 
@@ -485,6 +458,7 @@ class TradeManager:
             self._thread.join(timeout=1)
 
         print(f"[TRADE MANAGER] Stopped → {self.trading_symbol}")
+
 
 
 #_#_

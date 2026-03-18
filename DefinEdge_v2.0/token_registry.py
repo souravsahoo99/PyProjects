@@ -1,7 +1,7 @@
 # ============================================================
-# TOKEN REGISTRY v5.0
+# TOKEN REGISTRY v3.2
 # DefineEdge Compatible
-# Master Loader + Instrument Intelligence
+# Master ZIP Loader + Instrument Intelligence
 # Production Hardened
 # ============================================================
 
@@ -28,7 +28,6 @@ class Instrument:
         symbol,
         exchange,
         token,
-        insttype=None,
         exchange_segment=None,
         security_id=None,
         expiry=None,
@@ -36,11 +35,9 @@ class Instrument:
         option_type=None
     ):
 
-        self.symbol = symbol.upper()
+        self.symbol = symbol
         self.exchange = exchange
         self.token = str(token)
-
-        self.insttype = insttype
 
         self.exchange_segment = exchange_segment or exchange
         self.security_id = security_id or str(token)
@@ -59,9 +56,9 @@ class Instrument:
         return (
             f"Instrument("
             f"{self.symbol}, "
-            f"type={self.insttype}, "
             f"expiry={self.expiry}, "
             f"strike={self.strike}, "
+            f"type={self.option_type}, "
             f"token={self.token})"
         )
 
@@ -78,23 +75,17 @@ class TokenRegistry:
 
         self.api = api
 
-        # primary maps
+        # main maps
         self.token_map = {}
         self.symbol_map = {}
         self.security_map = {}
 
-        # INSTTYPE indexing
-        self.insttype_map = defaultdict(list)
-
-        # options
+        # option chain
         self.option_chain_map = defaultdict(list)
         self.option_lookup = {}
 
         # futures
         self.futures_map = defaultdict(list)
-
-        # index spot instruments
-        self.index_spot_map = {}
 
         self.df_master = None
 
@@ -152,11 +143,10 @@ class TokenRegistry:
 
             try:
 
-                symbol = str(row.SYMBOL).upper()
+                symbol = row.SYMBOL
                 exchange = row.SEGMENT
                 token = row.TOKEN
                 security_id = row.TRADINGSYM
-                insttype = getattr(row, "_4") if hasattr(row, "_4") else None
 
                 expiry = self._parse_expiry(row.EXPIRY)
                 strike = row.STRIKE
@@ -166,7 +156,6 @@ class TokenRegistry:
                     symbol,
                     exchange,
                     token,
-                    insttype,
                     exchange,
                     security_id,
                     expiry,
@@ -191,19 +180,12 @@ class TokenRegistry:
         self.token_map[inst.token] = inst
         self.security_map[inst.security_id] = inst
 
-        if inst.insttype:
-            self.insttype_map[inst.insttype].append(inst)
-
-        # SPOT instruments
+        # spot instruments
         if inst.strike is None and inst.expiry is None:
 
             self.symbol_map[(inst.exchange, inst.symbol)] = inst.token
 
-            # detect index spot
-            if inst.insttype and "IDX" in inst.insttype:
-                self.index_spot_map[inst.symbol] = inst.token
-
-        # OPTIONS
+        # options
         if inst.option_type in ("CE", "PE") and inst.strike is not None:
 
             key = (inst.symbol, inst.expiry)
@@ -215,8 +197,8 @@ class TokenRegistry:
                 (inst.symbol, inst.expiry, inst.strike, inst.option_type)
             ] = inst.token
 
-        # FUTURES
-        if inst.strike is None and inst.expiry and inst.option_type in ("", None):
+        # futures
+        if inst.option_type in ("", None) and inst.strike is None and inst.expiry:
 
             self.futures_map[inst.symbol].append(inst)
 
@@ -257,7 +239,7 @@ class TokenRegistry:
 
 
 # ============================================================
-# BASIC TOKEN LOOKUPS
+# TOKEN LOOKUP
 # ============================================================
 
     def get_by_token(self, token):
@@ -269,50 +251,14 @@ class TokenRegistry:
 
 
 # ============================================================
-# SYMBOL TOKEN RESOLUTION
+# SYMBOL LOOKUP
 # ============================================================
 
     def get_token(self, exchange, symbol):
 
-        symbol = symbol.upper()
+        inst = self.symbol_map.get((exchange, symbol))
 
-        token = self.symbol_map.get((exchange, symbol))
-
-        if token:
-            return token
-
-        for (ex, sym), tok in self.symbol_map.items():
-
-            if ex == exchange and symbol in sym:
-                return tok
-
-        return None
-
-
-# ============================================================
-# INDEX SPOT TOKEN (NEW)
-# ============================================================
-
-    def get_index_spot_token(self, symbol):
-
-        symbol = symbol.upper()
-
-        token = self.index_spot_map.get(symbol)
-
-        if token:
-            return token
-
-        # fallback scan
-        for inst in self.token_map.values():
-
-            if (
-                inst.symbol == symbol
-                and inst.strike is None
-                and inst.expiry is None
-            ):
-                return inst.token
-
-        return None
+        return inst
 
 
 # ============================================================
@@ -322,7 +268,7 @@ class TokenRegistry:
     def get_option_token(self, symbol, expiry, strike, option_type):
 
         return self.option_lookup.get(
-            (symbol.upper(), expiry, float(strike), option_type)
+            (symbol, expiry, float(strike), option_type)
         )
 
 
@@ -332,7 +278,7 @@ class TokenRegistry:
 
     def get_strikes(self, symbol, expiry):
 
-        return self.option_chain_map.get((symbol.upper(), expiry), [])
+        return self.option_chain_map.get((symbol, expiry), [])
 
 
 # ============================================================
@@ -350,30 +296,6 @@ class TokenRegistry:
             return None
 
         return min(strikes, key=lambda x: abs(x - spot))
-
-
-# ============================================================
-# OPTION UNIVERSE
-# ============================================================
-
-    def build_option_universe(self, symbol, expiry, spot, window=5):
-
-        strikes = self.get_strike_window(symbol, expiry, spot, window)
-
-        instruments = []
-
-        for strike in strikes:
-
-            ce_token = self.get_option_token(symbol, expiry, strike, "CE")
-            pe_token = self.get_option_token(symbol, expiry, strike, "PE")
-
-            if ce_token:
-                instruments.append(self.token_map[ce_token])
-
-            if pe_token:
-                instruments.append(self.token_map[pe_token])
-
-        return instruments
 
 
 # ============================================================
@@ -401,12 +323,36 @@ class TokenRegistry:
 
 
 # ============================================================
+# OPTION UNIVERSE
+# ============================================================
+
+    def build_option_universe(self, symbol, expiry, spot, window=5):
+
+        strikes = self.get_strike_window(symbol, expiry, spot, window)
+
+        instruments = []
+
+        for strike in strikes:
+
+            ce_token = self.get_option_token(symbol, expiry, strike, "CE")
+            pe_token = self.get_option_token(symbol, expiry, strike, "PE")
+
+            if ce_token:
+                instruments.append(self.token_map[ce_token])
+
+            if pe_token:
+                instruments.append(self.token_map[pe_token])
+
+        return instruments
+
+
+# ============================================================
 # FUTURES
 # ============================================================
 
     def get_futures(self, symbol):
 
-        return self.futures_map.get(symbol.upper(), [])
+        return self.futures_map.get(symbol, [])
 
 
     def get_current_future(self, symbol):
@@ -437,7 +383,6 @@ class TokenRegistry:
             return None
 
         return futures[2]
-
     
 
 

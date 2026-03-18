@@ -1,5 +1,5 @@
 # ============================================================
-# SIGNAL ENGINE v4.2
+# SIGNAL ENGINE v4.1
 # Clock-Barrier Synchronized Strategy Runtime
 # Production Grade
 # ============================================================
@@ -12,6 +12,7 @@ from strategy_main import StrategyExecutor
 from pineseries_adapter import SeriesAdapter
 from indicator_utils import MarketProfileIndicator
 
+# CLOCK BARRIER
 from market_data import ENGINE_CLOCK
 
 
@@ -20,6 +21,7 @@ from market_data import ENGINE_CLOCK
 # ============================================================
 
 SIGNALS = []
+
 SIGNAL_LOCK = threading.Lock()
 
 
@@ -138,7 +140,7 @@ class SignalEngine:
 
 
 # ============================================================
-# REQUIRED TIMEFRAMES
+# DISCOVER REQUIRED TIMEFRAMES
 # ============================================================
 
     def _discover_required_timeframes(self):
@@ -185,7 +187,7 @@ class SignalEngine:
 
         df["timestamp"] = pd.to_datetime(df["timestamp"], unit="s")
 
-        return df
+        return df.dropna()
 
 
 # ============================================================
@@ -228,19 +230,20 @@ class SignalEngine:
         if len(df) < 30:
             return
 
-        profile = MarketProfileIndicator(
-            timeframe="1m",
-            instrument=self.symbol,
-            candle_buffer=df
-        )
+        profile = MarketProfile(df)
 
         res = profile.calculate()
 
         if res is None:
             return
 
-        self.vah = res["vah"]
-        self.val = res["val"]
+        value_area = res["value_area"]
+
+        if len(value_area) == 0:
+            return
+
+        self.vah = max(value_area)
+        self.val = min(value_area)
 
         self.profile_ready = True
 
@@ -259,7 +262,7 @@ class SignalEngine:
                 self.strategies
             )
 
-            return future.result(timeout=0.2)
+            return future.result(timeout=0.05)
 
         except concurrent.futures.TimeoutError:
 
@@ -337,6 +340,16 @@ class SignalEngine:
         if signal_key == self.last_signal_key:
             return
 
+        if self.publisher:
+
+            allowed = self.publisher.allow_publish(
+                self.token,
+                strategy
+            )
+
+            if not allowed:
+                return
+
         signal_dict = {
 
             "symbol": self.symbol,
@@ -354,20 +367,28 @@ class SignalEngine:
             if len(SIGNALS) > 300:
                 SIGNALS.pop(0)
 
+        with self._history_lock:
+
+            self.signal_history.append(signal_dict)
+
+            if len(self.signal_history) > self._signal_history_limit:
+                self.signal_history.pop(0)
+
         self.last_signal_key = signal_key
 
         print(f"[SIGNAL] {self.symbol} → {side} | {strategy} | {price}")
 
 
 # ============================================================
-# CLOCK LOOP
+# CLOCK SYNCHRONIZED LOOP
 # ============================================================
 
     def _run_loop(self):
 
         while self._running:
 
-            ENGINE_CLOCK.wait(timeout=1)
+            # WAIT FOR CANDLE CLOSE PULSE
+            ENGINE_CLOCK.wait()
 
             buffer = self.market_data.get("1m")
 
@@ -423,7 +444,6 @@ class SignalEngine:
             self._thread.join(timeout=1)
 
         self._executor.shutdown(wait=False)
-
 
 
 

@@ -1,5 +1,5 @@
 # ============================================================
-# INSTRUMENT NODE v4.1
+# INSTRUMENT NODE v4.0
 # Production Node Controller
 # Thread Runtime Compatible
 # ============================================================
@@ -92,15 +92,7 @@ class InstrumentNode:
         # CREATE DATA SERVANT
         # ----------------------------------------------------
 
-        # If engine already has servant reuse it
-        if hasattr(self.engine, "data_servant"):
-
-            self.servant = self.engine.data_servant
-
-        else:
-
-            self.servant = DataServant(self.engine)
-            self.engine.data_servant = self.servant
+        self.servant = DataServant(self.engine)
 
         # ----------------------------------------------------
         # CREATE SIGNAL ENGINE
@@ -151,18 +143,11 @@ class InstrumentNode:
         self.servant.pipeline_registry[key] = self.market_data
 
         # ----------------------------------------------------
-        # REGISTER PIPELINE WITH ENGINE
-        # ----------------------------------------------------
-
-        if hasattr(self.engine, "market_data_map"):
-
-            self.engine.market_data_map[key] = self.market_data
-
-        # ----------------------------------------------------
         # CONNECT DATA SOURCES
         # ----------------------------------------------------
 
         self.signal_engine.market_data = self.market_data
+
         self.signal_engine.servant = self.servant
 
         self._initialized = True
@@ -189,6 +174,7 @@ class InstrumentNode:
 
         self._running = True
 
+        # Start SignalEngine thread
         self.signal_engine.start()
 
 
@@ -215,7 +201,7 @@ class InstrumentNode:
 
     def get_tasks(self):
 
-        # kept for backward compatibility with old async code
+        # kept for backward compatibility with older async code
 
         return []
 

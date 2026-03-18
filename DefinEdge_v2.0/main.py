@@ -1,16 +1,21 @@
 # ============================================================
-# MAIN TRADING ENGINE v4.2
+# MAIN TRADING ENGINE v4.0
 # Production Orchestrator
 # Thread-Based Runtime
 # ============================================================
 
+import signal
 import time
+import sys
 import threading
 
 from helper_wraper import APIEngine
 from token_registry import TokenRegistry
 from instrument_node import InstrumentNode
 from trade_manager import TradeManager
+from signal_engine import SignalPublisher
+
+from candle_chart import CandleChart
 from display_monitor import DisplayMonitor
 
 
@@ -72,21 +77,12 @@ def wait_for_spot_price(engine, exchange, token, timeout=10):
 
 def discover_atm_option_pair(engine, registry, symbol, exchange):
 
-    # -------------------------------
-    # Index spot token (NEW)
-    # -------------------------------
+    underlying_token = registry.get_token(exchange, symbol)
 
-    spot_token = registry.get_index_spot_token(symbol)
-
-    if spot_token is None:
-
-        # fallback to symbol lookup
-        spot_token = registry.get_token(exchange, symbol)
-
-    if spot_token is None:
+    if underlying_token is None:
         return None, None
 
-    spot = wait_for_spot_price(engine, exchange, spot_token)
+    spot = wait_for_spot_price(engine, exchange, underlying_token)
 
     if spot is None:
         return None, None
@@ -110,9 +106,6 @@ def discover_atm_option_pair(engine, registry, symbol, exchange):
 
     ce_token = registry.get_option_token(symbol, expiry, atm, "CE")
     pe_token = registry.get_option_token(symbol, expiry, atm, "PE")
-
-    if ce_token is None or pe_token is None:
-        return None, None
 
     return ce_token, pe_token
 
@@ -173,7 +166,6 @@ def build_signal_nodes(engine, registry):
         )
 
         if token is None:
-
             print(f"[ENGINE] Token resolution failed → {symbol}")
             continue
 
@@ -237,7 +229,6 @@ def build_trade_managers(engine, registry):
             )
 
             if ce_token is None:
-                print(f"[ENGINE] ATM discovery failed → {parent_symbol}")
                 continue
 
             child_token = ce_token
@@ -245,7 +236,6 @@ def build_trade_managers(engine, registry):
         tm = TradeManager(
 
             engine=engine,
-
             parent_exchange=parent_exchange,
             child_exchange=child_exchange,
 
@@ -262,6 +252,7 @@ def build_trade_managers(engine, registry):
             rest_ltp=None,
 
             max_retry=max_retry
+
         )
 
         if product_type == "OPT":
@@ -286,9 +277,9 @@ def engine_bootloader():
     engine.market_data_map = {}
 
     registry = TokenRegistry()
-    registry.load_master()
+    registry.load_master("data/instruments.csv")
 
-    if registry.df_master is None or registry.df_master.empty:
+    if not getattr(registry, "instruments", None):
         raise RuntimeError("Instrument registry not loaded")
 
     engine.start_ws()
@@ -355,6 +346,7 @@ if __name__ == "__main__":
     restart_delay = 5
 
     restart_count = 0
+
     running = True
 
     while running:
@@ -364,6 +356,7 @@ if __name__ == "__main__":
         try:
 
             engine_bootloader()
+
             running = False
 
         except KeyboardInterrupt:
