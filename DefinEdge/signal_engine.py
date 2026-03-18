@@ -10,7 +10,7 @@ import concurrent.futures
 
 from strategy_main import StrategyExecutor
 from pineseries_adapter import SeriesAdapter
-from indicator_utils import MarketProfile
+from indicator_utils import MarketProfileIndicator
 
 # CLOCK BARRIER
 from market_data import ENGINE_CLOCK
