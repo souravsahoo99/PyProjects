@@ -1,8 +1,9 @@
 # ============================================================
-# HELPER WRAPPER v3.0
+# HELPER WRAPPER  v2.2
 # Broker Wrapper Layer (DefineEdge Backend)
-# Production Safe Version
-# Thread Safe + Async Safe
+# Order Execution WebSocket Integrated
+# WebSocket Auto-Reconnect Enabled
+# REST Tick LTP Fallback Integrated
 # ============================================================
 
 from edgeAPI_helper import EdgeApi
@@ -16,7 +17,7 @@ from retry import retry
 from dotenv import find_dotenv, load_dotenv
 
 
-dotenv_file = find_dotenv()
+dotenv_file: str = find_dotenv()
 load_dotenv(dotenv_file)
 
 
@@ -33,40 +34,30 @@ class APIEngine:
 
         self.api = EdgeApi(api_token, api_secret)
 
-        self.market_data_map = {}
-
-        # ----------------------------------------------------
-        # WEBSOCKET STATE
-        # ----------------------------------------------------
-
         self._is_ws_connected = False
         self._subscribed_instruments = set()
 
-        # ----------------------------------------------------
-        # THREAD FLAGS
-        # ----------------------------------------------------
-
+        self.market_data_map = {}
         self._router_running = False
-        self._order_stream_running = False
-        self._ws_monitor_running = False
 
-        # ----------------------------------------------------
-        # ORDER BUFFER
-        # ----------------------------------------------------
+        # -----------------------------------------------------
+        # ORDER STREAM BUFFER
+        # -----------------------------------------------------
 
         self._order_buffer = {}
         self._order_lock = threading.Lock()
+        self._order_stream_running = False
 
-        # ----------------------------------------------------
-        # WS HEALTH
-        # ----------------------------------------------------
+        # -----------------------------------------------------
+        # WS HEALTH MONITOR
+        # -----------------------------------------------------
 
+        self._ws_monitor_running = False
         self._last_tick_time = time.time()
 
-
-# ============================================================
-# REST OHLC
-# ============================================================
+    # =========================================================
+    # REST OHLC
+    # =========================================================
 
     @retry(tries=5, delay=2, backoff=2)
     def get_ohlc(self, exchange, token, start, interval="min"):
@@ -87,6 +78,7 @@ class APIEngine:
         if df.empty:
             return None
 
+        # DefineEdge SDK returns "datetime"
         if "datetime" in df.columns:
             df = df.rename(columns={"datetime": "timestamp"})
 
@@ -95,9 +87,9 @@ class APIEngine:
         return df[["timestamp", "open", "high", "low", "close", "volume"]]
 
 
-# ============================================================
-# REST LTP
-# ============================================================
+    # =========================================================
+    # REST QUOTE LTP
+    # =========================================================
 
     @retry(tries=5, delay=2, backoff=2)
     def get_ltp_rest(self, exchange, token):
@@ -116,9 +108,9 @@ class APIEngine:
             return None
 
 
-# ============================================================
-# REST TICK LTP
-# ============================================================
+    # =========================================================
+    # REST TICK LTP
+    # =========================================================
 
     @retry(tries=3, delay=1, backoff=2)
     def get_ltp_tick_rest(self, exchange, token):
@@ -128,25 +120,20 @@ class APIEngine:
             now = datetime.now()
             start = now - timedelta(seconds=10)
 
-            price = self.api.Get_Tick_Data(
+            return self.api.Get_Tick_Data(
                 trading_symbol=token,
                 exchange=exchange,
                 start=start,
                 end=now
             )
 
-            if price is None:
-                return None
-
-            return float(price)
-
         except Exception:
             return None
 
 
-# ============================================================
-# WEBSOCKET ROUTER
-# ============================================================
+    # =========================================================
+    # WEBSOCKET ROUTER
+    # =========================================================
 
     def _router_loop(self):
 
@@ -155,7 +142,7 @@ class APIEngine:
             try:
 
                 with self.api._tick_lock:
-                    cache = self.api._tick_cache.copy()
+                    cache = dict(self.api._tick_cache)
 
                 if cache:
                     self._last_tick_time = time.time()
@@ -188,9 +175,9 @@ class APIEngine:
             time.sleep(0.01)
 
 
-# ============================================================
-# ORDER STREAM ROUTER
-# ============================================================
+    # =========================================================
+    # ORDER STREAM ROUTER
+    # =========================================================
 
     def _order_router(self):
 
@@ -199,7 +186,7 @@ class APIEngine:
             try:
 
                 with self.api._order_lock:
-                    buffer = self.api._order_buffer.copy()
+                    buffer = dict(self.api._order_buffer)
 
                 if not buffer:
                     time.sleep(0.01)
@@ -208,7 +195,7 @@ class APIEngine:
                 for order_id, status in buffer.items():
 
                     with self._order_lock:
-                        self._order_buffer[str(order_id)] = str(status).upper()
+                        self._order_buffer[order_id] = status
 
             except Exception:
                 pass
@@ -216,9 +203,9 @@ class APIEngine:
             time.sleep(0.01)
 
 
-# ============================================================
-# WS HEALTH MONITOR
-# ============================================================
+    # =========================================================
+    # WS HEALTH MONITOR
+    # =========================================================
 
     def _ws_monitor(self):
 
@@ -230,9 +217,9 @@ class APIEngine:
                     time.sleep(1)
                     continue
 
-                idle = time.time() - self._last_tick_time
+                idle_time = time.time() - self._last_tick_time
 
-                if idle > 15:
+                if idle_time > 15:
 
                     print("[WS] Tick stream stalled. Restarting...")
 
@@ -246,33 +233,34 @@ class APIEngine:
             time.sleep(5)
 
 
-# ============================================================
-# WEBSOCKET CONTROL
-# ============================================================
+    # =========================================================
+    # WEBSOCKET CONTROL
+    # =========================================================
 
     @retry(tries=5, delay=2, backoff=2)
     def start_ws(self):
 
         self.api.Start_Websocket()
+
         self.api.Start_Order_Stream()
 
-        self._router_running = True
-        threading.Thread(
-            target=self._router_loop,
-            daemon=True
-        ).start()
+        # -----------------------------------------------------
 
         self._order_stream_running = True
-        threading.Thread(
-            target=self._order_router,
-            daemon=True
-        ).start()
+        order_router = threading.Thread(target=self._order_router, daemon=True)
+        order_router.start()
+
+        # -----------------------------------------------------
+
+        self._router_running = True
+        router = threading.Thread(target=self._router_loop, daemon=True)
+        router.start()
+
+        # -----------------------------------------------------
 
         self._ws_monitor_running = True
-        threading.Thread(
-            target=self._ws_monitor,
-            daemon=True
-        ).start()
+        monitor = threading.Thread(target=self._ws_monitor, daemon=True)
+        monitor.start()
 
         self._is_ws_connected = True
 
@@ -310,15 +298,15 @@ class APIEngine:
 
         self.wait_for_ws()
 
-        for inst in self._subscribed_instruments:
-            self.api.Subscribe_inst([inst])
+        for instrument in self._subscribed_instruments:
+            self.api.Subscribe_inst([instrument])
 
         print("[WS] Reconnected and resubscribed.")
 
 
-# ============================================================
-# LIVE LTP
-# ============================================================
+    # =========================================================
+    # LIVE LTP
+    # =========================================================
 
     def get_ltp_live(self, exchange, token):
 
@@ -337,26 +325,29 @@ class APIEngine:
         return None
 
 
-# ============================================================
-# BEST LTP
-# ============================================================
+    # =========================================================
+    # BEST LTP
+    # =========================================================
 
     def get_best_ltp(self, exchange, token):
 
+        # 1. WebSocket LTP
         ltp = self.get_ltp_live(exchange, token)
-        if ltp is not None:
+        if ltp:
             return ltp
 
+        # 2. REST Tick LTP
         ltp = self.get_ltp_tick_rest(exchange, token)
-        if ltp is not None:
+        if ltp:
             return ltp
 
+        # 3. REST Quote LTP
         return self.get_ltp_rest(exchange, token)
 
 
-# ============================================================
-# ORDER CONFIRMATION
-# ============================================================
+    # =========================================================
+    # ORDER CONFIRMATION HELPER
+    # =========================================================
 
     def confirm_order_execution(self, order_id):
 
@@ -378,9 +369,9 @@ class APIEngine:
         return False
 
 
-# ============================================================
-# SHUTDOWN
-# ============================================================
+    # =========================================================
+    # SHUTDOWN
+    # =========================================================
 
     def close_ws(self):
 
@@ -388,24 +379,21 @@ class APIEngine:
         self._order_stream_running = False
         self._ws_monitor_running = False
 
-        try:
-            self.api.Close_Websocket()
-        except Exception:
-            pass
+        self.api.Close_Websocket()
 
         self._is_ws_connected = False
 
 
     def shutdown(self):
 
-        print("[ENGINE] Shutting down API layer...")
+        print("[ENGINE] Shutting down...")
 
         self.close_ws()
 
-        print("[ENGINE] API layer shutdown complete.")
+        print("[ENGINE] Shutdown complete.")
 
 
 
 
 
-#_#_#_
+#_#

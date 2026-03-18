@@ -1,10 +1,11 @@
 # ============================================================
-# DATA SERVANT v2.0
+# DATA SERVANT v1.0   
 # Unified Candle Data Gateway
-# Threaded Runtime Version
 # Shared Module
+# Production Grade
 # ============================================================
 
+import asyncio
 import threading
 
 from market_data import MarketDataManager
@@ -26,8 +27,9 @@ class DataServant:
         # pipelines starting
         self._starting_pipelines = set()
 
-        # thread safety
-        self._lock = threading.Lock()
+        # thread + async safety
+        self._async_lock = asyncio.Lock()
+        self._thread_lock = threading.Lock()
 
 
     # ========================================================
@@ -43,11 +45,11 @@ class DataServant:
     # SAFE PIPELINE START
     # ========================================================
 
-    def _safe_start_pipeline(self, md, key):
+    async def _safe_start_pipeline(self, md, key):
 
         try:
 
-            md.start()
+            await md.start()
 
         except Exception as e:
 
@@ -55,7 +57,7 @@ class DataServant:
 
         finally:
 
-            with self._lock:
+            with self._thread_lock:
 
                 if key in self._starting_pipelines:
 
@@ -66,11 +68,11 @@ class DataServant:
     # ENSURE PIPELINE
     # ========================================================
 
-    def ensure_pipeline(self, exchange, token, timeframe):
+    async def ensure_pipeline(self, exchange, token, timeframe):
 
         key = self._key(exchange, token)
 
-        with self._lock:
+        async with self._async_lock:
 
             md = self.pipeline_registry.get(key)
 
@@ -104,19 +106,17 @@ class DataServant:
                         required_timeframes=[timeframe]
                     )
 
-                self.pipeline_registry[key] = md
+                with self._thread_lock:
 
-                if key not in self._starting_pipelines:
+                    self.pipeline_registry[key] = md
 
-                    self._starting_pipelines.add(key)
+                    if key not in self._starting_pipelines:
 
-                    thread = threading.Thread(
-                        target=self._safe_start_pipeline,
-                        args=(md, key),
-                        daemon=True
-                    )
+                        self._starting_pipelines.add(key)
 
-                    thread.start()
+                        asyncio.create_task(
+                            self._safe_start_pipeline(md, key)
+                        )
 
                 return md
 
@@ -136,12 +136,9 @@ class DataServant:
     # GET CANDLES
     # ========================================================
 
-    def get_candles(self, exchange, token, timeframe):
+    async def get_candles(self, exchange, token, timeframe):
 
-        md = self.ensure_pipeline(exchange, token, timeframe)
-
-        if md is None:
-            return None
+        md = await self.ensure_pipeline(exchange, token, timeframe)
 
         return md.get(timeframe)
 
@@ -154,7 +151,7 @@ class DataServant:
 
         key = self._key(exchange, token)
 
-        with self._lock:
+        with self._thread_lock:
 
             md = self.pipeline_registry.get(key)
 
@@ -163,5 +160,6 @@ class DataServant:
 
             return md.get(timeframe)
         
+
 
 #_

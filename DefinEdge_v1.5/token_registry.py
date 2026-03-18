@@ -1,8 +1,7 @@
 # ============================================================
-# TOKEN REGISTRY v3.2
+# TOKEN REGISTRY v3.1
 # DefineEdge Compatible
 # Master ZIP Loader + Instrument Intelligence
-# Production Hardened
 # ============================================================
 
 import pandas as pd
@@ -14,8 +13,7 @@ from collections import defaultdict
 from datetime import datetime
 from retry import retry
 
-from edgeAPI_helper import Load_Master
-
+from edgeAPI_helper import Load_Master   
 
 # ============================================================
 # INSTRUMENT OBJECT
@@ -69,13 +67,14 @@ class Instrument:
 
 class TokenRegistry:
 
-    MASTER_URL = "https://app.definedgesecurities.com/public/allmaster.zip"
+    MASTER_URL="https://app.definedgesecurities.com/public/allmaster.zip"
 
     def __init__(self, api=None):
 
+        # optional EdgeApi instance
         self.api = api
 
-        # main maps
+        # primary maps
         self.token_map = {}
         self.symbol_map = {}
         self.security_map = {}
@@ -90,14 +89,16 @@ class TokenRegistry:
         self.df_master = None
 
 
-# ============================================================
-# MASTER DOWNLOAD
-# ============================================================
+    # ========================================================
+    # MASTER DOWNLOAD
+    # ========================================================
 
     @retry(tries=5, delay=3, backoff=2)
     def download_master_zip(self):
 
+        # If EdgeApi instance exists, prefer it
         if self.api and hasattr(self.api, "download_master_zip"):
+
             return self.api.download_master_zip()
 
         response = requests.get(self.MASTER_URL)
@@ -118,62 +119,56 @@ class TokenRegistry:
         return df
 
 
-# ============================================================
-# LOAD MASTER
-# ============================================================
+    # ========================================================
+    # LOAD MASTER
+    # ========================================================
 
     def load_master(self):
 
         column_names = [
             'SEGMENT','TOKEN','SYMBOL','TRADINGSYM','INSTRUMENT TYPE',
             'EXPIRY','TICKSIZE','LOTSIZE','OPTIONTYPE','STRIKE',
-            'PRICEPREC','MULTIPLIER','ISIN','PRICEMULT','UNKNOWN'
+            'PRICEPREC','MULTIPLIER','ISIN','PRICEMULT','Unknown'
         ]
-
+        
         df = Load_Master()
-
         if df is None:
+
             df = self.download_master_zip()
 
         df.columns = column_names
 
         self.df_master = df
 
+
         for row in df.itertuples(index=False):
 
-            try:
+            symbol = row.SYMBOL
+            exchange = row.SEGMENT
+            token = row.TOKEN
+            security_id = row.TRADINGSYM
+            expiry = self._parse_expiry(row.EXPIRY)
+            strike = row.STRIKE
+            option_type = row.OPTIONTYPE
 
-                symbol = row.SYMBOL
-                exchange = row.SEGMENT
-                token = row.TOKEN
-                security_id = row.TRADINGSYM
+            inst = Instrument(
+                symbol,
+                exchange,
+                token,
+                exchange,
+                security_id,
+                expiry,
+                strike,
+                option_type
+            )
 
-                expiry = self._parse_expiry(row.EXPIRY)
-                strike = row.STRIKE
-                option_type = row.OPTIONTYPE
-
-                inst = Instrument(
-                    symbol,
-                    exchange,
-                    token,
-                    exchange,
-                    security_id,
-                    expiry,
-                    strike,
-                    option_type
-                )
-
-                self._register(inst)
-
-            except Exception:
-                continue
-
+            self._register(inst)
+        
         self._finalize_maps()
 
-
-# ============================================================
-# REGISTER INSTRUMENT
-# ============================================================
+    # ========================================================
+    # REGISTER INSTRUMENT
+    # ========================================================
 
     def _register(self, inst):
 
@@ -183,7 +178,8 @@ class TokenRegistry:
         # spot instruments
         if inst.strike is None and inst.expiry is None:
 
-            self.symbol_map[(inst.exchange, inst.symbol)] = inst.token
+            self.symbol_map[(inst.exchange, inst.symbol)] = inst.security_id
+
 
         # options
         if inst.option_type in ("CE", "PE") and inst.strike is not None:
@@ -195,7 +191,8 @@ class TokenRegistry:
 
             self.option_lookup[
                 (inst.symbol, inst.expiry, inst.strike, inst.option_type)
-            ] = inst.token
+            ] = inst.security_id
+
 
         # futures
         if inst.option_type in ("", None) and inst.strike is None and inst.expiry:
@@ -203,9 +200,9 @@ class TokenRegistry:
             self.futures_map[inst.symbol].append(inst)
 
 
-# ============================================================
-# FINALIZE MAPS
-# ============================================================
+    # ========================================================
+    # FINALIZE MAPS
+    # ========================================================
 
     def _finalize_maps(self):
 
@@ -215,13 +212,13 @@ class TokenRegistry:
         for symbol in self.futures_map:
 
             self.futures_map[symbol].sort(
-                key=lambda x: x.expiry if x.expiry else datetime.max.date()
+                key=lambda x: self._parse_expiry(x.expiry)
             )
 
 
-# ============================================================
-# EXPIRY PARSER
-# ============================================================
+    # ========================================================
+    # EXPIRY PARSER
+    # ========================================================
 
     def _parse_expiry(self, expiry):
 
@@ -238,52 +235,52 @@ class TokenRegistry:
             return None
 
 
-# ============================================================
-# TOKEN LOOKUP
-# ============================================================
+    # ========================================================
+    # TOKEN LOOKUP
+    # ========================================================
 
     def get_by_token(self, token):
+
         return self.token_map.get(str(token))
 
 
     def get_by_security_id(self, security_id):
+
         return self.security_map.get(str(security_id))
 
 
-# ============================================================
-# SYMBOL LOOKUP
-# ============================================================
+    # ========================================================
+    # SYMBOL LOOKUP
+    # ========================================================
 
-    def get_token(self, exchange, symbol):
+    def get_security_id(self, exchange, symbol):
 
-        inst = self.symbol_map.get((exchange, symbol))
-
-        return inst
+        return self.symbol_map.get((exchange, symbol))
 
 
-# ============================================================
-# OPTION TOKEN
-# ============================================================
+    # ========================================================
+    # OPTION TOKEN
+    # ========================================================
 
-    def get_option_token(self, symbol, expiry, strike, option_type):
+    def get_option_security_id(self, symbol, expiry, strike, option_type):
 
         return self.option_lookup.get(
             (symbol, expiry, float(strike), option_type)
         )
 
 
-# ============================================================
-# STRIKE LIST
-# ============================================================
+    # ========================================================
+    # STRIKE LIST
+    # ========================================================
 
     def get_strikes(self, symbol, expiry):
 
         return self.option_chain_map.get((symbol, expiry), [])
 
 
-# ============================================================
-# ATM STRIKE
-# ============================================================
+    # ========================================================
+    # ATM STRIKE
+    # ========================================================
 
     def get_atm_strike(self, symbol, expiry, spot):
 
@@ -298,9 +295,9 @@ class TokenRegistry:
         return min(strikes, key=lambda x: abs(x - spot))
 
 
-# ============================================================
-# STRIKE WINDOW
-# ============================================================
+    # ========================================================
+    # STRIKE WINDOW
+    # ========================================================
 
     def get_strike_window(self, symbol, expiry, spot, window=5):
 
@@ -322,9 +319,9 @@ class TokenRegistry:
         return strikes[start:end]
 
 
-# ============================================================
-# OPTION UNIVERSE
-# ============================================================
+    # ========================================================
+    # OPTION UNIVERSE
+    # ========================================================
 
     def build_option_universe(self, symbol, expiry, spot, window=5):
 
@@ -334,21 +331,21 @@ class TokenRegistry:
 
         for strike in strikes:
 
-            ce_token = self.get_option_token(symbol, expiry, strike, "CE")
-            pe_token = self.get_option_token(symbol, expiry, strike, "PE")
+            ce_id = self.get_option_security_id(symbol, expiry, strike, "CE")
+            pe_id = self.get_option_security_id(symbol, expiry, strike, "PE")
 
-            if ce_token:
-                instruments.append(self.token_map[ce_token])
+            if ce_id:
+                instruments.append(self.security_map[ce_id])
 
-            if pe_token:
-                instruments.append(self.token_map[pe_token])
+            if pe_id:
+                instruments.append(self.security_map[pe_id])
 
         return instruments
 
 
-# ============================================================
-# FUTURES
-# ============================================================
+    # ========================================================
+    # FUTURES
+    # ========================================================
 
     def get_futures(self, symbol):
 
@@ -389,4 +386,4 @@ class TokenRegistry:
 
 
 
-#_#_#_
+#_#_

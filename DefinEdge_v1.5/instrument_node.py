@@ -1,10 +1,12 @@
 # ============================================================
-# INSTRUMENT NODE v4.0
+# INSTRUMENT NODE v3.0
 # Production Node Controller
-# Thread Runtime Compatible
+# DefineEdge Compatible
+# Compatible with Shared DataServant Architecture
+# Strategy-Orchestration Compatible
 # ============================================================
 
-import threading
+import asyncio
 
 from market_data import MarketDataManager
 from signal_engine import SignalEngine
@@ -37,6 +39,7 @@ class InstrumentNode:
         self.symbol = symbol
         self.token = token
 
+        # optional registry
         self.registry = registry
 
         # ----------------------------------------------------
@@ -55,6 +58,12 @@ class InstrumentNode:
         self.servant = None
 
         # ----------------------------------------------------
+        # ASYNC TASKS
+        # ----------------------------------------------------
+
+        self.tasks = []
+
+        # ----------------------------------------------------
         # LIFECYCLE CONTROL
         # ----------------------------------------------------
 
@@ -62,11 +71,26 @@ class InstrumentNode:
         self._running = False
 
 
-# ============================================================
-# INITIALIZE NODE
-# ============================================================
+    # ========================================================
+    # SAFE SIGNAL ENGINE START
+    # ========================================================
 
-    def initialize(self):
+    async def _safe_signal_loop(self):
+
+        try:
+
+            await self.signal_engine.run()
+
+        except Exception as e:
+
+            print(f"[NODE ERROR] SignalEngine crashed → {self.symbol} | {e}")
+
+
+    # ========================================================
+    # INITIALIZE NODE
+    # ========================================================
+
+    async def initialize(self):
 
         if self._initialized:
             return
@@ -89,17 +113,16 @@ class InstrumentNode:
         self.engine.subscribe(self.exchange, self.token)
 
         # ----------------------------------------------------
-        # CREATE DATA SERVANT
+        # CREATE SHARED DATA SERVANT
         # ----------------------------------------------------
 
         self.servant = DataServant(self.engine)
 
         # ----------------------------------------------------
-        # CREATE SIGNAL ENGINE
+        # SIGNAL ENGINE
         # ----------------------------------------------------
 
         self.signal_engine = SignalEngine(
-
             engine=self.engine,
             market_data=None,
             symbol=self.symbol,
@@ -107,7 +130,6 @@ class InstrumentNode:
             publisher=None,
             instrument_type=self.instrument_type,
             node_scope=self.node_scope
-
         )
 
         required_timeframes = self.signal_engine.get_required_timeframes()
@@ -120,22 +142,20 @@ class InstrumentNode:
         )
 
         # ----------------------------------------------------
-        # CREATE MARKET DATA PIPELINE
+        # BASE MARKET DATA PIPELINE
         # ----------------------------------------------------
 
         self.market_data = MarketDataManager(
-
             self.engine,
             self.exchange,
             self.token,
             required_timeframes
-
         )
 
-        self.market_data.start()
+        await self.market_data.start()
 
         # ----------------------------------------------------
-        # REGISTER PIPELINE WITH SERVANT
+        # REGISTER BASE PIPELINE WITH SERVANT
         # ----------------------------------------------------
 
         key = f"{self.exchange}|{self.token}"
@@ -147,15 +167,14 @@ class InstrumentNode:
         # ----------------------------------------------------
 
         self.signal_engine.market_data = self.market_data
-
         self.signal_engine.servant = self.servant
 
         self._initialized = True
 
 
-# ============================================================
-# START NODE
-# ============================================================
+    # ========================================================
+    # START NODE
+    # ========================================================
 
     def start(self):
 
@@ -170,17 +189,32 @@ class InstrumentNode:
         if self._running:
             return
 
-        print(f"[NODE] Starting engine → {self.symbol}")
+        print(f"[NODE] Starting signal loop → {self.symbol}")
+
+        task = asyncio.create_task(
+            self._safe_signal_loop()
+        )
+
+        self.tasks.append(task)
 
         self._running = True
 
-        # Start SignalEngine thread
-        self.signal_engine.start()
+
+    # ========================================================
+    # RETURN TASKS
+    # ========================================================
+
+    def get_tasks(self):
+
+        if self.tasks is None:
+            return []
+
+        return self.tasks
 
 
-# ============================================================
-# STOP NODE
-# ============================================================
+    # ========================================================
+    # STOP NODE
+    # ========================================================
 
     def stop(self):
 
@@ -189,23 +223,9 @@ class InstrumentNode:
         if self.signal_engine:
             self.signal_engine.stop()
 
-        if self.market_data:
-            self.market_data.stop()
-
         print(f"[NODE] Stopped → {self.symbol}")
 
 
-# ============================================================
-# COMPATIBILITY METHOD
-# ============================================================
-
-    def get_tasks(self):
-
-        # kept for backward compatibility with older async code
-
-        return []
 
 
-
-
-#_#_
+# 
