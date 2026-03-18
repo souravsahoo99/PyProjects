@@ -1,5 +1,5 @@
 # ============================================================
-# TOKEN REGISTRY v3.1
+# TOKEN REGISTRY v3.0
 # DefineEdge Compatible
 # Master ZIP Loader + Instrument Intelligence
 # ============================================================
@@ -67,7 +67,7 @@ class Instrument:
 
 class TokenRegistry:
 
-    MASTER_URL="https://app.definedgesecurities.com/public/allmaster.zip"
+    MASTER_URL = "https://app.definedgesecurities.com/public/allmaster.zip"
 
     def __init__(self, api=None):
 
@@ -140,16 +140,16 @@ class TokenRegistry:
 
         self.df_master = df
 
+        for _, row in df.iterrows():
 
-        for row in df.itertuples(index=False):
+            symbol = row["SYMBOL"]
+            exchange = row["SEGMENT"]
+            token = row["TOKEN"]
+            security_id = row["TRADINGSYM"]
 
-            symbol = row.SYMBOL
-            exchange = row.SEGMENT
-            token = row.TOKEN
-            security_id = row.TRADINGSYM
-            expiry = self._parse_expiry(row.EXPIRY)
-            strike = row.STRIKE
-            option_type = row.OPTIONTYPE
+            expiry = self._parse_expiry(row["EXPIRY"])
+            strike = row["STRIKE"]
+            option_type = row["OPTIONTYPE"]
 
             inst = Instrument(
                 symbol,
@@ -163,8 +163,9 @@ class TokenRegistry:
             )
 
             self._register(inst)
-        
+
         self._finalize_maps()
+
 
     # ========================================================
     # REGISTER INSTRUMENT
@@ -383,7 +384,4 @@ class TokenRegistry:
     
 
 
-
-
-
-#_#_
+#_#
