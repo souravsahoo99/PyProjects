@@ -1,8 +1,9 @@
 # ============================================================
-# HELPER WRAPPER  v2.1
+# HELPER WRAPPER  v2.2
 # Broker Wrapper Layer (DefineEdge Backend)
 # Order Execution WebSocket Integrated
 # WebSocket Auto-Reconnect Enabled
+# REST Tick LTP Fallback Integrated
 # ============================================================
 
 from edgeAPI_helper import EdgeApi
@@ -11,13 +12,13 @@ import os
 import time
 import threading
 import pandas as pd
-from datetime import datetime
+from datetime import datetime, timedelta
 from retry import retry
 from dotenv import find_dotenv, load_dotenv
 
 
 dotenv_file: str = find_dotenv()
-load_dotenv(dotenv_file)  
+load_dotenv(dotenv_file)
 
 
 # ============================================================
@@ -30,7 +31,6 @@ class APIEngine:
 
         api_token = os.getenv("EDGE_API_TOKEN")
         api_secret = os.getenv("EDGE_API_SECRET")
-        
 
         self.api = EdgeApi(api_token, api_secret)
 
@@ -62,12 +62,16 @@ class APIEngine:
     @retry(tries=5, delay=2, backoff=2)
     def get_ohlc(self, exchange, token, interval="min"):
 
+        now = datetime.now()
+        days_ago = now - timedelta(days=7)
+        start_date = days_ago.replace(hour=9, minute=15, second=0, microsecond=0)
+
         raw = self.api.Get_Intraday_Data(
             trading_symbol=token,
             exchange=exchange,
             timeframe=interval,
-            start=None,
-            end=None
+            start=start_date,
+            end=now
         )
 
         if raw is None:
@@ -78,22 +82,17 @@ class APIEngine:
         if df.empty:
             return None
 
-        df = df.rename(columns={
-            "time": "timestamp",
-            "open": "open",
-            "high": "high",
-            "low": "low",
-            "close": "close",
-            "volume": "volume"
-        })
+        # DefineEdge SDK returns "datetime"
+        if "datetime" in df.columns:
+            df = df.rename(columns={"datetime": "timestamp"})
 
         df["timestamp"] = pd.to_datetime(df["timestamp"], errors="coerce")
 
-        return df[["timestamp","open","high","low","close","volume"]]
+        return df[["timestamp", "open", "high", "low", "close", "volume"]]
 
 
     # =========================================================
-    # REST LTP
+    # REST QUOTE LTP
     # =========================================================
 
     @retry(tries=5, delay=2, backoff=2)
@@ -114,6 +113,29 @@ class APIEngine:
 
 
     # =========================================================
+    # REST TICK LTP
+    # =========================================================
+
+    @retry(tries=3, delay=1, backoff=2)
+    def get_ltp_tick_rest(self, exchange, token):
+
+        try:
+
+            now = datetime.now()
+            start = now - timedelta(seconds=10)
+
+            return self.api.Get_Tick_Data(
+                trading_symbol=token,
+                exchange=exchange,
+                start=start,
+                end=now
+            )
+
+        except Exception:
+            return None
+
+
+    # =========================================================
     # WEBSOCKET ROUTER
     # =========================================================
 
@@ -123,7 +145,6 @@ class APIEngine:
 
             try:
 
-                # thread-safe snapshot
                 with self.api._tick_lock:
                     cache = dict(self.api._tick_cache)
 
@@ -230,21 +251,18 @@ class APIEngine:
         # -----------------------------------------------------
 
         self._order_stream_running = True
-
         order_router = threading.Thread(target=self._order_router, daemon=True)
         order_router.start()
 
         # -----------------------------------------------------
 
         self._router_running = True
-
         router = threading.Thread(target=self._router_loop, daemon=True)
         router.start()
 
         # -----------------------------------------------------
 
         self._ws_monitor_running = True
-
         monitor = threading.Thread(target=self._ws_monitor, daemon=True)
         monitor.start()
 
@@ -267,7 +285,6 @@ class APIEngine:
         while not self._is_ws_connected:
 
             if time.time() - start > timeout:
-
                 raise TimeoutError("WebSocket connection timeout")
 
             time.sleep(0.05)
@@ -286,7 +303,6 @@ class APIEngine:
         self.wait_for_ws()
 
         for instrument in self._subscribed_instruments:
-
             self.api.Subscribe_inst([instrument])
 
         print("[WS] Reconnected and resubscribed.")
@@ -305,7 +321,6 @@ class APIEngine:
             msg = self.api._tick_cache.get(key)
 
             if msg:
-
                 try:
                     return float(msg["lp"])
                 except Exception:
@@ -320,11 +335,17 @@ class APIEngine:
 
     def get_best_ltp(self, exchange, token):
 
+        # 1. WebSocket LTP
         ltp = self.get_ltp_live(exchange, token)
-
         if ltp:
             return ltp
 
+        # 2. REST Tick LTP
+        ltp = self.get_ltp_tick_rest(exchange, token)
+        if ltp:
+            return ltp
+
+        # 3. REST Quote LTP
         return self.get_ltp_rest(exchange, token)
 
 
@@ -340,7 +361,6 @@ class APIEngine:
         order_id = str(order_id)
 
         with self._order_lock:
-
             status = self._order_buffer.get(order_id)
 
         if status:
@@ -375,7 +395,6 @@ class APIEngine:
         self.close_ws()
 
         print("[ENGINE] Shutdown complete.")
-
 
 
 

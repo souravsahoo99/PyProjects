@@ -1,8 +1,9 @@
 # ============================================================
-# DEFINEEDGE API HELPER v2.1
+# DEFINEEDGE API HELPER v2.2
 # Production Broker Adapter
 # Engine Compatible
 # WebSocket Hardened
+# REST Tick LTP Fallback Added
 # ============================================================
 
 from integrate import ConnectToIntegrate, IntegrateOrders, IntegrateData, IntegrateWebSocket
@@ -273,7 +274,6 @@ class EdgeApi:
 
         return self.orders.cancel_order(order_id)
 
-    # =======================================================
 
     def Get_Positions(self):
 
@@ -347,6 +347,45 @@ class EdgeApi:
 
 
     # ========================================================
+    # REST TICK DATA (LTP FALLBACK)
+    # ========================================================
+
+    def Get_Tick_Data(
+        self,
+        trading_symbol,
+        exchange,
+        start,
+        end
+    ):
+
+        try:
+
+            ticks = self.data.historical_data(
+                exchange=exchange,
+                trading_symbol=trading_symbol,
+                timeframe=self.conn.TIMEFRAME_TYPE_TICK,
+                start=start,
+                end=end
+            )
+
+            last_tick = None
+
+            for t in ticks:
+                last_tick = t
+
+            if last_tick is None:
+                return None
+
+            return last_tick.get("ltp")
+
+        except Exception as e:
+
+            logger.error(f"Tick REST fetch error: {e}")
+
+            return None
+
+
+    # ========================================================
     # WEBSOCKET CONTROL
     # ========================================================
 
@@ -412,7 +451,6 @@ class EdgeApi:
         try:
 
             self._ws_running = False
-
             self.ws.close()
 
         except Exception as e:
@@ -460,6 +498,164 @@ class EdgeApi:
 
         return df
 
+def download_MasterFile(url="https://app.definedgesecurities.com/public/allmaster.zip"):
+
+    response = requests.get(url)
+
+    response.raise_for_status()
+
+    with zipfile.ZipFile(io.BytesIO(response.content)) as z:
+
+        name = z.namelist()[0]
+
+        with z.open(name) as f:
+
+            df = pd.read_csv(f, header=None, low_memory=False)
+
+    return df
+
+
+
+
+# ============================================================
+# EDGE API HELPER TEST TEMPLATE
+# ============================================================
+
+if __name__ == "__main__":
+
+    print("\n===== EDGE API HELPER TEST START =====\n")
+
+    # --------------------------------------------------------
+    # INIT API
+    # --------------------------------------------------------
+
+    api_token = os.getenv("EDGE_API_TOKEN")
+    api_secret = os.getenv("EDGE_API_SECRET")
+
+    api = EdgeApi(api_token, api_secret)
+
+    print("Login successful\n")
+
+
+    # --------------------------------------------------------
+    # TEST LTP REST
+    # --------------------------------------------------------
+
+    print("Testing LTP REST...")
+
+    try:
+
+        ltp = api.Get_LTP(
+            trading_symbol="NIFTY-I",
+            exchange="NSE"
+        )
+
+        print("LTP Response:", ltp)
+
+    except Exception as e:
+
+        print("LTP ERROR:", e)
+
+
+    # --------------------------------------------------------
+    # TEST HISTORICAL MINUTE
+    # --------------------------------------------------------
+
+    print("\nTesting Intraday Data...")
+
+    try:
+
+        data = api.Get_Intraday_Data(
+            trading_symbol="NIFTY-I",
+            exchange="NSE",
+            timeframe="min",
+            start=None,
+            end=None
+        )
+
+        count = 0
+
+        for row in data:
+
+            print(row)
+
+            count += 1
+
+            if count >= 5:
+                break
+
+    except Exception as e:
+
+        print("Historical ERROR:", e)
+
+
+    # --------------------------------------------------------
+    # TEST DAILY DATA
+    # --------------------------------------------------------
+
+    print("\nTesting Daily Data...")
+
+    try:
+
+        data = api.Get_Daily_Data(
+            trading_symbol="NIFTY-I",
+            exchange="NSE",
+            start=None,
+            end=None
+        )
+
+        for i,row in enumerate(data):
+
+            print(row)
+
+            if i >= 3:
+                break
+
+    except Exception as e:
+
+        print("Daily ERROR:", e)
+
+
+    # --------------------------------------------------------
+    # TEST REST TICK DATA
+    # --------------------------------------------------------
+
+    print("\nTesting REST Tick Data...")
+
+    try:
+
+        tick = api.Get_Tick_Data(
+            trading_symbol="NIFTY-I",
+            exchange="NSE",
+            start=None,
+            end=None
+        )
+
+        print("Tick LTP:", tick)
+
+    except Exception as e:
+
+        print("Tick REST ERROR:", e)
+
+
+    # --------------------------------------------------------
+    # TEST MASTER FILE DOWNLOAD
+    # --------------------------------------------------------
+
+    print("\nTesting Master Instrument Download...")
+
+    try:
+
+        df = api.download_master_zip()
+
+        print("Master rows:", len(df))
+
+    except Exception as e:
+
+        print("Master download ERROR:", e)
+
+
+    print("\n===== EDGE API HELPER TEST END =====")
 
 
 
