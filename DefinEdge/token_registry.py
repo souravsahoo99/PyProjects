@@ -4,16 +4,16 @@
 # Master ZIP Loader + Instrument Intelligence
 # ============================================================
 
-import csv
+import pandas as pd
+import requests
 import io
 import zipfile
-import requests
 
 from retry import retry
 from collections import defaultdict
 from datetime import datetime
 
-import pandas as pd
+from edgeAPI_helper import Load_Master
 
 
 # ============================================================
@@ -49,7 +49,6 @@ class Instrument:
             self.strike = None
 
         self.option_type = option_type
-
 
     def __repr__(self):
 
@@ -98,16 +97,13 @@ class TokenRegistry:
     @retry(tries=5, delay=3, backoff=2)
     def download_master_zip(self):
 
-        # if EdgeApi provides the function use it
+        # If EdgeApi instance exists, prefer it
         if self.api and hasattr(self.api, "download_master_zip"):
 
             return self.api.download_master_zip()
-
-        # fallback direct download
-
-        response = requests.get(self.MASTER_URL)
-
-        response.raise_for_status()
+        else: 
+            response = requests.get(self.MASTER_URL)
+            response.raise_for_status()
 
         with zipfile.ZipFile(io.BytesIO(response.content)) as z:
 
@@ -135,8 +131,11 @@ class TokenRegistry:
             'EXPIRY','TICKSIZE','LOTSIZE','OPTIONTYPE','STRIKE',
             'PRICEPREC','MULTIPLIER','ISIN','PRICEMULT','Unknown'
         ]
+        
+        df = Load_Master()
+        if df is None:
 
-        df = self.download_master_zip()
+            df = self.download_master_zip()
 
         df.columns = column_names
 
@@ -190,7 +189,6 @@ class TokenRegistry:
             key = (inst.symbol, inst.expiry)
 
             if inst.strike not in self.option_chain_map[key]:
-
                 self.option_chain_map[key].append(inst.strike)
 
             self.option_lookup[
@@ -211,7 +209,6 @@ class TokenRegistry:
     def _finalize_maps(self):
 
         for key in self.option_chain_map:
-
             self.option_chain_map[key].sort()
 
         for symbol in self.futures_map:
@@ -237,7 +234,6 @@ class TokenRegistry:
             return datetime.strptime(expiry, "%d%m%Y").date()
 
         except Exception:
-
             return None
 
 
@@ -389,4 +385,4 @@ class TokenRegistry:
     
 
 
-#
+#_#

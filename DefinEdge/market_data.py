@@ -317,19 +317,28 @@ class RestCandleAggregator:
     async def _minute_pipeline(self):
 
         while self._running:
-
+            
             try:
+
+                if self._last_1m_ts is None :
+
+                    days_ago = datetime.now() - timedelta(days=7)
+                    start_time = days_ago.replace(hour=9, minute=15, second=0, microsecond=0)    
+
+                else :
+                    start_time = datetime.now() - timedelta(hours=1)                    
 
                 df=self.engine.get_ohlc(
                     exchange=self.exchange,
                     token=self.token,
+                    start=start_time,
                     interval="min"
                 )
-
                 self._process_1m(df)
 
             except Exception as e:
-                print("[REST 1M ERROR]",e)
+                print("[REST 1M ERROR]",e)                
+
 
             sleep=60-(time.time()%60)
 

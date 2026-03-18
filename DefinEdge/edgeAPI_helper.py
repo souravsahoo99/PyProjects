@@ -498,7 +498,10 @@ class EdgeApi:
 
         return df
 
-def download_MasterFile(url="https://app.definedgesecurities.com/public/allmaster.zip"):
+
+# ======= Download Master File ==========
+
+def Load_Master(url="https://app.definedgesecurities.com/public/allmaster.zip"):
 
     response = requests.get(url)
 

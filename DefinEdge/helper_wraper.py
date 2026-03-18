@@ -60,18 +60,14 @@ class APIEngine:
     # =========================================================
 
     @retry(tries=5, delay=2, backoff=2)
-    def get_ohlc(self, exchange, token, interval="min"):
-
-        now = datetime.now()
-        days_ago = now - timedelta(days=7)
-        start_date = days_ago.replace(hour=9, minute=15, second=0, microsecond=0)
+    def get_ohlc(self, exchange, token, start, interval="min"):
 
         raw = self.api.Get_Intraday_Data(
             trading_symbol=token,
             exchange=exchange,
             timeframe=interval,
-            start=start_date,
-            end=now
+            start=start,
+            end=datetime.now()
         )
 
         if raw is None:
