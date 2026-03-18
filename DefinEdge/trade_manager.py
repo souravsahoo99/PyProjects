@@ -13,7 +13,7 @@ import threading
 from pymongo import MongoClient
 from dotenv import load_dotenv, find_dotenv
 
-from dhanAPI_helper import Order
+from edgeAPI_helper import Order
 from signal_engine import SIGNALS, SIGNAL_LOCK
 
 
