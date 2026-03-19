@@ -1,7 +1,7 @@
 # ============================================================
-# MAIN TRADING ENGINE v4.3
+# MAIN TRADING ENGINE v4.2
 # Production Orchestrator
-# TokenRegistry v6.1 Compatible
+# Thread-Based Runtime
 # ============================================================
 
 import time
@@ -72,30 +72,24 @@ def wait_for_spot_price(engine, exchange, token, timeout=10):
 
 def discover_atm_option_pair(engine, registry, symbol, exchange):
 
-    # --------------------------------------------------------
-    # Resolve index spot token
-    # --------------------------------------------------------
+    # -------------------------------
+    # Index spot token (NEW)
+    # -------------------------------
 
     spot_token = registry.get_index_spot_token(symbol)
 
     if spot_token is None:
+
+        # fallback to symbol lookup
         spot_token = registry.get_token(exchange, symbol)
 
     if spot_token is None:
         return None, None
 
-    # --------------------------------------------------------
-    # Get spot price
-    # --------------------------------------------------------
-
     spot = wait_for_spot_price(engine, exchange, spot_token)
 
     if spot is None:
         return None, None
-
-    # --------------------------------------------------------
-    # Resolve future expiry
-    # --------------------------------------------------------
 
     futures = registry.get_futures(symbol)
 
@@ -107,20 +101,12 @@ def discover_atm_option_pair(engine, registry, symbol, exchange):
     if expiry is None:
         return None, None
 
-    # --------------------------------------------------------
-    # Find ATM strike
-    # --------------------------------------------------------
-
     strikes = registry.get_strikes(symbol, expiry)
 
     if not strikes:
         return None, None
 
     atm = min(strikes, key=lambda x: abs(x - spot))
-
-    # --------------------------------------------------------
-    # Resolve option tokens
-    # --------------------------------------------------------
 
     ce_token = registry.get_option_token(symbol, expiry, atm, "CE")
     pe_token = registry.get_option_token(symbol, expiry, atm, "PE")

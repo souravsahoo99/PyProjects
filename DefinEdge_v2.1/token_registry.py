@@ -1,10 +1,18 @@
 # ============================================================
-# TOKEN REGISTRY v6.1
-# Serial Column Alignment Fix
+# TOKEN REGISTRY v5.0
+# DefineEdge Compatible
+# Master Loader + Instrument Intelligence
+# Production Hardened
 # ============================================================
+
+import pandas as pd
+import requests
+import zipfile
+import io
 
 from collections import defaultdict
 from datetime import datetime
+from retry import retry
 
 from edgeAPI_helper import Load_Master
 
@@ -70,19 +78,53 @@ class TokenRegistry:
 
         self.api = api
 
+        # primary maps
         self.token_map = {}
         self.symbol_map = {}
         self.security_map = {}
 
+        # INSTTYPE indexing
         self.insttype_map = defaultdict(list)
 
+        # options
         self.option_chain_map = defaultdict(list)
         self.option_lookup = {}
 
+        # futures
         self.futures_map = defaultdict(list)
+
+        # index spot instruments
         self.index_spot_map = {}
 
         self.df_master = None
+
+
+# ============================================================
+# MASTER DOWNLOAD
+# ============================================================
+
+    @retry(tries=5, delay=3, backoff=2)
+    def download_master_zip(self):
+
+        if self.api and hasattr(self.api, "download_master_zip"):
+            return self.api.download_master_zip()
+
+        response = requests.get(self.MASTER_URL)
+        response.raise_for_status()
+
+        with zipfile.ZipFile(io.BytesIO(response.content)) as z:
+
+            name = z.namelist()[0]
+
+            with z.open(name) as f:
+
+                df = pd.read_csv(
+                    f,
+                    header=None,
+                    low_memory=False
+                )
+
+        return df
 
 
 # ============================================================
@@ -99,17 +141,10 @@ class TokenRegistry:
 
         df = Load_Master()
 
-        # ----------------------------------------------------
-        # FIX: Remove SERIAL NUMBER column
-        # ----------------------------------------------------
-        df = df.iloc[:, 1:]
+        if df is None:
+            df = self.download_master_zip()
 
         df.columns = column_names
-
-        # normalize
-        df["SYMBOL"] = df["SYMBOL"].astype(str).str.upper().str.strip()
-        df["SEGMENT"] = df["SEGMENT"].astype(str).str.strip()
-        df["OPTIONTYPE"] = df["OPTIONTYPE"].astype(str).str.upper().str.strip()
 
         self.df_master = df
 
@@ -164,6 +199,7 @@ class TokenRegistry:
 
             self.symbol_map[(inst.exchange, inst.symbol)] = inst.token
 
+            # detect index spot
             if inst.insttype and "IDX" in inst.insttype:
                 self.index_spot_map[inst.symbol] = inst.token
 
@@ -225,12 +261,10 @@ class TokenRegistry:
 # ============================================================
 
     def get_by_token(self, token):
-
         return self.token_map.get(str(token))
 
 
     def get_by_security_id(self, security_id):
-
         return self.security_map.get(str(security_id))
 
 
@@ -256,7 +290,7 @@ class TokenRegistry:
 
 
 # ============================================================
-# INDEX SPOT TOKEN
+# INDEX SPOT TOKEN (NEW)
 # ============================================================
 
     def get_index_spot_token(self, symbol):
@@ -268,6 +302,7 @@ class TokenRegistry:
         if token:
             return token
 
+        # fallback scan
         for inst in self.token_map.values():
 
             if (
@@ -298,6 +333,71 @@ class TokenRegistry:
     def get_strikes(self, symbol, expiry):
 
         return self.option_chain_map.get((symbol.upper(), expiry), [])
+
+
+# ============================================================
+# ATM STRIKE
+# ============================================================
+
+    def get_atm_strike(self, symbol, expiry, spot):
+
+        if spot is None:
+            return None
+
+        strikes = self.get_strikes(symbol, expiry)
+
+        if not strikes:
+            return None
+
+        return min(strikes, key=lambda x: abs(x - spot))
+
+
+# ============================================================
+# OPTION UNIVERSE
+# ============================================================
+
+    def build_option_universe(self, symbol, expiry, spot, window=5):
+
+        strikes = self.get_strike_window(symbol, expiry, spot, window)
+
+        instruments = []
+
+        for strike in strikes:
+
+            ce_token = self.get_option_token(symbol, expiry, strike, "CE")
+            pe_token = self.get_option_token(symbol, expiry, strike, "PE")
+
+            if ce_token:
+                instruments.append(self.token_map[ce_token])
+
+            if pe_token:
+                instruments.append(self.token_map[pe_token])
+
+        return instruments
+
+
+# ============================================================
+# STRIKE WINDOW
+# ============================================================
+
+    def get_strike_window(self, symbol, expiry, spot, window=5):
+
+        strikes = self.get_strikes(symbol, expiry)
+
+        if not strikes:
+            return []
+
+        atm = self.get_atm_strike(symbol, expiry, spot)
+
+        if atm is None:
+            return []
+
+        idx = min(range(len(strikes)), key=lambda i: abs(strikes[i] - atm))
+
+        start = max(idx - window, 0)
+        end = min(idx + window + 1, len(strikes))
+
+        return strikes[start:end]
 
 
 # ============================================================
