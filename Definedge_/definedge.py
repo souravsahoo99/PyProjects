@@ -24,10 +24,13 @@ totp_secret = os.getenv("TOTP_SECRET")
 slack_token = os.getenv("SLACK_TOKEN")
 slack_client = util.get_slack_client(token=slack_token)
 
+
 conn = ConnectToIntegrate()
 totp = pyotp.TOTP(totp_secret).now()
 conn.login(api_token=api_token, api_secret=api_secret, totp=totp)
-days_ago = datetime.now() - timedelta(days=90)
+
+
+days_ago = datetime.now() - timedelta(days=10)
 start = days_ago.replace(hour=9, minute=15, second=0, microsecond=0)
 
 ic = IntegrateData(conn)

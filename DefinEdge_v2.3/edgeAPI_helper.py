@@ -16,16 +16,11 @@ import pyotp
 import pandas as pd
 import requests
 import zipfile
-from typing import Any
 from datetime import datetime
-from dotenv import find_dotenv, load_dotenv ,set_key
+from dotenv import find_dotenv, load_dotenv
 
 dotenv_file: str = find_dotenv()
 load_dotenv(dotenv_file)
-
-api_token = os.getenv("EDGE_API_TOKEN")
-api_secret = os.getenv("EDGE_API_SECRET")
-totp_secret = os.getenv("EDGE_TOTP_SECRET")
 
 logger = logging.getLogger(__name__)
 
@@ -61,25 +56,24 @@ class Order:
 
 class EdgeApi:
 
-    def __init__(self, api_Token: str, api_Secret: str):
+    def __init__(self, api_token: str, api_secret: str):
 
-        self.api_token = api_Token
-        self.api_secret = api_Secret
+        self.api_token = api_token
+        self.api_secret = api_secret
 
-        self.api_session_key=None
-        self.ws_session_key=None
+        self.conn = self._login()
 
-        self.c2i= None
+        # ----------------------------------------------------
+        # REST MODULES
+        # ----------------------------------------------------
+        self.data = IntegrateData(self.conn)
+        self.orders = IntegrateOrders(self.conn)
 
-        self.ic = None
-        self.io = None
-        self.iws= None
+        # ----------------------------------------------------
+        # WEBSOCKET MODULE
+        # ----------------------------------------------------
 
-        self._login()
-
-        self._integrateData(self.c2i)
-        self._integrateOrders(self.c2i)
-        self._iWebsocket(self.c2i)
+        self.ws = IntegrateWebSocket(self.conn)
 
         # ----------------------------------------------------
         # INTERNAL STATE
@@ -95,6 +89,16 @@ class EdgeApi:
 
         self._subscribed = set()
 
+        # ----------------------------------------------------
+        # BIND CALLBACKS
+        # ----------------------------------------------------
+
+        self.ws.on_tick_update = self._on_tick_update
+        self.ws.on_order_update = self._on_order_update
+        self.ws.on_open = self._on_ws_open
+        self.ws.on_close = self._on_ws_close
+        self.ws.on_error = self._on_ws_error
+
 
     # ========================================================
     # LOGIN (SESSION AWARE)
@@ -102,40 +106,41 @@ class EdgeApi:
 
     def _login(self):
 
-        c2i = ConnectToIntegrate()
-        Totp = pyotp.TOTP(totp_secret).now()
+        conn = ConnectToIntegrate()
 
-        c2i.login(
-            api_token=self.api_token,
-            api_secret=self.api_secret,
-            totp=Totp ,
-        )
+        try:
 
-        self.c2i=c2i
-        self.api_session_key=c2i.api_session_key
-        self.ws_session_key=c2i.ws_session_key
+            uid = os.environ["INTEGRATE_UID"]
+            actid = os.environ["INTEGRATE_ACTID"]
+            api_session = os.environ["INTEGRATE_API_SESSION_KEY"]
+            ws_session = os.environ["INTEGRATE_WS_SESSION_KEY"]
 
-        print(f"\nAPI Session Key: {c2i.api_session_key}\nWS Session Key: {c2i.ws_session_key}")
+            conn.set_session_keys(uid, actid, api_session, ws_session)
 
+            logger.info("Reusing existing Integrate session.")
 
-    def _integrateData(self, c2i):
+        except KeyError:
 
-        ic = IntegrateData(c2i)
+            totp_secret = os.getenv("EDGE_TOTP_SECRET")
+            totp_ = pyotp.TOTP(totp_secret).now()
 
-        self.ic = ic
+            conn.login(
+                api_token=self.api_token,
+                api_secret=self.api_secret,
+                totp=totp_
+            )
 
-    def _integrateOrders(self, c2i):
+            uid, actid, api_session, ws_session = conn.get_session_keys()
 
-        io = IntegrateOrders(c2i)
+            os.environ["INTEGRATE_UID"] = uid
+            os.environ["INTEGRATE_ACTID"] = actid
+            os.environ["INTEGRATE_API_SESSION_KEY"] = api_session
+            os.environ["INTEGRATE_WS_SESSION_KEY"] = ws_session
 
-        self.io = io
+            logger.info("New Integrate login successful.")
 
-    def _iWebsocket(self, c2i):
-        
-        iws = IntegrateWebSocket(c2i)
-        
-        self.iws = iws
-        
+        return conn
+
 
     # ========================================================
     # WEBSOCKET CALLBACKS
@@ -226,7 +231,7 @@ class EdgeApi:
 
     def Place_Order(self, order: Order):
 
-        return self.io.place_order(
+        return self.orders.place_order(
             exchange=order.exchange_segment,
             order_type=order.transaction_type,
             price=order.price,
@@ -237,9 +242,19 @@ class EdgeApi:
         )
 
 
-    def Modify_Order(self,order_id,order_type,leg_name,quantity,price,trigger_price,disclosed_quantity,validity):
+    def Modify_Order(
+        self,
+        order_id,
+        order_type,
+        leg_name,
+        quantity,
+        price,
+        trigger_price,
+        disclosed_quantity,
+        validity
+    ):
 
-        return self.io.modify_order(
+        return self.orders.modify_order(
             exchange="NSE",
             order_id=order_id,
             order_type=order_type,
@@ -256,48 +271,55 @@ class EdgeApi:
 
     def Cancel_Order(self, order_id):
 
-        return self.io.cancel_order(order_id)
+        return self.orders.cancel_order(order_id)
 
 
     def Get_Positions(self):
 
-        return self.io.positions()
+        return self.orders.positions()
 
 
     def Get_Orderbook(self):
 
-        return self.io.orders()
+        return self.orders.orders()
 
 
     def Get_TradeBook(self):
 
-        return self.io.trades()
+        return self.orders.trades()
 
 
     def Get_Order_By_ID(self, order_id):
 
-        return self.io.order(order_id)
+        return self.orders.order(order_id)
 
 
     # ========================================================
     # MARKET DATA (REST)
     # ========================================================
 
-    def Get_LTP(self, exchange, trading_symbol):
+    def Get_LTP(self, trading_symbol, exchange):
 
-        return self.ic.quotes(exchange, trading_symbol)
+        return self.data.quotes(exchange, trading_symbol)
 
 
-    def Get_Intraday_Data(self,exchange,trading_symbol,timeframe,start,end):
+    def Get_Intraday_Data(
+        self,
+        trading_symbol,
+        exchange,
+        timeframe,
+        start,
+        end
+    ):
 
         if timeframe == "min":
-            tf = self.c2i.TIMEFRAME_TYPE_MIN
+            tf = self.conn.TIMEFRAME_TYPE_MIN
         elif timeframe == "day":
-            tf = self.c2i.TIMEFRAME_TYPE_DAY
+            tf = self.conn.TIMEFRAME_TYPE_DAY
         else:
-            tf = self.c2i.TIMEFRAME_TYPE_TICK
+            tf = timeframe
 
-        return self.ic.historical_data(
+        return self.data.historical_data(
             exchange=exchange,
             trading_symbol=trading_symbol,
             timeframe=tf,
@@ -306,12 +328,18 @@ class EdgeApi:
         )
 
 
-    def Get_Daily_Data(self,exchange,trading_symbol,start,end):
+    def Get_Daily_Data(
+        self,
+        trading_symbol,
+        exchange,
+        start,
+        end
+    ):
 
-        return self.ic.historical_data(
+        return self.data.historical_data(
             exchange=exchange,
             trading_symbol=trading_symbol,
-            timeframe=self.c2i.TIMEFRAME_TYPE_DAY,
+            timeframe=self.conn.TIMEFRAME_TYPE_DAY,
             start=start,
             end=end
         )
@@ -321,18 +349,39 @@ class EdgeApi:
     # REST TICK DATA (LTP FALLBACK)
     # ========================================================
 
-    def Get_Tick_Data(self,exchange,trading_symbol,start,end):
+    def Get_Tick_Data(
+        self,
+        trading_symbol,
+        exchange,
+        start,
+        end
+    ):
 
+        try:
 
-        ticks = self.ic.historical_data(
-            exchange=exchange,
-            trading_symbol=trading_symbol,
-            timeframe=self.c2i.TIMEFRAME_TYPE_TICK,
-            start=start,
-            end=end
+            ticks = self.data.historical_data(
+                exchange=exchange,
+                trading_symbol=trading_symbol,
+                timeframe=self.conn.TIMEFRAME_TYPE_TICK,
+                start=start,
+                end=end
             )
 
-        return ticks
+            last_tick = None
+
+            for t in ticks:
+                last_tick = t
+
+            if last_tick is None:
+                return None
+
+            return last_tick.get("ltp")
+
+        except Exception as e:
+
+            logger.error(f"Tick REST fetch error: {e}")
+
+            return None
 
 
     # ========================================================
@@ -346,7 +395,7 @@ class EdgeApi:
 
         try:
 
-            self.iws.connect(daemonize=True)
+            self.ws.connect(daemonize=True)
 
             self._ws_running = True
 
@@ -363,8 +412,8 @@ class EdgeApi:
 
         try:
 
-            self.iws.subscribe(
-                self.c2i.SUBSCRIPTION_TYPE_TICK,
+            self.ws.subscribe(
+                self.conn.SUBSCRIPTION_TYPE_TICK,
                 tokens
             )
 
@@ -383,8 +432,8 @@ class EdgeApi:
 
         try:
 
-            self.iws.unsubscribe(
-                self.c2i.SUBSCRIPTION_TYPE_TICK,
+            self.ws.unsubscribe(
+                self.conn.SUBSCRIPTION_TYPE_TICK,
                 tokens
             )
 
@@ -416,8 +465,8 @@ class EdgeApi:
 
         try:
 
-            self.iws.subscribe(
-                self.c2i.SUBSCRIPTION_TYPE_ORDER
+            self.ws.subscribe(
+                self.conn.SUBSCRIPTION_TYPE_ORDER
             )
 
         except Exception as e:
@@ -429,7 +478,10 @@ class EdgeApi:
     # MASTER INSTRUMENT ZIP (HTTP)
     # ========================================================
 
-    def download_master_zip(self,url="https://app.definedgesecurities.com/public/allmaster.zip"):
+    def download_master_zip(
+        self,
+        url="https://app.definedgesecurities.com/public/allmaster.zip"
+    ):
 
         response = requests.get(url)
 
@@ -466,4 +518,148 @@ def Load_Master(url="https://app.definedgesecurities.com/public/allmaster.zip"):
 
 
 
-#_#_#
+#
+# ============================================================
+# EDGE API HELPER TEST TEMPLATE
+# ============================================================
+
+if __name__ == "__main__":
+
+    print("\n===== EDGE API HELPER TEST START =====\n")
+
+    # --------------------------------------------------------
+    # INIT API
+    # --------------------------------------------------------
+
+    api_token = os.getenv("EDGE_API_TOKEN")
+    api_secret = os.getenv("EDGE_API_SECRET")
+
+    api = EdgeApi(api_token, api_secret)
+
+    print("Login successful\n")
+
+
+    # --------------------------------------------------------
+    # TEST LTP REST
+    # --------------------------------------------------------
+
+    print("Testing LTP REST...")
+
+    try:
+
+        ltp = api.Get_LTP(
+            trading_symbol="NIFTY-I",
+            exchange="NSE"
+        )
+
+        print("LTP Response:", ltp)
+
+    except Exception as e:
+
+        print("LTP ERROR:", e)
+
+
+    # --------------------------------------------------------
+    # TEST HISTORICAL MINUTE
+    # --------------------------------------------------------
+
+    print("\nTesting Intraday Data...")
+
+    try:
+
+        data = api.Get_Intraday_Data(
+            trading_symbol="NIFTY-I",
+            exchange="NSE",
+            timeframe="min",
+            start=None,
+            end=None
+        )
+
+        count = 0
+
+        for row in data:
+
+            print(row)
+
+            count += 1
+
+            if count >= 5:
+                break
+
+    except Exception as e:
+
+        print("Historical ERROR:", e)
+
+
+    # --------------------------------------------------------
+    # TEST DAILY DATA
+    # --------------------------------------------------------
+
+    print("\nTesting Daily Data...")
+
+    try:
+
+        data = api.Get_Daily_Data(
+            trading_symbol="NIFTY-I",
+            exchange="NSE",
+            start=None,
+            end=None
+        )
+
+        for i,row in enumerate(data):
+
+            print(row)
+
+            if i >= 3:
+                break
+
+    except Exception as e:
+
+        print("Daily ERROR:", e)
+
+
+    # --------------------------------------------------------
+    # TEST REST TICK DATA
+    # --------------------------------------------------------
+
+    print("\nTesting REST Tick Data...")
+
+    try:
+
+        tick = api.Get_Tick_Data(
+            trading_symbol="NIFTY-I",
+            exchange="NSE",
+            start=None,
+            end=None
+        )
+
+        print("Tick LTP:", tick)
+
+    except Exception as e:
+
+        print("Tick REST ERROR:", e)
+
+
+    # --------------------------------------------------------
+    # TEST MASTER FILE DOWNLOAD
+    # --------------------------------------------------------
+
+    print("\nTesting Master Instrument Download...")
+
+    try:
+
+        df = api.download_master_zip()
+
+        print("Master rows:", len(df))
+
+    except Exception as e:
+
+        print("Master download ERROR:", e)
+
+
+    print("\n===== EDGE API HELPER TEST END =====") 
+
+
+
+
+#_

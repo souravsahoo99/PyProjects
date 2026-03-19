@@ -18,18 +18,20 @@ from dotenv import find_dotenv, load_dotenv
 
 dotenv_file = find_dotenv()
 load_dotenv(dotenv_file)
-api_token = os.getenv("EDGE_API_TOKEN")
-api_secret = os.getenv("EDGE_API_SECRET")
+
 
 # ============================================================
 # API ENGINE
 # ============================================================
 
-class APIEngine():
+class APIEngine:
 
     def __init__(self):
 
-        self.api = EdgeApi(api_token,api_secret)
+        api_token = os.getenv("EDGE_API_TOKEN")
+        api_secret = os.getenv("EDGE_API_SECRET")
+
+        self.api = EdgeApi(api_token, api_secret)
 
         self.market_data_map = {}
 
@@ -66,22 +68,23 @@ class APIEngine():
 # REST OHLC
 # ============================================================
 
-    @retry(tries=3, delay=2, backoff=2)
+    @retry(tries=5, delay=2, backoff=2)
     def get_ohlc(self, exchange, token, start, interval="min"):
 
-        now =datetime.now()
-
         raw = self.api.Get_Intraday_Data(
-            exchange=exchange,
             trading_symbol=token,
+            exchange=exchange,
             timeframe=interval,
             start=start,
-            end=now
+            end=datetime.now()
         )
 
+        if raw is None:
+            return None
+
         df = pd.DataFrame(list(raw))
-        return df
-        """if df.empty:
+
+        if df.empty:
             return None
 
         if "datetime" in df.columns:
@@ -89,17 +92,23 @@ class APIEngine():
 
         df["timestamp"] = pd.to_datetime(df["timestamp"], errors="coerce")
 
-        return df[["timestamp", "open", "high", "low", "close", "volume"]]"""
+        return df[["timestamp", "open", "high", "low", "close", "volume"]]
 
 
 # ============================================================
 # REST LTP
 # ============================================================
 
-    @retry(tries=3, delay=1, backoff=2)
+    @retry(tries=5, delay=2, backoff=2)
     def get_ltp_rest(self, exchange, token):
 
-        data = self.api.Get_LTP(exchange=exchange,trading_symbol=token)
+        data = self.api.Get_LTP(
+            trading_symbol=token,
+            exchange=exchange
+        )
+
+        if data is None:
+            return None
 
         try:
             return float(data.get("lp"))
@@ -108,29 +117,31 @@ class APIEngine():
 
 
 # ============================================================
-#  REST TICK DATA
+# REST TICK LTP
 # ============================================================
 
     @retry(tries=3, delay=1, backoff=2)
-    def get_tick_data_rest(self, exchange, token):
+    def get_ltp_tick_rest(self, exchange, token):
 
-        now = datetime.now()
-        start = now - timedelta(seconds=60)
+        try:
 
-        price = self.api.Get_Tick_Data(
-            exchange=exchange,
-            trading_symbol=token,
-            start=start,
-            end=now
-        )
+            now = datetime.now()
+            start = now - timedelta(seconds=10)
 
-        if price is None:
+            price = self.api.Get_Tick_Data(
+                trading_symbol=token,
+                exchange=exchange,
+                start=start,
+                end=now
+            )
+
+            if price is None:
+                return None
+
+            return float(price)
+
+        except Exception:
             return None
-        else:
-             df = pd.DataFrame(list(price))
-
-        return df
-
 
 
 # ============================================================
@@ -336,11 +347,11 @@ class APIEngine():
         if ltp is not None:
             return ltp
 
-        ltp = self.get_ltp_rest(exchange, token)
+        ltp = self.get_ltp_tick_rest(exchange, token)
         if ltp is not None:
             return ltp
 
-        return ltp
+        return self.get_ltp_rest(exchange, token)
 
 
 # ============================================================
@@ -348,6 +359,9 @@ class APIEngine():
 # ============================================================
 
     def confirm_order_execution(self, order_id):
+
+        if order_id is None:
+            return False
 
         order_id = str(order_id)
 
@@ -361,11 +375,7 @@ class APIEngine():
             if status in ["TRADED", "FILLED", "COMPLETE", "EXECUTED"]:
                 return True
 
-        else: 
-            status = self.api.Get_Order_By_ID(order_id)
-
-
-
+        return False
 
 
 # ============================================================
@@ -399,4 +409,3 @@ class APIEngine():
 
 
 #_#_#_
-
