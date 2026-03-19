@@ -1,6 +1,6 @@
 # ============================================================
-# TOKEN REGISTRY v6.3
-# Production Stable | Deterministic Ready | No Lambda
+# TOKEN REGISTRY v6.1
+# Serial Column Alignment Fix
 # ============================================================
 
 from collections import defaultdict
@@ -35,7 +35,7 @@ class Instrument:
         self.insttype = insttype
 
         self.exchange_segment = exchange_segment or exchange
-        self.security_id = str(security_id).strip() if security_id else str(token)
+        self.security_id = security_id or str(token)
 
         self.expiry = expiry
 
@@ -99,33 +99,29 @@ class TokenRegistry:
 
         df = Load_Master()
 
-        # Remove SERIAL column
+        # ----------------------------------------------------
+        # FIX: Remove SERIAL NUMBER column
+        # ----------------------------------------------------
         df = df.iloc[:, 1:]
 
         df.columns = column_names
 
-        # Normalize
+        # normalize
         df["SYMBOL"] = df["SYMBOL"].astype(str).str.upper().str.strip()
         df["SEGMENT"] = df["SEGMENT"].astype(str).str.strip()
         df["OPTIONTYPE"] = df["OPTIONTYPE"].astype(str).str.upper().str.strip()
-        df["TRADINGSYM"] = df["TRADINGSYM"].astype(str).str.strip()
-        df["INSTRUMENT TYPE"] = df["INSTRUMENT TYPE"].astype(str).str.upper().str.strip()
 
         self.df_master = df
 
-        # Build maps
         for row in df.itertuples(index=False):
 
             try:
 
-                symbol = row.SYMBOL
+                symbol = str(row.SYMBOL).upper()
                 exchange = row.SEGMENT
-                token = str(row.TOKEN)
+                token = row.TOKEN
                 security_id = row.TRADINGSYM
-
-                insttype = None
-                if hasattr(row, "_asdict"):
-                    insttype = row._asdict().get("INSTRUMENT TYPE")
+                insttype = getattr(row, "_4") if hasattr(row, "_4") else None
 
                 expiry = self._parse_expiry(row.EXPIRY)
                 strike = row.STRIKE
@@ -157,13 +153,13 @@ class TokenRegistry:
 
     def _register(self, inst):
 
-        self.token_map[str(inst.token)] = inst
-        self.security_map[str(inst.security_id)] = inst
+        self.token_map[inst.token] = inst
+        self.security_map[inst.security_id] = inst
 
         if inst.insttype:
             self.insttype_map[inst.insttype].append(inst)
 
-        # Spot
+        # SPOT instruments
         if inst.strike is None and inst.expiry is None:
 
             self.symbol_map[(inst.exchange, inst.symbol)] = inst.token
@@ -171,7 +167,7 @@ class TokenRegistry:
             if inst.insttype and "IDX" in inst.insttype:
                 self.index_spot_map[inst.symbol] = inst.token
 
-        # Options
+        # OPTIONS
         if inst.option_type in ("CE", "PE") and inst.strike is not None:
 
             key = (inst.symbol, inst.expiry)
@@ -180,10 +176,10 @@ class TokenRegistry:
                 self.option_chain_map[key].append(inst.strike)
 
             self.option_lookup[
-                (inst.symbol, inst.expiry, float(inst.strike), inst.option_type)
+                (inst.symbol, inst.expiry, inst.strike, inst.option_type)
             ] = inst.token
 
-        # Futures
+        # FUTURES
         if inst.strike is None and inst.expiry and inst.option_type in ("", None):
 
             self.futures_map[inst.symbol].append(inst)
@@ -200,16 +196,9 @@ class TokenRegistry:
 
         for symbol in self.futures_map:
 
-            futures = self.futures_map[symbol]
-            futures.sort(key=self._expiry_sort_key)
-
-
-    def _expiry_sort_key(self, inst):
-
-        if inst.expiry:
-            return inst.expiry
-
-        return datetime.max.date()
+            self.futures_map[symbol].sort(
+                key=lambda x: x.expiry if x.expiry else datetime.max.date()
+            )
 
 
 # ============================================================
@@ -222,32 +211,48 @@ class TokenRegistry:
             return None
 
         try:
+
             expiry = str(expiry).zfill(8)
+
             return datetime.strptime(expiry, "%d%m%Y").date()
+
         except Exception:
             return None
 
 
 # ============================================================
-# BASIC LOOKUPS
+# BASIC TOKEN LOOKUPS
 # ============================================================
 
     def get_by_token(self, token):
+
         return self.token_map.get(str(token))
 
 
     def get_by_security_id(self, security_id):
+
         return self.security_map.get(str(security_id))
 
 
 # ============================================================
-# SYMBOL TOKEN (STRICT)
+# SYMBOL TOKEN RESOLUTION
 # ============================================================
 
     def get_token(self, exchange, symbol):
 
         symbol = symbol.upper()
-        return self.symbol_map.get((exchange, symbol))
+
+        token = self.symbol_map.get((exchange, symbol))
+
+        if token:
+            return token
+
+        for (ex, sym), tok in self.symbol_map.items():
+
+            if ex == exchange and symbol in sym:
+                return tok
+
+        return None
 
 
 # ============================================================
@@ -276,13 +281,10 @@ class TokenRegistry:
 
 
 # ============================================================
-# OPTION TOKEN (DIRECT)
+# OPTION TOKEN
 # ============================================================
 
     def get_option_token(self, symbol, expiry, strike, option_type):
-
-        if strike is None:
-            return None
 
         return self.option_lookup.get(
             (symbol.upper(), expiry, float(strike), option_type)

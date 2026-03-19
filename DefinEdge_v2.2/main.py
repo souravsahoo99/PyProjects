@@ -1,7 +1,7 @@
 # ============================================================
-# MAIN TRADING ENGINE v4.5
-# Strike Distance Standardized Across Config
-# Deterministic ATM Logic
+# MAIN TRADING ENGINE v4.3
+# Production Orchestrator
+# TokenRegistry v6.1 Compatible
 # ============================================================
 
 import time
@@ -15,7 +15,7 @@ from display_monitor import DisplayMonitor
 
 
 # ============================================================
-# STRATEGY CONFIG (STANDARDIZED)
+# STRATEGY CONFIG
 # ============================================================
 
 STRATEGY_CONFIG = [
@@ -27,8 +27,7 @@ STRATEGY_CONFIG = [
         "child_exchange": "NFO",
         "product_type": "OPT",
         "qty": 65,
-        "max_retry": 3,
-        "strike_dist": 50
+        "max_retry": 3
     },
 
     {
@@ -38,8 +37,7 @@ STRATEGY_CONFIG = [
         "child_exchange": "NSE",
         "product_type": "STOCK",
         "qty": 10,
-        "max_retry": 2,
-        "strike_dist": None   # STANDARDIZED (NOT USED)
+        "max_retry": 2
     }
 
 ]
@@ -69,28 +67,13 @@ def wait_for_spot_price(engine, exchange, token, timeout=10):
 
 
 # ============================================================
-# STRIKE NORMALIZATION
+# ATM OPTION DISCOVERY
 # ============================================================
 
-def normalize_strike(spot, strike_dist):
-
-    if spot is None or not strike_dist:
-        return None
-
-    try:
-        return int(round(float(spot) / strike_dist) * strike_dist)
-    except Exception:
-        return None
-
-
-# ============================================================
-# ATM OPTION DISCOVERY (DETERMINISTIC)
-# ============================================================
-
-def discover_atm_option_pair(engine, registry, symbol, exchange, strike_dist):
+def discover_atm_option_pair(engine, registry, symbol, exchange):
 
     # --------------------------------------------------------
-    # Resolve spot token
+    # Resolve index spot token
     # --------------------------------------------------------
 
     spot_token = registry.get_index_spot_token(symbol)
@@ -111,34 +94,36 @@ def discover_atm_option_pair(engine, registry, symbol, exchange, strike_dist):
         return None, None
 
     # --------------------------------------------------------
-    # Resolve expiry
+    # Resolve future expiry
     # --------------------------------------------------------
 
     futures = registry.get_futures(symbol)
 
-    if not futures:
-        return None, None
+    expiry = None
 
-    expiry = futures[0].expiry
+    if futures:
+        expiry = futures[0].expiry
 
     if expiry is None:
         return None, None
 
     # --------------------------------------------------------
-    # Normalize strike (NO LAMBDA)
+    # Find ATM strike
     # --------------------------------------------------------
 
-    strike = normalize_strike(spot, strike_dist)
+    strikes = registry.get_strikes(symbol, expiry)
 
-    if strike is None:
+    if not strikes:
         return None, None
 
+    atm = min(strikes, key=lambda x: abs(x - spot))
+
     # --------------------------------------------------------
-    # Direct lookup
+    # Resolve option tokens
     # --------------------------------------------------------
 
-    ce_token = registry.get_option_token(symbol, expiry, strike, "CE")
-    pe_token = registry.get_option_token(symbol, expiry, strike, "PE")
+    ce_token = registry.get_option_token(symbol, expiry, atm, "CE")
+    pe_token = registry.get_option_token(symbol, expiry, atm, "PE")
 
     if ce_token is None or pe_token is None:
         return None, None
@@ -239,7 +224,6 @@ def build_trade_managers(engine, registry):
 
         qty = config["qty"]
         max_retry = config["max_retry"]
-        strike_dist = config.get("strike_dist")
 
         parent_token = resolve_parent_token(
             registry,
@@ -257,18 +241,13 @@ def build_trade_managers(engine, registry):
         ce_token = None
         pe_token = None
 
-        # ----------------------------------------------------
-        # OPTION FLOW (UPDATED)
-        # ----------------------------------------------------
-
         if product_type == "OPT":
 
             ce_token, pe_token = discover_atm_option_pair(
                 engine,
                 registry,
                 parent_symbol,
-                parent_exchange,
-                strike_dist
+                parent_exchange
             )
 
             if ce_token is None:

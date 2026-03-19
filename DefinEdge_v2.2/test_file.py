@@ -138,6 +138,7 @@ def test_websocket_stream():
 
         ("NSE", "26000"),  # NIFTY
         ("NSE", "26009"),  # BANKNIFTY
+        ("NSE", "2885")    # RELIANCE
 
     ]
 
