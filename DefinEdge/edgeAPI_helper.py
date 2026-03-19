@@ -133,9 +133,15 @@ class EdgeApi:
     def _iWebsocket(self, c2i):
         
         iws = IntegrateWebSocket(c2i)
+
+        iws.on_open = self._on_ws_open
+        iws.on_close = self._on_ws_close
+        iws.on_error = self._on_ws_error
+        iws.on_tick_update = self._on_tick_update
+        iws.on_order_update = self._on_order_update
         
         self.iws = iws
-        
+          
 
     # ========================================================
     # WEBSOCKET CALLBACKS
