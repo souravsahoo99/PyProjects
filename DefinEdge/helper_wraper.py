@@ -83,15 +83,15 @@ class APIEngine():
         return pd.DataFrame(list(raw))
 
 
+
     @retry(tries=3, delay=1, backoff=2)
     def get_ltp_rest(self, exchange, token):
 
         data = self.api.Get_LTP(exchange=exchange, trading_symbol=token)
 
-        try:
-            return float(data.get("lp"))
-        except Exception:
-            return None
+
+        return pd.DataFrame(list(data))
+
 
 
     @retry(tries=3, delay=1, backoff=2)

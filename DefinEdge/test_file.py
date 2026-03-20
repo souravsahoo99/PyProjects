@@ -25,19 +25,39 @@ API_SECRET = os.getenv("EDGE_API_SECRET")
 
 def test_rest_ohlc(Engine):
 
-    print("\n========== TEST 3 : REST OHLC ==========\n")
+    print("\n========== TEST 1 : REST OHLC ==========\n")
 
 
     days_ago = datetime.now() - timedelta(days=10)
     start_ = days_ago.replace(hour=9, minute=15, second=0, microsecond=0)
 
-    data = Engine.get_ohlc(exchange='NSE',token='Nifty 50',start=start_ ,interval= "day")
+    data = Engine.get_ohlc(exchange='NSE',token='Nifty 50',start=start_ ,interval= "min")
 
     print("\n***** Fetched OHLC Data *****\n")
 
     print(data.iloc[-15:])
 
 
+def test_rest_ltp(Engine):
+
+    print("\n========== TEST 2 : REST LTP ==========\n")
+
+    data = Engine.get_ltp_rest(exchange='NSE',token='Nifty 50')
+
+    print("\n***** Fetched ltp Data *****\n")
+
+    print(data.iloc[-25:])
+
+
+def test_rest_tick_data(Engine):
+
+    print("\n========== TEST 3 : REST TICK DATA ==========\n")
+
+    data = Engine.get_tick_data_rest(exchange='NSE',token='Nifty 50')
+
+    print("\n***** Fetched Tick Data *****\n")
+
+    print(data.iloc[-15:])
 # ============================================================
 # MAIN MENU
 # ============================================================
@@ -50,7 +70,9 @@ def main():
 
     test_rest_ohlc(engine)
 
+    test_rest_tick_data(engine)
 
+    test_rest_ltp(engine)
 # ============================================================
 # ENTRY
 # ============================================================
