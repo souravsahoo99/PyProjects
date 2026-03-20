@@ -28,10 +28,10 @@ def test_rest_ohlc(Engine):
     print("\n========== TEST 3 : REST OHLC ==========\n")
 
 
-    days_ago = datetime.now() - timedelta(days=10)
+    days_ago = datetime.now() - timedelta(days=1)
     start_ = days_ago.replace(hour=9, minute=15, second=0, microsecond=0)
 
-    data = Engine.get_ohlc(exchange='NSE',token='Nifty 50',start=start_ ,interval= "day")
+    data = Engine.get_ohlc(exchange='NSE',token='Nifty 50',start=start_ ,interval= "min")
 
     print("\n***** Fetched OHLC Data *****\n")
 

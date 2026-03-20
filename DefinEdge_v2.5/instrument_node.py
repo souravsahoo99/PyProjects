@@ -1,6 +1,7 @@
 # ============================================================
-# INSTRUMENT NODE v5.0
-# Global Bus Compatible | WS Decoupled | Production Ready
+# INSTRUMENT NODE v4.1
+# Production Node Controller
+# Thread Runtime Compatible
 # ============================================================
 
 import threading
@@ -36,7 +37,6 @@ class InstrumentNode:
         self.symbol = symbol
         self.token = token
 
-        # registry kept for backward compatibility (unused)
         self.registry = registry
 
         # ----------------------------------------------------
@@ -83,9 +83,16 @@ class InstrumentNode:
             pass
 
         # ----------------------------------------------------
-        # CREATE DATA SERVANT (SHARED)
+        # SUBSCRIBE WEBSOCKET
         # ----------------------------------------------------
 
+        self.engine.subscribe(self.exchange, self.token)
+
+        # ----------------------------------------------------
+        # CREATE DATA SERVANT
+        # ----------------------------------------------------
+
+        # If engine already has servant reuse it
         if hasattr(self.engine, "data_servant"):
 
             self.servant = self.engine.data_servant
@@ -116,7 +123,9 @@ class InstrumentNode:
         if not required_timeframes:
             required_timeframes = ["1m"]
 
-        print(f"[NODE] {self.symbol} required pipelines → {required_timeframes}")
+        print(
+            f"[NODE] {self.symbol} required pipelines → {required_timeframes}"
+        )
 
         # ----------------------------------------------------
         # CREATE MARKET DATA PIPELINE
@@ -167,7 +176,10 @@ class InstrumentNode:
 
         if not self._initialized:
 
-            print(f"[NODE] Cannot start uninitialized node → {self.symbol}")
+            print(
+                f"[NODE] Cannot start uninitialized node → {self.symbol}"
+            )
+
             return
 
         if self._running:
@@ -203,7 +215,8 @@ class InstrumentNode:
 
     def get_tasks(self):
 
-        # backward compatibility (legacy async)
+        # kept for backward compatibility with old async code
+
         return []
 
 

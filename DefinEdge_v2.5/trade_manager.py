@@ -1,9 +1,8 @@
 # ============================================================
-# TRADE MANAGER v5.3
+# TRADE MANAGER v5.2
 # Production Grade Execution Engine
 # Threaded Runtime Version
 # WebSocket Order Confirmation Compatible
-# Dynamic Token Safe
 # ============================================================
 
 import time
@@ -171,7 +170,7 @@ class TradeManager:
 
             "strategy_state": self.trade["strategy_state"],
 
-            "child_token": self.trade.get("child_token"),
+            "child_token": self.child_token,
             "trading_symbol": self.trading_symbol,
 
             "timestamp": time.time()
@@ -207,9 +206,6 @@ class TradeManager:
         if not self.mongo_collection or not self.mongo_object_id:
             return
 
-        # 🔥 ensure latest token sync
-        self.trade["child_token"] = self.child_token
-
         self.trade["retry_count"] = self.retry_count
         self.trade["last_update_time"] = time.time()
 
@@ -228,9 +224,6 @@ class TradeManager:
     def _get_ltp(self):
 
         try:
-
-            # 🔥 ensure latest token sync
-            self.trade["child_token"] = self.child_token
 
             return self.engine.get_best_ltp(
                 self.child_exchange,
@@ -306,9 +299,6 @@ class TradeManager:
 
         txn = "BUY" if side == "BUY" else "SELL"
 
-        # 🔥 ensure latest token sync
-        self.trade["child_token"] = self.child_token
-
         order = Order(
             security_id=self.child_token,
             exchange_segment=self.child_exchange,
@@ -362,9 +352,6 @@ class TradeManager:
 
         txn = "SELL" if side == "BUY" else "BUY"
 
-        # 🔥 ensure latest token sync
-        self.trade["child_token"] = self.child_token
-
         order = Order(
             security_id=self.child_token,
             exchange_segment=self.child_exchange,
@@ -410,6 +397,10 @@ class TradeManager:
 
                 state = self.trade["strategy_state"]
 
+                # ------------------------------------------------
+                # WAITING FOR SIGNAL
+                # ------------------------------------------------
+
                 if state is None:
 
                     with SIGNAL_LOCK:
@@ -421,6 +412,10 @@ class TradeManager:
                             continue
 
                         self.enter_trade(signal)
+
+                # ------------------------------------------------
+                # ACTIVE TRADE MANAGEMENT
+                # ------------------------------------------------
 
                 elif state == "ACTIVE":
 

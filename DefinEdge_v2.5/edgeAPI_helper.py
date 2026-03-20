@@ -7,7 +7,7 @@
 # ============================================================
 
 from integrate import ConnectToIntegrate, IntegrateOrders, IntegrateData, IntegrateWebSocket
-from logging import INFO, basicConfig, info
+
 import os
 import io
 import threading
@@ -20,8 +20,6 @@ from typing import Any
 from datetime import datetime
 from dotenv import find_dotenv, load_dotenv ,set_key
 
-basicConfig(level=INFO)
-
 dotenv_file: str = find_dotenv()
 load_dotenv(dotenv_file)
 
@@ -33,12 +31,21 @@ logger = logging.getLogger(__name__)
 
 
 # ============================================================
-# ORDER OBJECT
+# ORDER OBJECT (Engine Compatible)
 # ============================================================
 
 class Order:
-    def __init__(self, security_id, exchange_segment, transaction_type,
-                 quantity, order_type, product_type, price: float = 0.0):
+
+    def __init__(
+        self,
+        security_id: str,
+        exchange_segment,
+        transaction_type,
+        quantity: int,
+        order_type,
+        product_type,
+        price: float = 0.0
+    ):
         self.security_id = security_id
         self.exchange_segment = exchange_segment
         self.transaction_type = transaction_type
@@ -59,35 +66,38 @@ class EdgeApi:
         self.api_token = api_Token
         self.api_secret = api_Secret
 
-        self.api_session_key = None
-        self.ws_session_key = None
+        self.api_session_key=None
+        self.ws_session_key=None
 
-        self.c2i = None
+        self.c2i= None
+
         self.ic = None
         self.io = None
-        self.iws = None
+        self.iws= None
 
-        # WS STATE
+        self._login()
+
+        self._integrateData(self.c2i)
+        self._integrateOrders(self.c2i)
+        self._iWebsocket(self.c2i)
+
+        # ----------------------------------------------------
+        # INTERNAL STATE
+        # ----------------------------------------------------
+
         self._ws_running = False
-        self._ws_logged_in = False
 
-        # DATA BUFFERS
         self._tick_cache = {}
         self._tick_lock = threading.Lock()
 
         self._order_buffer = {}
         self._order_lock = threading.Lock()
 
-        # SUBSCRIPTION STATE (DEFERRED MODEL)
         self._subscribed = set()
 
-        self._login()
-        self._integrateData(self.c2i)
-        self._integrateOrders(self.c2i)
-        self._iWebsocket(self.c2i)
 
     # ========================================================
-    # LOGIN
+    # LOGIN (SESSION AWARE)
     # ========================================================
 
     def _login(self):
@@ -98,74 +108,74 @@ class EdgeApi:
         c2i.login(
             api_token=self.api_token,
             api_secret=self.api_secret,
-            totp=Totp,
+            totp=Totp ,
         )
 
-        self.c2i = c2i
-        self.api_session_key = c2i.api_session_key
-        self.ws_session_key = c2i.ws_session_key
+        self.c2i=c2i
+        self.api_session_key=c2i.api_session_key
+        self.ws_session_key=c2i.ws_session_key
+
+        print(f"\nAPI Session Key: {c2i.api_session_key}\nWS Session Key: {c2i.ws_session_key}")
+
 
     def _integrateData(self, c2i):
-        self.ic = IntegrateData(c2i)
+
+        ic = IntegrateData(c2i)
+
+        self.ic = ic
 
     def _integrateOrders(self, c2i):
-        self.io = IntegrateOrders(c2i)
+
+        io = IntegrateOrders(c2i)
+
+        self.io = io
 
     def _iWebsocket(self, c2i):
-
+        
         iws = IntegrateWebSocket(c2i)
 
-        #  CORRECT CALLBACKS
-        iws.on_login = self._on_ws_login
+        iws.on_open = self._on_ws_open
         iws.on_close = self._on_ws_close
         iws.on_error = self._on_ws_error
         iws.on_tick_update = self._on_tick_update
         iws.on_order_update = self._on_order_update
-
+        
         self.iws = iws
+          
 
     # ========================================================
-    # WS CALLBACKS (CORRECTED)
+    # WEBSOCKET CALLBACKS
     # ========================================================
 
-    def _on_ws_login(self, iws):
+    def _on_ws_open(self, iws):
 
-        logger.info("WS LOGIN SUCCESS")
+        logger.info("DefineEdge WebSocket connected")
 
-        self._ws_logged_in = True
-        self._ws_running = True
-
-        #  CRITICAL: SUBSCRIBE ONLY HERE
-        if self._subscribed:
-            try:
-                iws.subscribe(
-                    self.c2i.SUBSCRIPTION_TYPE_TICK,
-                    list(self._subscribed)
-                )
-            except Exception as e:
-                logger.error(f"Subscription error: {e}")
-
-        # Order stream (safe here)
         try:
-            iws.subscribe(self.c2i.SUBSCRIPTION_TYPE_ORDER)
+            iws.login()
         except Exception as e:
-            logger.error(f"Order stream error: {e}")
+            logger.error(f"WS login error: {e}")
+
 
     def _on_ws_close(self, iws, code, reason):
-        logger.warning(f"WS CLOSED: {code} {reason}")
+
+        logger.warning(f"WebSocket closed: {code} {reason}")
         self._ws_running = False
-        self._ws_logged_in = False
+
 
     def _on_ws_error(self, iws, code, reason):
-        logger.error(f"WS ERROR: {code} {reason}")
 
-    # ========================================================
-    # TICK HANDLER (UNCHANGED)
-    # ========================================================
+        logger.error(f"WebSocket error: {code} {reason}")
+
+
+    # --------------------------------------------------------
+    # TICK UPDATE
+    # --------------------------------------------------------
 
     def _on_tick_update(self, iws, tick):
 
         try:
+
             exchange = tick.get("e") or "NSE"
             token = tick.get("tk")
 
@@ -173,104 +183,48 @@ class EdgeApi:
                 return
 
             key = f"{exchange}|{token}"
+
             price = tick.get("lp") or tick.get("ltp")
 
             if price is None:
                 return
 
-            price = float(price)
+            try:
+                price = float(price)
+            except Exception:
+                return
+
             tick["lp"] = price
 
             with self._tick_lock:
                 self._tick_cache[key] = tick
 
         except Exception as e:
-            logger.error(f"Tick error: {e}")
 
-    # ========================================================
-    # ORDER HANDLER (UNCHANGED)
-    # ========================================================
+            logger.error(f"Tick handler error: {e}")
+
+
+    # --------------------------------------------------------
+    # ORDER UPDATE
+    # --------------------------------------------------------
 
     def _on_order_update(self, iws, order):
 
         try:
+
             order_id = order.get("orderId") or order.get("norenordno")
             status = order.get("status")
 
-            if order_id and status:
-                with self._order_lock:
-                    self._order_buffer[str(order_id)] = str(status).upper()
+            if order_id is None or status is None:
+                return
+
+            with self._order_lock:
+                self._order_buffer[str(order_id)] = str(status).upper()
 
         except Exception as e:
-            logger.error(f"Order error: {e}")
 
-    # ========================================================
-    # WS CONTROL (FIXED)
-    # ========================================================
+            logger.error(f"Order update handler error: {e}")
 
-    def Start_Websocket(self):
-
-        if self._ws_running:
-            return
-
-        try:
-            self._ws_logged_in = False
-            self.iws.connect(daemonize=True)
-
-        except Exception as e:
-            logger.error(f"WS start error: {e}")
-
-    def Subscribe_inst(self, tokens):
-
-        if not tokens:
-            return
-
-        # STORE ALWAYS
-        for t in tokens:
-            self._subscribed.add(t)
-
-        #  ONLY SUBSCRIBE IF WS READY
-        if self._ws_logged_in:
-            try:
-                self.iws.subscribe(
-                    self.c2i.SUBSCRIPTION_TYPE_TICK,
-                    tokens
-                )
-            except Exception as e:
-                logger.error(f"Subscribe error: {e}")
-
-    def Unsubscribe_inst(self, tokens):
-
-        if not tokens:
-            return
-
-        for t in tokens:
-            self._subscribed.discard(t)
-
-        if self._ws_logged_in:
-            try:
-                self.iws.unsubscribe(
-                    self.c2i.SUBSCRIPTION_TYPE_TICK,
-                    tokens
-                )
-            except Exception as e:
-                logger.error(f"Unsubscribe error: {e}")
-
-    def Close_Websocket(self):
-
-        try:
-            self._ws_running = False
-            self._ws_logged_in = False
-            self.iws.close()
-        except Exception as e:
-            logger.error(f"WS close error: {e}")
-
-    # ========================================================
-    # ORDER STREAM (REMOVED FROM HERE — MOVED TO on_login)
-    # ========================================================
-
-    def Start_Order_Stream(self):
-        pass  # handled inside on_login now  This is a PlaceHolder
 
     # ========================================================
     # ENGINE COMPATIBILITY METHODS
@@ -386,18 +340,113 @@ class EdgeApi:
 
         return ticks
 
+
     # ========================================================
-    # MASTER FILE (UNCHANGED)
+    # WEBSOCKET CONTROL
     # ========================================================
 
-    def download_master_zip(self, url="https://app.definedgesecurities.com/public/allmaster.zip"):
+    def Start_Websocket(self):
+
+        if self._ws_running:
+            return
+
+        try:
+
+            self.iws.connect(daemonize=True)
+
+            self._ws_running = True
+
+        except Exception as e:
+
+            logger.error(f"WebSocket start error: {e}")
+            self._ws_running = False
+
+
+    def Subscribe_inst(self, tokens):
+
+        if not tokens:
+            return
+
+        try:
+
+            self.iws.subscribe(
+                self.c2i.SUBSCRIPTION_TYPE_TICK,
+                tokens
+            )
+
+            for token in tokens:
+                self._subscribed.add(token)
+
+        except Exception as e:
+
+            logger.error(f"Subscribe error: {e}")
+
+
+    def Unsubscribe_inst(self, tokens):
+
+        if not tokens:
+            return
+
+        try:
+
+            self.iws.unsubscribe(
+                self.c2i.SUBSCRIPTION_TYPE_TICK,
+                tokens
+            )
+
+            for token in tokens:
+                self._subscribed.discard(token)
+
+        except Exception as e:
+
+            logger.error(f"Unsubscribe error: {e}")
+
+
+    def Close_Websocket(self):
+
+        try:
+
+            self._ws_running = False
+            self.ws.close()
+
+        except Exception as e:
+
+            logger.error(f"WebSocket close error: {e}")
+
+
+    # ========================================================
+    # ORDER STREAM
+    # ========================================================
+
+    def Start_Order_Stream(self):
+
+        try:
+
+            self.iws.subscribe(
+                self.c2i.SUBSCRIPTION_TYPE_ORDER
+            )
+
+        except Exception as e:
+
+            logger.error(f"Order stream subscribe error: {e}")
+
+
+    # ========================================================
+    # MASTER INSTRUMENT ZIP (HTTP)
+    # ========================================================
+
+    def download_master_zip(self,url="https://app.definedgesecurities.com/public/allmaster.zip"):
 
         response = requests.get(url)
+
         response.raise_for_status()
 
         with zipfile.ZipFile(io.BytesIO(response.content)) as z:
+
             name = z.namelist()[0]
+
             with z.open(name) as f:
+
                 df = pd.read_csv(f, header=None, low_memory=False)
 
         return df

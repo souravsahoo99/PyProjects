@@ -1,6 +1,7 @@
 # ============================================================
-# MAIN TRADING ENGINE v6.0
-# ATM Options Integrated | Global Bus | WS Lifecycle Correct
+# MAIN TRADING ENGINE v4.5
+# Strike Distance Standardized Across Config
+# Deterministic ATM Logic
 # ============================================================
 
 import time
@@ -11,11 +12,10 @@ from token_registry import TokenRegistry
 from instrument_node import InstrumentNode
 from trade_manager import TradeManager
 from display_monitor import DisplayMonitor
-from global_token_bus import globalTokenMap
 
 
 # ============================================================
-# STRATEGY CONFIG
+# STRATEGY CONFIG (STANDARDIZED)
 # ============================================================
 
 STRATEGY_CONFIG = [
@@ -39,14 +39,115 @@ STRATEGY_CONFIG = [
         "product_type": "STOCK",
         "qty": 10,
         "max_retry": 2,
-        "strike_dist": None
+        "strike_dist": None   # STANDARDIZED (NOT USED)
     }
 
 ]
 
+DEBUG_CHART_SYMBOL = None
+
 
 # ============================================================
-# TOKEN RESOLUTION (UNCHANGED)
+# SAFE SPOT FETCH
+# ============================================================
+
+def wait_for_spot_price(engine, exchange, token, timeout=10):
+
+    start = time.time()
+
+    while True:
+
+        price = engine.get_ltp_rest(exchange, token)
+
+        if price is not None:
+            return price
+
+        if time.time() - start > timeout:
+            return None
+
+        time.sleep(0.2)
+
+
+# ============================================================
+# STRIKE NORMALIZATION
+# ============================================================
+
+def normalize_strike(spot, strike_dist):
+
+    if spot is None or not strike_dist:
+        return None
+
+    try:
+        return int(round(float(spot) / strike_dist) * strike_dist)
+    except Exception:
+        return None
+
+
+# ============================================================
+# ATM OPTION DISCOVERY (DETERMINISTIC)
+# ============================================================
+
+def discover_atm_option_pair(engine, registry, symbol, exchange, strike_dist):
+
+    # --------------------------------------------------------
+    # Resolve spot token
+    # --------------------------------------------------------
+
+    spot_token = registry.get_index_spot_token(symbol)
+
+    if spot_token is None:
+        spot_token = registry.get_token(exchange, symbol)
+
+    if spot_token is None:
+        return None, None
+
+    # --------------------------------------------------------
+    # Get spot price
+    # --------------------------------------------------------
+
+    spot = wait_for_spot_price(engine, exchange, spot_token)
+
+    if spot is None:
+        return None, None
+
+    # --------------------------------------------------------
+    # Resolve expiry
+    # --------------------------------------------------------
+
+    futures = registry.get_futures(symbol)
+
+    if not futures:
+        return None, None
+
+    expiry = futures[0].expiry
+
+    if expiry is None:
+        return None, None
+
+    # --------------------------------------------------------
+    # Normalize strike (NO LAMBDA)
+    # --------------------------------------------------------
+
+    strike = normalize_strike(spot, strike_dist)
+
+    if strike is None:
+        return None, None
+
+    # --------------------------------------------------------
+    # Direct lookup
+    # --------------------------------------------------------
+
+    ce_token = registry.get_option_token(symbol, expiry, strike, "CE")
+    pe_token = registry.get_option_token(symbol, expiry, strike, "PE")
+
+    if ce_token is None or pe_token is None:
+        return None, None
+
+    return ce_token, pe_token
+
+
+# ============================================================
+# TOKEN RESOLUTION
 # ============================================================
 
 def resolve_parent_token(registry, exchange, symbol, parent_type):
@@ -68,7 +169,11 @@ def resolve_parent_token(registry, exchange, symbol, parent_type):
 # ============================================================
 
 def resolve_node_scope(product_type):
-    return "CHILD" if product_type == "OPT" else "PARENT"
+
+    if product_type == "OPT":
+        return "CHILD"
+
+    return "PARENT"
 
 
 # ============================================================
@@ -83,12 +188,21 @@ def build_signal_nodes(engine, registry):
 
         symbol = config["parent_symbol"]
         exchange = config["parent_exchange"]
+
         parent_type = config.get("parent_type", "IDX")
         product_type = config.get("product_type", "STOCK")
 
-        token = resolve_parent_token(registry, exchange, symbol, parent_type)
+        node_scope = resolve_node_scope(product_type)
+
+        token = resolve_parent_token(
+            registry,
+            exchange,
+            symbol,
+            parent_type
+        )
 
         if token is None:
+
             print(f"[ENGINE] Token resolution failed → {symbol}")
             continue
 
@@ -98,7 +212,7 @@ def build_signal_nodes(engine, registry):
             symbol,
             token,
             instrument_type=product_type,
-            node_scope=resolve_node_scope(product_type)
+            node_scope=node_scope
         )
 
         nodes.append(node)
@@ -107,7 +221,7 @@ def build_signal_nodes(engine, registry):
 
 
 # ============================================================
-# BUILD TRADE MANAGERS (UPDATED FOR OPTIONS)
+# BUILD TRADE MANAGERS
 # ============================================================
 
 def build_trade_managers(engine, registry):
@@ -138,30 +252,30 @@ def build_trade_managers(engine, registry):
             continue
 
         child_token = parent_token
+        trading_symbol = parent_symbol
+
         ce_token = None
         pe_token = None
 
         # ----------------------------------------------------
-        #  OPTION FLOW (NEW)
+        # OPTION FLOW (UPDATED)
         # ----------------------------------------------------
 
         if product_type == "OPT":
 
-            try:
+            ce_token, pe_token = discover_atm_option_pair(
+                engine,
+                registry,
+                parent_symbol,
+                parent_exchange,
+                strike_dist
+            )
 
-                ce_token, pe_token = registry.register_atm_options(
-                    engine,
-                    parent_symbol,
-                    parent_exchange,
-                    strike_dist
-                )
-
-                child_token = ce_token
-
-            except Exception as e:
-
-                print(f"[ENGINE] ATM option registration failed → {parent_symbol} | {e}")
+            if ce_token is None:
+                print(f"[ENGINE] ATM discovery failed → {parent_symbol}")
                 continue
+
+            child_token = ce_token
 
         tm = TradeManager(
 
@@ -171,7 +285,7 @@ def build_trade_managers(engine, registry):
             child_exchange=child_exchange,
 
             signal_symbol=parent_symbol,
-            trading_symbol=parent_symbol,
+            trading_symbol=trading_symbol,
 
             parent_token=parent_token,
             child_token=child_token,
@@ -203,76 +317,27 @@ def engine_bootloader():
 
     print("\n[ENGINE] Booting Trading Engine\n")
 
-    # --------------------------------------------------------
-    # INIT ENGINE
-    # --------------------------------------------------------
-
     engine = APIEngine()
     engine.market_data_map = {}
 
-    # --------------------------------------------------------
-    # INIT TOKEN REGISTRY
-    # --------------------------------------------------------
-
-    registry = TokenRegistry(api=engine.api)
+    registry = TokenRegistry()
     registry.load_master()
 
-    # --------------------------------------------------------
-    # REGISTER PARENT INSTRUMENTS
-    # --------------------------------------------------------
-
-    for config in STRATEGY_CONFIG:
-
-        symbol = config["parent_symbol"]
-        exchange = config["parent_exchange"]
-        symbol_type = config.get("parent_type", "IDX")
-
-        try:
-            registry.register_instrument(exchange, symbol, symbol_type)
-        except Exception as e:
-            print(f"[ENGINE] Registration failed → {symbol} | {e}")
-
-    # --------------------------------------------------------
-    # 🔥 REGISTER OPTIONS (BEFORE WS START)
-    # --------------------------------------------------------
-
-    for config in STRATEGY_CONFIG:
-
-        if config["product_type"] == "OPT":
-
-            try:
-                registry.register_atm_options(
-                    engine,
-                    config["parent_symbol"],
-                    config["parent_exchange"],
-                    config["strike_dist"]
-                )
-            except Exception as e:
-                print(f"[ENGINE] Pre-WS option registration failed → {config['parent_symbol']} | {e}")
-
-    # --------------------------------------------------------
-    # SUBSCRIBE USING GLOBAL TOKEN BUS
-    # --------------------------------------------------------
-
-    for inst in globalTokenMap:
-        engine.subscribe(inst["exchange"], inst["token"])
-
-    # --------------------------------------------------------
-    # START WEBSOCKET
-    # --------------------------------------------------------
+    if registry.df_master is None or registry.df_master.empty:
+        raise RuntimeError("Instrument registry not loaded")
 
     engine.start_ws()
     engine.wait_for_ws()
 
     print("[ENGINE] WebSocket connected\n")
 
-    # --------------------------------------------------------
-    # BUILD SYSTEM
-    # --------------------------------------------------------
-
     nodes = build_signal_nodes(engine, registry)
 
+    if not nodes:
+        raise RuntimeError("No instrument nodes created")
+
     for node in nodes:
+
         node.initialize()
         node.start()
 
@@ -280,25 +345,34 @@ def engine_bootloader():
 
     monitor = DisplayMonitor(engine, trade_managers, nodes)
 
-    threading.Thread(target=monitor.start, daemon=True).start()
+    monitor_thread = threading.Thread(
+        target=monitor.start,
+        daemon=True
+    )
+
+    monitor_thread.start()
 
     for tm in trade_managers:
-        threading.Thread(target=tm.run, daemon=True).start()
 
-    # --------------------------------------------------------
-    # MAIN LOOP
-    # --------------------------------------------------------
+        t = threading.Thread(
+            target=tm.run,
+            daemon=True
+        )
+
+        t.start()
 
     try:
+
         while True:
             time.sleep(1)
 
     except KeyboardInterrupt:
+
         print("\n[ENGINE] Interrupted by user")
 
     finally:
 
-        print("[ENGINE] Shutting down")
+        print("[ENGINE] Stopping nodes")
 
         for node in nodes:
             node.stop()
@@ -307,38 +381,47 @@ def engine_bootloader():
 
 
 # ============================================================
-# ENTRY POINT
+# PROGRAM ENTRY
 # ============================================================
 
 if __name__ == "__main__":
 
     restart_limit = 3
     restart_delay = 5
-    restart_count = 0
 
-    while True:
+    restart_count = 0
+    running = True
+
+    while running:
 
         print(f"\n[SUPERVISOR] Engine start attempt {restart_count + 1}\n")
 
         try:
+
             engine_bootloader()
-            break
+            running = False
 
         except KeyboardInterrupt:
+
             print("\n[ENGINE] Interrupted by user")
-            break
+            running = False
 
         except Exception as e:
 
             restart_count += 1
+
             print(f"\n[ENGINE] Crash detected → {e}")
 
             if restart_count >= restart_limit:
-                print("[SUPERVISOR] Restart limit reached.")
-                break
 
-            print(f"[SUPERVISOR] Restarting in {restart_delay} seconds\n")
-            time.sleep(restart_delay)
+                print("[SUPERVISOR] Restart limit reached.")
+                running = False
+
+            else:
+
+                print(f"[SUPERVISOR] Restarting in {restart_delay} seconds\n")
+
+                time.sleep(restart_delay)
 
     print("\n[ENGINE] Trading Engine stopped\n")
 
