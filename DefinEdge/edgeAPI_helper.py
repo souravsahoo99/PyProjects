@@ -368,21 +368,20 @@ class EdgeApi:
     # ========================================================
 
     def Get_LTP(self, exchange, trading_symbol):
+        
         end_   = datetime.now()
-        start_ = datetime.now() - timedelta(seconds=1)
+        start_ = end_ - timedelta(seconds=1)
 
-        ticks = self.ic.historical_data(
+        tick = self.ic.historical_data(
             exchange=exchange,
             trading_symbol=trading_symbol,
             timeframe=self.c2i.TIMEFRAME_TYPE_TICK,
             start=start_,
             end=end_
             )        
-        df = pd.DataFrame(list(ticks))
         
-        # here you have to place the formula to extract the last price from the dataframe list
-        
-        ltp = None        
+        df = pd.DataFrame(list(tick))
+        ltp = float(df.iloc[-1]["ltp"])        
         
         return ltp      
 

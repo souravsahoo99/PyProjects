@@ -89,16 +89,17 @@ class APIEngine():
 
         data = self.api.Get_LTP(exchange=exchange, trading_symbol=token)
 
-
-        return pd.DataFrame(list(data))
-
-
+        if data is None:
+            return None
+        
+        return data
+    
 
     @retry(tries=3, delay=1, backoff=2)
     def get_tick_data_rest(self, exchange, token):
 
         now = datetime.now()
-        start = now - timedelta(seconds=60)
+        start = now - timedelta(minutes=1)
 
         price = self.api.Get_Tick_Data(
             exchange=exchange,
