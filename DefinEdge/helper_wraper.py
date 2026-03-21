@@ -154,7 +154,7 @@ class APIEngine():
             except Exception:
                 pass
 
-            time.sleep(0.03)
+            time.sleep(0.05)
 
 
 # ============================================================
@@ -182,7 +182,7 @@ class APIEngine():
             except Exception:
                 pass
 
-            time.sleep(0.02)
+            time.sleep(0.05)
 
 
 # ============================================================
