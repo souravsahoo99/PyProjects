@@ -20,17 +20,14 @@ from typing import Any
 from datetime import datetime
 from dotenv import find_dotenv, load_dotenv ,set_key
 
+logger = logging.getLogger(__name__)
 basicConfig(level=INFO)
+pd.set_option('display.max_rows', None)
+
 
 dotenv_file: str = find_dotenv()
 load_dotenv(dotenv_file)
-
-api_token = os.getenv("EDGE_API_TOKEN")
-api_secret = os.getenv("EDGE_API_SECRET")
 totp_secret = os.getenv("EDGE_TOTP_SECRET")
-
-logger = logging.getLogger(__name__)
-
 
 # ============================================================
 # ORDER OBJECT
@@ -115,13 +112,14 @@ class EdgeApi:
 
         iws = IntegrateWebSocket(c2i)
 
-        #  CORRECT CALLBACKS
+        #  WebSocket - CALLBACKS
+
         iws.on_login = self._on_ws_login
-        iws.on_close = self._on_ws_close
-        iws.on_error = self._on_ws_error
         iws.on_tick_update = self._on_tick_update
         iws.on_order_update = self._on_order_update
-
+        iws.on_exception = self._on_ws_error 
+        iws.on_close = self._on_ws_close
+        
         self.iws = iws
 
     # ========================================================
@@ -138,10 +136,8 @@ class EdgeApi:
         #  CRITICAL: SUBSCRIBE ONLY HERE
         if self._subscribed:
             try:
-                iws.subscribe(
-                    self.c2i.SUBSCRIPTION_TYPE_TICK,
-                    list(self._subscribed)
-                )
+                iws.subscribe(self.c2i.SUBSCRIPTION_TYPE_TICK,list(self._subscribed))
+                
             except Exception as e:
                 logger.error(f"Subscription error: {e}")
 
@@ -156,8 +152,12 @@ class EdgeApi:
         self._ws_running = False
         self._ws_logged_in = False
 
-    def _on_ws_error(self, iws, code, reason):
-        logger.error(f"WS ERROR: {code} {reason}")
+        iws.stop()
+
+    def _on_ws_error(self, iws, e):
+        logger.error(f"WS ERROR: {e}")
+
+        iws.close_on_exception("Closing connection due to exception")        
 
     # ========================================================
     # TICK HANDLER (UNCHANGED)
@@ -194,7 +194,7 @@ class EdgeApi:
     def _on_order_update(self, iws, order):
 
         try:
-            order_id = order.get("orderId") or order.get("norenordno")
+            order_id = order.get("orderId")
             status = order.get("status")
 
             if order_id and status:
@@ -232,10 +232,8 @@ class EdgeApi:
         #  ONLY SUBSCRIBE IF WS READY
         if self._ws_logged_in:
             try:
-                self.iws.subscribe(
-                    self.c2i.SUBSCRIPTION_TYPE_TICK,
-                    tokens
-                )
+                self.iws.subscribe(self.c2i.SUBSCRIPTION_TYPE_TICK,tokens)
+
             except Exception as e:
                 logger.error(f"Subscribe error: {e}")
 
@@ -249,10 +247,8 @@ class EdgeApi:
 
         if self._ws_logged_in:
             try:
-                self.iws.unsubscribe(
-                    self.c2i.SUBSCRIPTION_TYPE_TICK,
-                    tokens
-                )
+                self.iws.unsubscribe(self.c2i.SUBSCRIPTION_TYPE_TICK,tokens
+                                     )
             except Exception as e:
                 logger.error(f"Unsubscribe error: {e}")
 
@@ -261,16 +257,10 @@ class EdgeApi:
         try:
             self._ws_running = False
             self._ws_logged_in = False
-            self.iws.close()
+            self.iws.stop()
+
         except Exception as e:
             logger.error(f"WS close error: {e}")
-
-    # ========================================================
-    # ORDER STREAM (REMOVED FROM HERE — MOVED TO on_login)
-    # ========================================================
-
-    def Start_Order_Stream(self):
-        pass  # handled inside on_login now  This is a PlaceHolder
 
     # ========================================================
     # ENGINE COMPATIBILITY METHODS
@@ -344,10 +334,10 @@ class EdgeApi:
 
         if timeframe == "min":
             tf = self.c2i.TIMEFRAME_TYPE_MIN
-        elif timeframe == "day":
-            tf = self.c2i.TIMEFRAME_TYPE_DAY
-        else:
+        elif timeframe == "tick":
             tf = self.c2i.TIMEFRAME_TYPE_TICK
+        else:
+            tf = self.c2i.TIMEFRAME_TYPE_MIN
 
         return self.ic.historical_data(
             exchange=exchange,
