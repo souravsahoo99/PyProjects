@@ -1,5 +1,5 @@
 # ============================================================
-# HELPER WRAPPER v3.1
+# HELPER WRAPPER v3.2
 # Broker Wrapper Layer (DefineEdge Backend)
 # Production Safe Version
 # Thread Safe + WS safe
@@ -34,32 +34,20 @@ class APIEngine():
 
         self.market_data_map = {}
 
-        # ----------------------------------------------------
         # WEBSOCKET STATE
-        # ----------------------------------------------------
-
         self._is_ws_connected = False
         self._subscribed_instruments = set()
 
-        # ----------------------------------------------------
         # THREAD FLAGS
-        # ----------------------------------------------------
-
         self._router_running = False
         self._order_stream_running = False
         self._ws_monitor_running = False
 
-        # ----------------------------------------------------
         # ORDER BUFFER
-        # ----------------------------------------------------
-
         self._order_buffer = {}
         self._order_lock = threading.Lock()
 
-        # ----------------------------------------------------
         # WS HEALTH
-        # ----------------------------------------------------
-
         self._last_tick_time = time.time()
 
 
@@ -81,7 +69,6 @@ class APIEngine():
         )
 
         return pd.DataFrame(list(raw))
-
 
 
     @retry(tries=3, delay=1, backoff=2)
