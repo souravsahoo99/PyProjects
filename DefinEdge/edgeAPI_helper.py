@@ -1,5 +1,5 @@
 # ============================================================
-# DEFINEEDGE API HELPER v2.5
+# DEFINEEDGE API HELPER v2.7
 # Production Broker Adapter
 # Engine Compatible
 # WebSocket Hardened
@@ -387,23 +387,8 @@ class EdgeApi:
         return ltp      
 
 
-    # ========================================================
-    #  INSTRUMENT_MASTER FILE DOWNLOAD 
-    # ========================================================
-
-    def download_master_zip(self, url="https://app.definedgesecurities.com/public/allmaster.zip"):
-
-        response = requests.get(url)
-        response.raise_for_status()
-
-        with zipfile.ZipFile(io.BytesIO(response.content)) as z:
-            name = z.namelist()[0]
-            with z.open(name) as f:
-                df = pd.read_csv(f, header=None, low_memory=False)
-
-        return df
-
-    # =========== Token Fetching from Symbols ============
+    # ________________________________________________________
+    # ============  Token Fetching from Symbols  =============
 
     def get_token_for_symbol(self,exchange: str, symbol: str) -> tuple[str, str]:
 
@@ -423,9 +408,10 @@ class EdgeApi:
         else:
             raise Exception(f"Token not found for {symbol} in symbols file")
 
-   
 
-# ======= Download Master File ==========
+# ==========================================================
+# ================= Download MASTER File ===================
+# __________________________________________________________
 
 def Load_Master(url="https://app.definedgesecurities.com/public/allmaster.zip"):
 
@@ -445,4 +431,4 @@ def Load_Master(url="https://app.definedgesecurities.com/public/allmaster.zip"):
 
 
 
-#_#_#_#_
+#_#_#_#_#
