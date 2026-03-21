@@ -1,5 +1,5 @@
 # ============================================================
-# DEFINEEDGE API HELPER v2.2
+# DEFINEEDGE API HELPER v2.5
 # Production Broker Adapter
 # Engine Compatible
 # WebSocket Hardened
@@ -13,11 +13,11 @@ import io
 import threading
 import logging
 import pyotp
-import pandas as pd
-import requests
 import zipfile
-from typing import Any
-from datetime import datetime
+import requests
+import pandas as pd
+from typing import Union, Any
+from datetime import datetime ,timedelta
 from dotenv import find_dotenv, load_dotenv ,set_key
 
 logger = logging.getLogger(__name__)
@@ -30,7 +30,7 @@ load_dotenv(dotenv_file)
 totp_secret = os.getenv("EDGE_TOTP_SECRET")
 
 # ============================================================
-# ORDER OBJECT
+#  ORDER OBJECT
 # ============================================================
 
 class Order:
@@ -46,7 +46,7 @@ class Order:
 
 
 # ============================================================
-# DEFINEEDGE API CLASS
+#   DEFINEEDGE API CLASS
 # ============================================================
 
 class EdgeApi:
@@ -64,9 +64,9 @@ class EdgeApi:
         self.io = None
         self.iws = None
 
-        # WS STATE
+        # WEBSOCKET STATE
+        self._ws_logged_in = False        
         self._ws_running = False
-        self._ws_logged_in = False
 
         # DATA BUFFERS
         self._tick_cache = {}
@@ -75,16 +75,16 @@ class EdgeApi:
         self._order_buffer = {}
         self._order_lock = threading.Lock()
 
-        # SUBSCRIPTION STATE (DEFERRED MODEL)
-        self._subscribed = set()
-
+        # SUBSCRIPTION STATE (DefineEdge MODEL)
+        self._subscribed: list[tuple[str, str]] = []     # [(iws.c2i.EXCHANGE_TYPE_NSE, "11536"),(iws.c2i.EXCHANGE_TYPE_NSE, "3456"),]
+        
         self._login()
         self._integrateData(self.c2i)
         self._integrateOrders(self.c2i)
         self._iWebsocket(self.c2i)
 
     # ========================================================
-    # LOGIN
+    #  LOGIN
     # ========================================================
 
     def _login(self):
@@ -112,7 +112,7 @@ class EdgeApi:
 
         iws = IntegrateWebSocket(c2i)
 
-        #  WebSocket - CALLBACKS
+        # Assigning WebSocket CallBack Functions
 
         iws.on_login = self._on_ws_login
         iws.on_tick_update = self._on_tick_update
@@ -123,7 +123,7 @@ class EdgeApi:
         self.iws = iws
 
     # ========================================================
-    # WS CALLBACKS (CORRECTED)
+    #   WebSocket CALLBACK FUNCTIONs    (FIXED)
     # ========================================================
 
     def _on_ws_login(self, iws):
@@ -131,21 +131,20 @@ class EdgeApi:
         logger.info("WS LOGIN SUCCESS")
 
         self._ws_logged_in = True
-        self._ws_running = True
 
         #  CRITICAL: SUBSCRIBE ONLY HERE
         if self._subscribed:
-            try:
-                iws.subscribe(self.c2i.SUBSCRIPTION_TYPE_TICK,list(self._subscribed))
-                
-            except Exception as e:
-                logger.error(f"Subscription error: {e}")
+            
+            iws.subscribe(self.c2i.SUBSCRIPTION_TYPE_TICK, self._subscribed)
+            iws.subscribe(self.c2i.SUBSCRIPTION_TYPE_ORDER, self._subscribed)            
 
-        # Order stream (safe here)
-        try:
-            iws.subscribe(self.c2i.SUBSCRIPTION_TYPE_ORDER)
-        except Exception as e:
-            logger.error(f"Order stream error: {e}")
+
+
+    def _on_ws_error(self, iws, e):
+        logger.error(f"WS Exception Error: {e}")
+
+        iws.close_on_exception("Closing connection due to exception")       
+
 
     def _on_ws_close(self, iws, code, reason):
         logger.warning(f"WS CLOSED: {code} {reason}")
@@ -154,25 +153,19 @@ class EdgeApi:
 
         iws.stop()
 
-    def _on_ws_error(self, iws, e):
-        logger.error(f"WS ERROR: {e}")
 
-        iws.close_on_exception("Closing connection due to exception")        
-
-    # ========================================================
-    # TICK HANDLER (UNCHANGED)
-    # ========================================================
+    # =============   TICK HANDLER   =============
 
     def _on_tick_update(self, iws, tick):
 
-        try:
-            exchange = tick.get("e") or "NSE"
+        while True :
+            exchange = tick.get("e") 
             token = tick.get("tk")
 
             if token is None:
                 return
 
-            key = f"{exchange}|{token}"
+            key = f"{exchange}|{token}"                     # Gagteway 'KEY' for fetching data
             price = tick.get("lp") or tick.get("ltp")
 
             if price is None:
@@ -184,16 +177,12 @@ class EdgeApi:
             with self._tick_lock:
                 self._tick_cache[key] = tick
 
-        except Exception as e:
-            logger.error(f"Tick error: {e}")
-
-    # ========================================================
-    # ORDER HANDLER (UNCHANGED)
-    # ========================================================
+    # ===========   ORDER HANDLER   =============
 
     def _on_order_update(self, iws, order):
 
-        try:
+        while self._ws_running == True:
+            
             order_id = order.get("orderId")
             status = order.get("status")
 
@@ -201,24 +190,40 @@ class EdgeApi:
                 with self._order_lock:
                     self._order_buffer[str(order_id)] = str(status).upper()
 
-        except Exception as e:
-            logger.error(f"Order error: {e}")
 
     # ========================================================
-    # WS CONTROL (FIXED)
+    #     WebSocket  CONTROLs  for  Api-Engine
     # ========================================================
 
     def Start_Websocket(self):
 
-        if self._ws_running:
+        if self._ws_logged_in != True:
             return
+        else:
+            pass
+
+        self.iws.connect(daemonize=True)
+        # iws.connect(daemonize=True, ssl_verify=False)  <  Replace this if above line isn't working #
+
+        self._ws_running = True 
+              
+        while True:
+            try:
+                pass                
+            except KeyboardInterrupt:
+                break
+
+    def Close_Websocket(self):
 
         try:
+            self._ws_running = False
             self._ws_logged_in = False
-            self.iws.connect(daemonize=True)
+            self.iws.stop()
 
         except Exception as e:
-            logger.error(f"WS start error: {e}")
+            logger.error(f"WS close error: {e}")
+
+    # ======    Additional Websocket Functions    ========
 
     def Subscribe_inst(self, tokens):
 
@@ -252,18 +257,9 @@ class EdgeApi:
             except Exception as e:
                 logger.error(f"Unsubscribe error: {e}")
 
-    def Close_Websocket(self):
-
-        try:
-            self._ws_running = False
-            self._ws_logged_in = False
-            self.iws.stop()
-
-        except Exception as e:
-            logger.error(f"WS close error: {e}")
 
     # ========================================================
-    # ENGINE COMPATIBILITY METHODS
+    #     IntegrateOrders  METHODS
     # ========================================================
 
     def Place_Order(self, order: Order):
@@ -322,13 +318,8 @@ class EdgeApi:
 
 
     # ========================================================
-    # MARKET DATA (REST)
+    #     IntegrateData  (REST)  OHLC fetching
     # ========================================================
-
-    def Get_LTP(self, exchange, trading_symbol):
-
-        return self.ic.quotes(exchange, trading_symbol)
-
 
     def Get_Intraday_Data(self,exchange,trading_symbol,timeframe,start,end):
 
@@ -358,11 +349,6 @@ class EdgeApi:
             end=end
         )
 
-
-    # ========================================================
-    # REST TICK DATA (LTP FALLBACK)
-    # ========================================================
-
     def Get_Tick_Data(self,exchange,trading_symbol,start,end):
 
 
@@ -375,9 +361,34 @@ class EdgeApi:
             )
 
         return ticks
+    
 
     # ========================================================
-    # MASTER FILE (UNCHANGED)
+    #     REST TICK DATA (LTP FALLBACK)
+    # ========================================================
+
+    def Get_LTP(self, exchange, trading_symbol):
+        end_   = datetime.now()
+        start_ = datetime.now() - timedelta(seconds=1)
+
+        ticks = self.ic.historical_data(
+            exchange=exchange,
+            trading_symbol=trading_symbol,
+            timeframe=self.c2i.TIMEFRAME_TYPE_TICK,
+            start=start_,
+            end=end_
+            )        
+        df = pd.DataFrame(list(ticks))
+        
+        # here you have to place the formula to extract the last price from the dataframe list
+        
+        ltp = None        
+        
+        return ltp      
+
+
+    # ========================================================
+    #  INSTRUMENT_MASTER FILE DOWNLOAD 
     # ========================================================
 
     def download_master_zip(self, url="https://app.definedgesecurities.com/public/allmaster.zip"):
@@ -392,6 +403,27 @@ class EdgeApi:
 
         return df
 
+    # =========== Token Fetching from Symbols ============
+
+    def get_token_for_symbol(self,exchange: str, symbol: str) -> tuple[str, str]:
+
+        if exchange not in self.c2i.exchange_types:
+            raise ValueError("Invalid exchange type")
+
+        token: Union[str, None] = next(
+            (
+                i["token"]
+                for i in self.c2i.symbols
+                if i["segment"] == exchange and i["trading_symbol"] == symbol
+            ),
+            None,
+        )
+        if token:
+            return (exchange, token)
+        else:
+            raise Exception(f"Token not found for {symbol} in symbols file")
+
+   
 
 # ======= Download Master File ==========
 
@@ -413,4 +445,4 @@ def Load_Master(url="https://app.definedgesecurities.com/public/allmaster.zip"):
 
 
 
-#_#_#
+#_#_#_#_
