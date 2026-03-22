@@ -43,9 +43,7 @@ class TokenRegistry:
         # INTERNAL STORAGE
         # ----------------------------------------------------
 
-        self._symbols_file = abspath(
-            join(dirname(__file__), "allmaster.csv")
-        )
+        self._symbols_file = abspath(join(dirname(__file__), "allmaster.csv"))
 
 # ============================================================
 #   INTERNAL: DOWNLOAD + EXTRACT  (OFFICIAL REPLICA)
@@ -124,8 +122,13 @@ class TokenRegistry:
             try:
 
                 exchange = item.get("segment")
-                symbol = item.get("trading_symbol")
                 token = str(item.get("token"))
+                symbol_name = item.get("symbol")
+                symbol = item.get("trading_symbol")
+                inst_type=item.get("instrument_type")
+                expiry = item.get("expiry")
+                opt_type = item.get("option_type")
+
 
                 if not exchange or not symbol or not token:
                     continue
@@ -134,7 +137,7 @@ class TokenRegistry:
 
                 self.symbol_to_token[(exchange, symbol)] = token
                 self.token_to_symbol[(exchange, token)] = symbol
-                self.symbol_token_map[symbol] = token
+                self.symbol_token_map[(symbol)] = token
 
             except Exception:
                 continue
@@ -316,4 +319,4 @@ class TokenRegistry:
 
 
 
-#_#_#_
+#_#_#_#
