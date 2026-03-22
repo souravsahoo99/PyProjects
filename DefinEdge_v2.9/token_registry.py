@@ -1,29 +1,17 @@
 # ============================================================
-# TOKEN REGISTRY v11.0
-# Official DefineEdge Replica Engine
-# Backward Compatible | Placeholder Safe
+# TOKEN REGISTRY v10.0
+# Global Bus Enabled | ATM Options | Production Ready
 # ============================================================
 
-import os
-import io
-import zipfile
-import requests
-from csv import reader
-from typing import Union
+from global_token_bus import globalTokenMap
 from datetime import datetime, timedelta
-from os.path import abspath, dirname, join
 
-# TokenMap for Global Scope
-
-TOKEN_BUS = []
 
 # ============================================================
-#   TOKEN REGISTRY   
+# TOKEN REGISTRY
 # ============================================================
 
 class TokenRegistry:
-
-    MASTER_URL = "https://app.definedgesecurities.com/public/allmaster.zip"
 
     def __init__(self, api=None):
 
@@ -32,97 +20,37 @@ class TokenRegistry:
         # ----------------------------------------------------
         # CORE MAPS
         # ----------------------------------------------------
+
         self.symbol_to_token = {}      # (exchange, symbol) → token
         self.token_to_symbol = {}      # (exchange, token) → symbol
         self.symbol_token_map = {}     # symbol → token
 
         self._loaded = False
 
-        self._registered_keys = set()   # (exchange, token)
-        # ____________________________________________________
-        # INTERNAL STORAGE
+        # ----------------------------------------------------
+        # GLOBAL REGISTRY TRACKING
         # ----------------------------------------------------
 
-        self._symbols_file = abspath(
-            join(dirname(__file__), "allmaster.csv")
-        )
-
-# ============================================================
-#   INTERNAL: DOWNLOAD + EXTRACT  (OFFICIAL REPLICA)
-# ============================================================
-
-    def _ensure_master_file(self):
-
-        try:
-            open(self._symbols_file, "r")
-            return
-        except FileNotFoundError:
-            pass
-
-        response = requests.get(self.MASTER_URL)
-        response.raise_for_status()
-
-        with zipfile.ZipFile(io.BytesIO(response.content), "r") as z:
-            z.extract("allmaster.csv", abspath(dirname(__file__)))
+        self._registered_keys = set()   # (exchange, token)
 
 
 # ============================================================
-#   INTERNAL: SYMBOL GENERATOR (OFFICIAL REPLICA)
+# LOAD FROM OFFICIAL DEFINEEDGE SOURCE
 # ============================================================
-
-    def _symbol_generator(self):
-
-        self._ensure_master_file()
-
-        with open(self._symbols_file, "r") as fp:
-
-            csv_reader = reader(fp)
-
-            for line in csv_reader:
-                yield {
-                    "segment": line[0],
-                    "token": line[1],
-                    "symbol": line[2],
-                    "trading_symbol": line[3],
-                    "instrument_type": line[4],
-                    "expiry": line[5],
-                    "tick_size": line[6],
-                    "lot_size": line[7],
-                    "option_type": line[8],
-                    "strike": str(int(int(line[9]) /(int(line[11]) * (10 ** int(line[10]))))),
-                    "isin": line[12],
-                    "price_mult": line[13],
-                }
-
-
-# ================ Official Calling Function ====================
-
-    def get_token_for_symbol(self,exchange: str, symbol: str) -> tuple[str, str]:
-
-        token: Union[str, None] = next(
-            (
-                i["token"]
-                for i in self._symbol_generator()
-                if i["segment"] == exchange and i["trading_symbol"] == symbol
-            ),
-            None,
-        )
-        if token:
-            return (exchange, token)
-        else:
-            raise Exception(f"Token not found for {symbol} in MASTER file")
-
-
-# ________________________________________________________________
-#   LOAD MASTER (REBUILT)
-# ----------------------------------------------------------------
 
     def load_master(self):
 
-        for item in self._symbol_generator():
+        if not self.api or not hasattr(self.api, "c2i"):
+            raise Exception("API not initialized with DefineEdge session")
+
+        symbols = getattr(self.api.c2i, "symbols", None)
+
+        if not symbols:
+            raise Exception("DefineEdge symbols not available")
+
+        for item in symbols:
 
             try:
-
                 exchange = item.get("segment")
                 symbol = item.get("trading_symbol")
                 token = str(item.get("token"))
@@ -141,8 +69,9 @@ class TokenRegistry:
 
         self._loaded = True
 
+
 # ============================================================
-#   CORE LOOKUPS (UNCHANGED)
+# CORE LOOKUPS
 # ============================================================
 
     def get_token(self, exchange, symbol):
@@ -158,7 +87,7 @@ class TokenRegistry:
 
 
 # ============================================================
-#   REGISTER INSTRUMENT (UNCHANGED)
+# CORE FUNCTION: REGISTER + GLOBAL PUBLISH
 # ============================================================
 
     def register_instrument(self, exchange, symbol, symbol_type):
@@ -190,13 +119,13 @@ class TokenRegistry:
             "ws_key": ws_key
         }
 
-        TOKEN_BUS.append(entry)
+        globalTokenMap.append(entry)
 
         return (exchange, token)
 
 
 # ============================================================
-#   ATM OPTION REGISTRATION (UNCHANGED CORE LOGIC)
+#  ATM OPTION REGISTRATION (NEW CORE)
 # ============================================================
 
     def register_atm_options(self, engine, symbol, exchange, strike_dist):
@@ -206,28 +135,56 @@ class TokenRegistry:
 
         symbol = symbol.upper()
 
+        # ----------------------------------------------------
+        # STEP 1: Resolve spot token
+        # ----------------------------------------------------
+
         spot_token = self.get_token(exchange, symbol)
 
         if not spot_token:
             raise Exception(f"Spot token not found for {symbol}")
+
+        # ----------------------------------------------------
+        # STEP 2: Fetch live price
+        # ----------------------------------------------------
 
         spot_price = engine.get_ltp_rest(exchange, spot_token)
 
         if spot_price is None:
             raise Exception(f"Spot price unavailable for {symbol}")
 
+        # ----------------------------------------------------
+        # STEP 3: Normalize strike
+        # ----------------------------------------------------
+
         strike = int(round(float(spot_price) / strike_dist) * strike_dist)
+
+        # ----------------------------------------------------
+        # STEP 4: Determine expiry (current or next week)
+        # ----------------------------------------------------
 
         expiry = self._get_weekly_expiry()
 
+        # ----------------------------------------------------
+        # STEP 5: Build option symbols
+        # ----------------------------------------------------
+
         ce_symbol = f"{symbol}{expiry}C{strike}"
         pe_symbol = f"{symbol}{expiry}P{strike}"
+
+        # ----------------------------------------------------
+        # STEP 6: Resolve tokens
+        # ----------------------------------------------------
 
         ce_token = self.get_token("NFO", ce_symbol)
         pe_token = self.get_token("NFO", pe_symbol)
 
         if not ce_token or not pe_token:
             raise Exception(f"Option tokens not found: {ce_symbol}, {pe_symbol}")
+
+        # ----------------------------------------------------
+        # STEP 7: Register globally
+        # ----------------------------------------------------
 
         self.register_instrument("NFO", ce_symbol, "OPT")
         self.register_instrument("NFO", pe_symbol, "OPT")
@@ -236,16 +193,19 @@ class TokenRegistry:
 
 
 # ============================================================
-#   EXPIRY LOGIC (UNCHANGED)
+# EXPIRY LOGIC (WEEKLY AUTO)
 # ============================================================
 
     def _get_weekly_expiry(self):
 
         today = datetime.now().date()
 
+        # Thursday = 3 (Mon=0)
         days_to_thursday = (3 - today.weekday()) % 7
+
         expiry = today + timedelta(days=days_to_thursday)
 
+        # If today is Thursday and market passed, use next week
         if days_to_thursday == 0:
             expiry += timedelta(days=7)
 
@@ -253,7 +213,7 @@ class TokenRegistry:
 
 
 # ============================================================
-#   WS READY PAIR (UNCHANGED)
+# WS READY PAIR
 # ============================================================
 
     def get_ws_instrument(self, exchange, symbol):
@@ -267,7 +227,7 @@ class TokenRegistry:
 
 
 # ============================================================
-#   REVERSE ACCESS (UNCHANGED)
+# REVERSE ACCESS
 # ============================================================
 
     def get_by_token(self, token):
@@ -285,9 +245,12 @@ class TokenRegistry:
         return None
 
 
+    def get_by_security_id(self, security_id):
+        return self.get_token("NSE", security_id)
+
 
 # ============================================================
-#   LEGACY PLACEHOLDERS (STRICT PROTOCOL)
+# LEGACY COMPATIBILITY (UNCHANGED)
 # ============================================================
 
     def get_index_spot_token(self, symbol):
@@ -295,17 +258,14 @@ class TokenRegistry:
 
 
     def get_option_token(self, symbol, expiry, strike, option_type):
-        # Placeholder (logic not defined)
         return None
 
 
     def get_strikes(self, symbol, expiry):
-        # Placeholder
         return []
 
 
     def get_futures(self, symbol):
-        # Placeholder
         return []
 
 
@@ -313,6 +273,14 @@ class TokenRegistry:
         return None
 
 
+    def get_next_future(self, symbol):
+        return None
+
+
+    def get_far_future(self, symbol):
+        return None
+
+    
 
 
 

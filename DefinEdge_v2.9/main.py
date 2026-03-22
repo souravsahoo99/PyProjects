@@ -7,13 +7,15 @@ import time
 import threading
 
 from helper_wraper import APIEngine
-from token_registry import TokenRegistry , TOKEN_BUS
+from token_registry import TokenRegistry
 from instrument_node import InstrumentNode
 from trade_manager import TradeManager
 from display_monitor import DisplayMonitor
+from global_token_bus import globalTokenMap
+
 
 # ============================================================
-#  STRATEGY CONFIG
+# STRATEGY CONFIG
 # ============================================================
 
 STRATEGY_CONFIG = [
@@ -252,7 +254,7 @@ def engine_bootloader():
     # SUBSCRIBE USING GLOBAL TOKEN BUS
     # --------------------------------------------------------
 
-    for inst in TOKEN_BUS:
+    for inst in globalTokenMap:
         engine.subscribe(inst["exchange"], inst["token"])
 
     # --------------------------------------------------------
