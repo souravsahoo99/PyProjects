@@ -21,7 +21,6 @@ TOKEN_BUS = []
 #   TOKEN REGISTRY   
 # ============================================================
 
-
 class TokenRegistry:
 
     MASTER_URL = "https://app.definedgesecurities.com/public/allmaster.zip"
@@ -47,7 +46,7 @@ class TokenRegistry:
         self._symbols_file = abspath(join(dirname(__file__), "allmaster.csv"))
 
 # ============================================================
-# DOWNLOAD
+#   INTERNAL: DOWNLOAD + EXTRACT  (OFFICIAL REPLICA)
 # ============================================================
 
     def _ensure_master_file(self):
@@ -66,7 +65,7 @@ class TokenRegistry:
 
 
 # ============================================================
-# GENERATOR
+#   INTERNAL: SYMBOL GENERATOR (OFFICIAL REPLICA)
 # ============================================================
 
     def _symbol_generator(self):
@@ -94,11 +93,9 @@ class TokenRegistry:
                 }
 
 
-# ============================================================
-# OFFICIAL LOOKUP
-# ============================================================
+# ================ Official Calling Function ====================
 
-    def get_token_for_symbol(self, exchange: str, symbol: str) -> tuple[str, str]:
+    def get_token_for_symbol(self,exchange: str, symbol: str) -> tuple[str, str]:
 
         token: Union[str, None] = next(
             (
@@ -108,25 +105,30 @@ class TokenRegistry:
             ),
             None,
         )
-
         if token:
             return (exchange, token)
+        else:
+            raise Exception(f"Token not found for {symbol} in MASTER file")
 
-        raise Exception(f"Token not found for {symbol}")
 
-
-# ============================================================
-# LOAD MASTER
-# ============================================================
+# ________________________________________________________________
+#   LOAD MASTER 
+# ----------------------------------------------------------------
 
     def load_master(self):
 
         for item in self._symbol_generator():
 
             try:
-                exchange = item["segment"]
-                token = str(item["token"])
-                symbol = item["trading_symbol"]
+
+                exchange = item.get("segment")
+                token = str(item.get("token"))
+                symbol_name = item.get("symbol")
+                symbol = item.get("trading_symbol")
+                inst_type=item.get("instrument_type")
+                expiry = item.get("expiry")
+                opt_type = item.get("option_type")
+
 
                 if not exchange or not symbol or not token:
                     continue
@@ -135,30 +137,30 @@ class TokenRegistry:
 
                 self.symbol_to_token[(exchange, symbol)] = token
                 self.token_to_symbol[(exchange, token)] = symbol
-                self.symbol_token_map[symbol] = token
+                self.symbol_token_map[(symbol)] = token
 
             except Exception:
                 continue
 
         self._loaded = True
 
-
 # ============================================================
-# CORE LOOKUPS
+#   CORE LOOKUPS 
 # ============================================================
 
     def get_token(self, exchange, symbol):
-        return self.symbol_to_token.get((exchange, symbol.upper()))
+
+        symbol = symbol.upper()
+        return self.symbol_to_token.get((exchange, symbol))
 
 
     def get_symbol(self, exchange, token):
-        return self.token_to_symbol.get((exchange, str(token)))
+
+        token = str(token)
+        return self.token_to_symbol.get((exchange, token))
 
 
-# ============================================================
-# OPTION SYMBOL GENERATOR (PATH B CORE)
-# ============================================================
-
+# =============== Custom Built Option Symbol fetcher ================  (new add-on)
 
     def get_symbol_for_option(self,exchange: str, symbol: str, inst_type:str, strike:str, opt_type:str , expiry:str):
 
@@ -178,9 +180,20 @@ class TokenRegistry:
             raise Exception(f"Token not found for {symbol} in MASTER file")
 
 
-# ============================================================
-# EXPIRY GENERATOR (PATH B EXTENSION)
-# ============================================================
+# =============  EXPIRY LOGIC  ==============
+
+    def _get_weekly_expiry(self):
+
+        today = datetime.now().date()
+
+        days_to_thursday = (3 - today.weekday()) % 7
+        expiry = today + timedelta(days=days_to_thursday)
+
+        if days_to_thursday == 0:
+            expiry += timedelta(days=7)
+
+        return expiry.strftime("%d%b%y").upper()
+
 
     def get_nearest_expiry(self, exchange, symbol):
 
@@ -193,27 +206,28 @@ class TokenRegistry:
             if (
                 i["segment"] == exchange and
                 i["symbol"] == symbol and
-                i["instrument_type"] == "OPTIDX"
+                i["instrument_type"] == "OPTIDX"      # "OPTSTK"  for stock options under NFO
             ):
                 expiries.add(i["expiry"])
 
         if not expiries:
             raise Exception(f"No expiries found for {symbol}")
 
+        # Convert to datetime
         expiry_dates = sorted([
             datetime.strptime(exp, "%d%m%Y").date()
             for exp in expiries
         ])
 
         for exp_date in expiry_dates:
+
             if exp_date > today:
                 return exp_date.strftime("%d%m%Y")
 
-        raise Exception(f"No valid expiry found for {symbol}")
-
+        raise Exception(f"No valid future expiry found for {symbol}")
 
 # ============================================================
-# ATM OPTIONS (UNCHANGED)
+#   ATM OPTION REGISTRATION    ( Old Function Logic )
 # ============================================================
 
     def register_atm_options(self, engine, symbol, exchange, strike_dist):
@@ -244,7 +258,7 @@ class TokenRegistry:
         pe_token = self.get_token("NFO", pe_symbol)
 
         if not ce_token or not pe_token:
-            raise Exception(f"Option tokens not found")
+            raise Exception(f"Option tokens not found: {ce_symbol}, {pe_symbol}")
 
         self.register_instrument("NFO", ce_symbol, "OPT")
         self.register_instrument("NFO", pe_symbol, "OPT")
@@ -253,7 +267,7 @@ class TokenRegistry:
 
 
 # ============================================================
-# WS + REGISTER
+#   WS READY PAIR (UNCHANGED)
 # ============================================================
 
     def get_ws_instrument(self, exchange, symbol):
@@ -266,37 +280,8 @@ class TokenRegistry:
         return None
 
 
-    def register_instrument(self, exchange, symbol, symbol_type):
-
-        if not self._loaded:
-            raise Exception("TokenRegistry not initialized")
-
-        token = self.get_token(exchange, symbol)
-
-        if not token:
-            raise Exception(f"{symbol} not found")
-
-        key = (exchange, token)
-
-        if key in self._registered_keys:
-            return (exchange, token)
-
-        self._registered_keys.add(key)
-
-        entry = {
-            "symbol": symbol,
-            "exchange": exchange,
-            "symbol_type": symbol_type,
-            "token": token,
-            "ws_key": f"{exchange}|{token}"
-        }
-
-        TOKEN_BUS.append(entry)
-
-        return (exchange, token)
-
 # ============================================================
-#   LEGACY PLACEHOLDERS (STRICT PROTOCOL)
+#   REVERSE ACCESS (UNCHANGED)
 # ============================================================
 
     def get_by_token(self, token):
@@ -305,8 +290,57 @@ class TokenRegistry:
 
         for (exchange, tk), symbol in self.token_to_symbol.items():
             if tk == token:
-                return {"exchange": exchange,"symbol": symbol,"token": token}
-            
+                return {
+                    "exchange": exchange,
+                    "symbol": symbol,
+                    "token": token
+                }
+
+        return None
+
+
+# ============================================================
+#   REGISTER INSTRUMENT   (PlaceHolder Function)
+# ============================================================
+
+    def register_instrument(self, exchange, symbol, symbol_type):
+
+        if not self._loaded:
+            raise Exception("TokenRegistry not initialized. Call load_master() first.")
+
+        symbol = symbol.upper().strip()
+
+        token = self.get_token(exchange, symbol)
+
+        if not token:
+            raise Exception(f"Token not found for {exchange}:{symbol}")
+
+        key = (exchange, token)
+
+        if key in self._registered_keys:
+            return (exchange, token)
+
+        self._registered_keys.add(key)
+
+        ws_key = f"{exchange}|{token}"
+
+        entry = {
+            "symbol": symbol,
+            "exchange": exchange,
+            "symbol_type": symbol_type,
+            "token": token,
+            "ws_key": ws_key
+        }
+
+        TOKEN_BUS.append(entry)
+
+        return (exchange, token)
+
+
+
+# ============================================================
+#   LEGACY PLACEHOLDERS (STRICT PROTOCOL)
+# ============================================================
 
     def get_index_spot_token(self, symbol):
         return self.symbol_token_map.get(symbol.upper())
@@ -325,6 +359,10 @@ class TokenRegistry:
     def get_futures(self, symbol):
         # Placeholder
         return []
+
+
+    def get_current_future(self, symbol):
+        return None
 
 
 

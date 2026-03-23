@@ -381,7 +381,7 @@ class EdgeApi:
             )        
         
         df = pd.DataFrame(list(tick))
-        ltp:float = df.iloc[-1]["ltp"]       
+        ltp:str = df.iloc[-1]["ltp"]       
         
         return ltp      
 
