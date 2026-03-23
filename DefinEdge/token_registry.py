@@ -1,5 +1,5 @@
 # ============================================================
-# TOKEN REGISTRY v11.2
+# TOKEN REGISTRY v11.3
 # Official DefineEdge Replica Engine
 # Backward Compatible | Placeholder Safe
 # ============================================================
@@ -15,7 +15,7 @@ from os.path import abspath, dirname, join
 
 # TokenMap for Global Scope
 
-TOKEN_BUS = []
+TOKEN_BUS = []               
 
 # ============================================================
 #   TOKEN REGISTRY   
@@ -154,7 +154,9 @@ class TokenRegistry:
     def reg_inst(self,symbol_type,token):
 
         entry = {"symbol_type": symbol_type,"token": token,"key": f"{symbol_type}|{token}"}
-        TOKEN_BUS.append(entry)
+
+        if entry not in TOKEN_BUS:        
+            TOKEN_BUS.append(entry)
 
     # ========== Token Fetching from Cache Buffer ============
 
@@ -164,6 +166,9 @@ class TokenRegistry:
         if self._loaded == True:
 
             TOKEN = self.symbol_to_token.get((exchange, trading_sym.upper()))
+
+            if not TOKEN:
+                raise Exception("TOKEN not found ")
 
             trade_symbol = self.get_symbol(exchange, TOKEN)
 
@@ -196,7 +201,7 @@ class TokenRegistry:
             return (strike_symbol)
 
         else:
-            raise Exception(f"Token not found for {symbol} in MASTER file")
+            raise Exception(f"SYMBOL not found for {symbol} in MASTER file")
 
     def get_symbol_for_Index(self,exchange: str, symbol: str, inst_type:str = "IDX", opt_type:str = "IDX" ):
 
@@ -211,7 +216,8 @@ class TokenRegistry:
                 
         if strike_symbol:
             return (strike_symbol)
-        
+        else:
+            raise Exception(f"SYMBOL not found for {symbol} in MASTER file")        
 
 # ============================================================
 # EXPIRY GENERATOR (PATH B EXTENSION)
@@ -252,21 +258,22 @@ class TokenRegistry:
 
         pt_symbol = self.get_symbol_for_Index(parent_exchange,parent_symbol)
 
-        spot_price = engine.get_ltp_rest( exchange=parent_exchange, token=pt_symbol)
+        spot_price = engine.get_ltp_rest( exchange=parent_exchange, trade_sym=pt_symbol)
 
         if spot_price is None:
             raise Exception(f"Spot price unavailable for {parent_symbol}")
 
-        strike = int(round(float(spot_price) / strike_dist) * strike_dist)
+        strike = str(int(round(float(spot_price) / strike_dist) * strike_dist))
 
         option_symbol = None
         if parent_symbol == "Nifty 50" and parent_exchange == "NSE":
-
+            # intentionally Hard-Coded for future compatibility
             option_symbol = "NIFTY"
         else:
             pass
+            
 
-        expiry = self.get_nearest_expiry(self, exchange=child_exchange, symbol=option_symbol)
+        expiry = self.get_nearest_expiry(exchange=child_exchange, symbol=option_symbol)
 
         ce_symbol = self.get_symbol_for_option(exchange=child_exchange, symbol=option_symbol, inst_type="OPTIDX", strike=strike, opt_type="CE" , expiry=expiry)
         pe_symbol = self.get_symbol_for_option(exchange=child_exchange, symbol=option_symbol, inst_type="OPTIDX", strike=strike, opt_type="PE", expiry=expiry)
@@ -277,6 +284,8 @@ class TokenRegistry:
         if ce_token and pe_token:
             return [(ce_symbol, ce_token),(pe_symbol, pe_token)]
 
+        else:
+            raise Exception ("Error: fetching CE/PE symbol & token")
 
 # ============================================================
 #   LEGACY PLACEHOLDERS (STRICT PROTOCOL)
@@ -313,4 +322,4 @@ class TokenRegistry:
 
 
 
-#_#_#_#
+#_#_#_#_#
