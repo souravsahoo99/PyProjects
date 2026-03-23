@@ -19,12 +19,15 @@ from display_monitor import DisplayMonitor
 STRATEGY_CONFIG = [
 
     {
-        "parent_symbol": "NIFTY",
+        "parent_symbol": "Nifty 50",
         "parent_exchange": "NSE",
+        
         "parent_type": "FUT",
+        
         "child_exchange": "NFO",
         "product_type": "OPT",
         "qty": 65,
+        
         "max_retry": 3,
         "strike_dist": 50
     },

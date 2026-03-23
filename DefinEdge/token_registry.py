@@ -1,5 +1,5 @@
 # ============================================================
-# TOKEN REGISTRY v11.1
+# TOKEN REGISTRY v11.2
 # Official DefineEdge Replica Engine
 # Backward Compatible | Placeholder Safe
 # ============================================================
@@ -147,12 +147,32 @@ class TokenRegistry:
 # CORE LOOKUPS
 # ============================================================
 
-    def get_token(self, exchange, symbol):
-        return self.symbol_to_token.get((exchange, symbol.upper()))
-
-
     def get_symbol(self, exchange, token):
         return self.token_to_symbol.get((exchange, str(token)))
+
+
+    def reg_inst(self,symbol_type,token):
+
+        entry = {"symbol_type": symbol_type,"token": token,"key": f"{symbol_type}|{token}"}
+        TOKEN_BUS.append(entry)
+
+    # ========== Token Fetching from Cache Buffer ============
+
+    def get_token(self, exchange, trading_sym):
+
+
+        if self._loaded == True:
+
+            TOKEN = self.symbol_to_token.get((exchange, trading_sym.upper()))
+
+            trade_symbol = self.get_symbol(exchange, TOKEN)
+
+            self.reg_inst(symbol_type=trade_symbol ,token=TOKEN)
+
+            return TOKEN
+
+        else:
+            raise Exception("Registry isn't Loaded")
 
 
 # ============================================================
@@ -173,10 +193,25 @@ class TokenRegistry:
         )
                 
         if strike_symbol:
-            return (exchange, strike_symbol)
+            return (strike_symbol)
+
         else:
             raise Exception(f"Token not found for {symbol} in MASTER file")
 
+    def get_symbol_for_Index(self,exchange: str, symbol: str, inst_type:str = "IDX", opt_type:str = "IDX" ):
+
+        strike_symbol: Union[str, None] = next(
+            (
+                i["trading_symbol"]
+                for i in self._symbol_generator()
+                if i["segment"] == exchange and i["symbol"] == symbol and i["instrument_type"] == inst_type  and i["option_type"] == opt_type 
+            ),
+            None,
+        )
+                
+        if strike_symbol:
+            return (strike_symbol)
+        
 
 # ============================================================
 # EXPIRY GENERATOR (PATH B EXTENSION)
@@ -190,15 +225,9 @@ class TokenRegistry:
 
         for i in self._symbol_generator():
 
-            if (
-                i["segment"] == exchange and
-                i["symbol"] == symbol and
-                i["instrument_type"] == "OPTIDX"
-            ):
+            if (i["segment"] == exchange and i["symbol"] == symbol and i["instrument_type"] == "OPTIDX"):
                 expiries.add(i["expiry"])
 
-        if not expiries:
-            raise Exception(f"No expiries found for {symbol}")
 
         expiry_dates = sorted([
             datetime.strptime(exp, "%d%m%Y").date()
@@ -213,87 +242,41 @@ class TokenRegistry:
 
 
 # ============================================================
-# ATM OPTIONS (UNCHANGED)
+# ATM OPTIONS (MODIFIED)
 # ============================================================
 
-    def register_atm_options(self, engine, symbol, exchange, strike_dist):
+    def register_atm_options(self, engine, parent_symbol, parent_exchange, child_exchange, strike_dist):
 
         if not self._loaded:
             raise Exception("TokenRegistry not initialized")
 
-        symbol = symbol.upper()
+        pt_symbol = self.get_symbol_for_Index(parent_exchange,parent_symbol)
 
-        spot_token = self.get_token(exchange, symbol)
-
-        if not spot_token:
-            raise Exception(f"Spot token not found for {symbol}")
-
-        spot_price = engine.get_ltp_rest(exchange, spot_token)
+        spot_price = engine.get_ltp_rest( exchange=parent_exchange, token=pt_symbol)
 
         if spot_price is None:
-            raise Exception(f"Spot price unavailable for {symbol}")
+            raise Exception(f"Spot price unavailable for {parent_symbol}")
 
         strike = int(round(float(spot_price) / strike_dist) * strike_dist)
 
-        expiry = self._get_weekly_expiry()
+        option_symbol = None
+        if parent_symbol == "Nifty 50" and parent_exchange == "NSE":
 
-        ce_symbol = f"{symbol}{expiry}C{strike}"
-        pe_symbol = f"{symbol}{expiry}P{strike}"
+            option_symbol = "NIFTY"
+        else:
+            pass
 
-        ce_token = self.get_token("NFO", ce_symbol)
-        pe_token = self.get_token("NFO", pe_symbol)
+        expiry = self.get_nearest_expiry(self, exchange=child_exchange, symbol=option_symbol)
 
-        if not ce_token or not pe_token:
-            raise Exception(f"Option tokens not found")
+        ce_symbol = self.get_symbol_for_option(exchange=child_exchange, symbol=option_symbol, inst_type="OPTIDX", strike=strike, opt_type="CE" , expiry=expiry)
+        pe_symbol = self.get_symbol_for_option(exchange=child_exchange, symbol=option_symbol, inst_type="OPTIDX", strike=strike, opt_type="PE", expiry=expiry)
 
-        self.register_instrument("NFO", ce_symbol, "OPT")
-        self.register_instrument("NFO", pe_symbol, "OPT")
+        ce_token = self.get_token(child_exchange, ce_symbol)
+        pe_token = self.get_token(child_exchange, pe_symbol)
 
-        return (ce_token, pe_token)
+        if ce_token and pe_token:
+            return [(ce_symbol, ce_token),(pe_symbol, pe_token)]
 
-
-# ============================================================
-# WS + REGISTER
-# ============================================================
-
-    def get_ws_instrument(self, exchange, symbol):
-
-        token = self.get_token(exchange, symbol)
-
-        if token:
-            return (exchange, token)
-
-        return None
-
-
-    def register_instrument(self, exchange, symbol, symbol_type):
-
-        if not self._loaded:
-            raise Exception("TokenRegistry not initialized")
-
-        token = self.get_token(exchange, symbol)
-
-        if not token:
-            raise Exception(f"{symbol} not found")
-
-        key = (exchange, token)
-
-        if key in self._registered_keys:
-            return (exchange, token)
-
-        self._registered_keys.add(key)
-
-        entry = {
-            "symbol": symbol,
-            "exchange": exchange,
-            "symbol_type": symbol_type,
-            "token": token,
-            "ws_key": f"{exchange}|{token}"
-        }
-
-        TOKEN_BUS.append(entry)
-
-        return (exchange, token)
 
 # ============================================================
 #   LEGACY PLACEHOLDERS (STRICT PROTOCOL)
