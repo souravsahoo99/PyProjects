@@ -158,21 +158,21 @@ class TokenRegistry:
         if entry not in TOKEN_BUS:        
             TOKEN_BUS.append(entry)
 
+
     # ========== Token Fetching from Cache Buffer ============
 
     def get_token(self, exchange, trading_sym):
 
-
-        if self._loaded == True:
+        if self._loaded:
 
             TOKEN = self.symbol_to_token.get((exchange, trading_sym.upper()))
 
             if not TOKEN:
                 raise Exception("TOKEN not found ")
 
-            trade_symbol = self.get_symbol(exchange, TOKEN)
+            derived_symbol = self.get_symbol(exchange, TOKEN)
 
-            self.reg_inst(symbol_type=trade_symbol ,token=TOKEN)
+            self.reg_inst(symbol_type=derived_symbol ,token=TOKEN)
 
             return TOKEN
 
