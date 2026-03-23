@@ -1,5 +1,6 @@
 # ============================================================
-# TOKEN REGISTRY v11.0
+# ============================================================
+# TOKEN REGISTRY v11.1
 # Official DefineEdge Replica Engine
 # Backward Compatible | Placeholder Safe
 # ============================================================
@@ -112,7 +113,7 @@ class TokenRegistry:
 
 
 # ________________________________________________________________
-#   LOAD MASTER (REBUILT)
+#   LOAD MASTER 
 # ----------------------------------------------------------------
 
     def load_master(self):
@@ -145,7 +146,7 @@ class TokenRegistry:
         self._loaded = True
 
 # ============================================================
-#   CORE LOOKUPS (UNCHANGED)
+#   CORE LOOKUPS 
 # ============================================================
 
     def get_token(self, exchange, symbol):
@@ -160,46 +161,43 @@ class TokenRegistry:
         return self.token_to_symbol.get((exchange, token))
 
 
-# ============================================================
-#   REGISTER INSTRUMENT (UNCHANGED)
-# ============================================================
+# =============== Custom Built Option Symbol fetcher ================  (new add-on)
 
-    def register_instrument(self, exchange, symbol, symbol_type):
+    def get_symbol_for_option(self,exchange: str, symbol: str, inst_type:str, strike:str, opt_type:str , expiry:str):
 
-        if not self._loaded:
-            raise Exception("TokenRegistry not initialized. Call load_master() first.")
 
-        symbol = symbol.upper().strip()
+        strike_symbol: Union[str, None] = next(
+            (
+                i["trading_symbol"]
+                for i in self._symbol_generator()
+                if i["segment"] == exchange and i["symbol"] == symbol and i["instrument_type"] == inst_type and i["expiry"] == expiry and i["option_type"] == opt_type  and i["strike"] == strike
+            ),
+            None,
+        )
+                
+        if strike_symbol:
+            return (exchange, strike_symbol)
+        else:
+            raise Exception(f"Token not found for {symbol} in MASTER file")
 
-        token = self.get_token(exchange, symbol)
 
-        if not token:
-            raise Exception(f"Token not found for {exchange}:{symbol}")
+# =============  EXPIRY LOGIC  ==============
 
-        key = (exchange, token)
+    def _get_weekly_expiry(self):
 
-        if key in self._registered_keys:
-            return (exchange, token)
+        today = datetime.now().date()
 
-        self._registered_keys.add(key)
+        days_to_thursday = (3 - today.weekday()) % 7
+        expiry = today + timedelta(days=days_to_thursday)
 
-        ws_key = f"{exchange}|{token}"
+        if days_to_thursday == 0:
+            expiry += timedelta(days=7)
 
-        entry = {
-            "symbol": symbol,
-            "exchange": exchange,
-            "symbol_type": symbol_type,
-            "token": token,
-            "ws_key": ws_key
-        }
-
-        TOKEN_BUS.append(entry)
-
-        return (exchange, token)
+        return expiry.strftime("%d%b%y").upper()
 
 
 # ============================================================
-#   ATM OPTION REGISTRATION (UNCHANGED CORE LOGIC)
+#   ATM OPTION REGISTRATION    ( Old Function Logic )
 # ============================================================
 
     def register_atm_options(self, engine, symbol, exchange, strike_dist):
@@ -239,23 +237,6 @@ class TokenRegistry:
 
 
 # ============================================================
-#   EXPIRY LOGIC (UNCHANGED)
-# ============================================================
-
-    def _get_weekly_expiry(self):
-
-        today = datetime.now().date()
-
-        days_to_thursday = (3 - today.weekday()) % 7
-        expiry = today + timedelta(days=days_to_thursday)
-
-        if days_to_thursday == 0:
-            expiry += timedelta(days=7)
-
-        return expiry.strftime("%d%b%y").upper()
-
-
-# ============================================================
 #   WS READY PAIR (UNCHANGED)
 # ============================================================
 
@@ -286,6 +267,44 @@ class TokenRegistry:
                 }
 
         return None
+
+
+# ============================================================
+#   REGISTER INSTRUMENT   (PlaceHolder Function)
+# ============================================================
+
+    def register_instrument(self, exchange, symbol, symbol_type):
+
+        if not self._loaded:
+            raise Exception("TokenRegistry not initialized. Call load_master() first.")
+
+        symbol = symbol.upper().strip()
+
+        token = self.get_token(exchange, symbol)
+
+        if not token:
+            raise Exception(f"Token not found for {exchange}:{symbol}")
+
+        key = (exchange, token)
+
+        if key in self._registered_keys:
+            return (exchange, token)
+
+        self._registered_keys.add(key)
+
+        ws_key = f"{exchange}|{token}"
+
+        entry = {
+            "symbol": symbol,
+            "exchange": exchange,
+            "symbol_type": symbol_type,
+            "token": token,
+            "ws_key": ws_key
+        }
+
+        TOKEN_BUS.append(entry)
+
+        return (exchange, token)
 
 
 

@@ -370,7 +370,7 @@ class EdgeApi:
     def Get_LTP(self, exchange, trading_symbol):
         
         end_   = datetime.now()
-        start_ = end_ - timedelta(seconds=1)
+        start_ = end_ - timedelta(minutes=1)
 
         tick = self.ic.historical_data(
             exchange=exchange,
@@ -381,10 +381,9 @@ class EdgeApi:
             )        
         
         df = pd.DataFrame(list(tick))
-        ltp = float(df.iloc[-1]["ltp"])        
+        ltp:str = df.iloc[-1]["ltp"]       
         
         return ltp      
-
 
     # ________________________________________________________
     # ============  Token Fetching from Symbols  =============

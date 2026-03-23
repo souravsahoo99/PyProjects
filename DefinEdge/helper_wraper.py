@@ -74,13 +74,11 @@ class APIEngine():
     @retry(tries=3, delay=1, backoff=2)
     def get_ltp_rest(self, exchange, token):
 
-        data = self.api.Get_LTP(exchange=exchange, trading_symbol=token)
-
-        if data is None:
+        df= self.api.Get_LTP(exchange=exchange, trading_symbol=token)
+        if df is None:
             return None
-        
-        return data
-    
+        else:
+            return df
 
     @retry(tries=3, delay=1, backoff=2)
     def get_tick_data_rest(self, exchange, token):

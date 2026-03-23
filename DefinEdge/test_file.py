@@ -41,12 +41,12 @@ def test_rest_ohlc(Engine):
 
 def test_rest_ltp(Engine):
     
-    print("\n========== TEST 2 : REST TIC LTP ==========\n")   
+    print("\n========== TEST 2 : REST TICK LTP ==========\n")   
 
     data = Engine.get_ltp_rest(exchange='NSE', token='Nifty 50')
 
     print(data)
-    time.sleep(3)
+
 
 def test_rest_tick_data(Engine):
 
@@ -69,13 +69,14 @@ def main():
 
     engine = APIEngine()
 
-    test_rest_ohlc(engine)
-
-    test_rest_ltp(engine)    
+    test_rest_ohlc(engine) 
 
     test_rest_tick_data(engine)
 
+    while True:
 
+        test_rest_ltp(engine)  
+        time.sleep(5)
 # ============================================================
 # ENTRY
 # ============================================================
