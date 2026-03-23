@@ -234,6 +234,8 @@ class TokenRegistry:
             if (i["segment"] == exchange and i["symbol"] == symbol and i["instrument_type"] == "OPTIDX"):
                 expiries.add(i["expiry"])
 
+        if not expiries:
+            raise Exception("No Expiry Found")
 
         expiry_dates = sorted([
             datetime.strptime(exp, "%d%m%Y").date()
@@ -270,7 +272,7 @@ class TokenRegistry:
             # intentionally Hard-Coded for future compatibility
             option_symbol = "NIFTY"
         else:
-            pass
+            raise Exception("Need Opton_Symbol Value")
             
 
         expiry = self.get_nearest_expiry(exchange=child_exchange, symbol=option_symbol)
