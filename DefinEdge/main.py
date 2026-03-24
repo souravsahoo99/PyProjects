@@ -1,16 +1,17 @@
 # ============================================================
-# MAIN TRADING ENGINE v6.0
-# ATM Options Integrated | Global Bus | WS Lifecycle Correct
+# MAIN TRADING ENGINE v6.1 (SURGICAL FIX)
+# ATM Resolution Fixed | TOKEN_BUS Compatible | No Duplicates
 # ============================================================
 
 import time
 import threading
 
 from helper_wraper import APIEngine
-from token_registry import TokenRegistry , TOKEN_BUS
+from token_registry import TokenRegistry, TOKEN_BUS
 from instrument_node import InstrumentNode
 from trade_manager import TradeManager
 from display_monitor import DisplayMonitor
+
 
 # ============================================================
 #  STRATEGY CONFIG
@@ -21,24 +22,29 @@ STRATEGY_CONFIG = [
     {
         "parent_symbol": "Nifty 50",
         "parent_exchange": "NSE",
-        
         "parent_type": "FUT",
-        
+
         "child_exchange": "NFO",
         "product_type": "OPT",
         "qty": 65,
-        
+
         "max_retry": 3,
-        "strike_dist": 50
+        "strike_dist": 50,
+
+        # runtime injected
+        "ce_token": None,
+        "pe_token": None
     },
 
     {
         "parent_symbol": "RELIANCE",
         "parent_exchange": "NSE",
         "parent_type": "IDX",
+
         "child_exchange": "NSE",
         "product_type": "STOCK",
         "qty": 10,
+
         "max_retry": 2,
         "strike_dist": None
     }
@@ -47,20 +53,19 @@ STRATEGY_CONFIG = [
 
 
 # ============================================================
-# TOKEN RESOLUTION (UNCHANGED)
+# TOKEN RESOLUTION
 # ============================================================
 
 def resolve_parent_token(registry, exchange, symbol, parent_type):
 
+    # FUT placeholder retained (no change)
     if parent_type == "FUT":
-
         futures = registry.get_futures(symbol)
-
         if futures:
             return futures[0].token
-
         return None
 
+    #  force dictionary lookup + TOKEN_BUS registration
     return registry.get_token(exchange, symbol)
 
 
@@ -108,7 +113,7 @@ def build_signal_nodes(engine, registry):
 
 
 # ============================================================
-# BUILD TRADE MANAGERS (UPDATED FOR OPTIONS)
+# BUILD TRADE MANAGERS (NO GENERATOR CALLS HERE)
 # ============================================================
 
 def build_trade_managers(engine, registry):
@@ -126,7 +131,6 @@ def build_trade_managers(engine, registry):
 
         qty = config["qty"]
         max_retry = config["max_retry"]
-        strike_dist = config.get("strike_dist")
 
         parent_token = resolve_parent_token(
             registry,
@@ -139,30 +143,18 @@ def build_trade_managers(engine, registry):
             continue
 
         child_token = parent_token
-        ce_token = None
-        pe_token = None
 
-        # ----------------------------------------------------
-        #  OPTION FLOW (NEW)
-        # ----------------------------------------------------
-
+        #  use pre-resolved tokens ONLY
         if product_type == "OPT":
 
-            try:
+            ce_token = config.get("ce_token")
+            pe_token = config.get("pe_token")
 
-                ce_token, pe_token = registry.register_atm_options(
-                    engine,
-                    parent_symbol,
-                    parent_exchange,
-                    strike_dist
-                )
-
-                child_token = ce_token
-
-            except Exception as e:
-
-                print(f"[ENGINE] ATM option registration failed → {parent_symbol} | {e}")
+            if not ce_token or not pe_token:
+                print(f"[ENGINE] Missing CE/PE tokens → {parent_symbol}")
                 continue
+
+            child_token = ce_token
 
         tm = TradeManager(
 
@@ -187,9 +179,8 @@ def build_trade_managers(engine, registry):
         )
 
         if product_type == "OPT":
-
-            tm.ce_token = ce_token
-            tm.pe_token = pe_token
+            tm.ce_token = config["ce_token"]
+            tm.pe_token = config["pe_token"]
 
         managers.append(tm)
 
@@ -204,62 +195,68 @@ def engine_bootloader():
 
     print("\n[ENGINE] Booting Trading Engine\n")
 
-    # --------------------------------------------------------
-    # INIT ENGINE
-    # --------------------------------------------------------
-
     engine = APIEngine()
     engine.market_data_map = {}
-
-    # --------------------------------------------------------
-    # INIT TOKEN REGISTRY
-    # --------------------------------------------------------
 
     registry = TokenRegistry(api=engine.api)
     registry.load_master()
 
     # --------------------------------------------------------
-    # REGISTER PARENT INSTRUMENTS
+    # REGISTER + RESOLVE TOKENS
     # --------------------------------------------------------
 
     for config in STRATEGY_CONFIG:
 
         symbol = config["parent_symbol"]
         exchange = config["parent_exchange"]
-        symbol_type = config.get("parent_type", "IDX")
+        parent_type = config.get("parent_type", "IDX")
 
         try:
-            registry.register_instrument(exchange, symbol, symbol_type)
+            #  forces TOKEN_BUS entry
+            parent_token = resolve_parent_token(registry, exchange, symbol, parent_type)
+
+            if parent_token is None:
+                raise Exception("Parent token not found")
+
         except Exception as e:
-            print(f"[ENGINE] Registration failed → {symbol} | {e}")
+            print(f"[ENGINE] Parent registration failed → {symbol} | {e}")
+            continue
 
-    # --------------------------------------------------------
-    # 🔥 REGISTER OPTIONS (BEFORE WS START)
-    # --------------------------------------------------------
-
-    for config in STRATEGY_CONFIG:
+        # ----------------------------------------------------
+        #  ATM RESOLUTION (ONLY ONCE HERE)
+        # ----------------------------------------------------
 
         if config["product_type"] == "OPT":
 
             try:
-                registry.register_atm_options(
+
+                result = registry.register_atm_options(
                     engine,
                     config["parent_symbol"],
                     config["parent_exchange"],
+                    config["child_exchange"],
                     config["strike_dist"]
                 )
+
+                (ce_symbol, ce_token), (pe_symbol, pe_token) = result
+
+                config["ce_token"] = ce_token
+                config["pe_token"] = pe_token
+
             except Exception as e:
-                print(f"[ENGINE] Pre-WS option registration failed → {config['parent_symbol']} | {e}")
+
+                print(f"[ENGINE] ATM option registration failed → {symbol} | {e}")
+                continue
 
     # --------------------------------------------------------
-    # SUBSCRIBE USING GLOBAL TOKEN BUS
+    # SUBSCRIBE
     # --------------------------------------------------------
 
     for inst in TOKEN_BUS:
         engine.subscribe(inst["exchange"], inst["token"])
 
     # --------------------------------------------------------
-    # START WEBSOCKET
+    # WS START
     # --------------------------------------------------------
 
     engine.start_ws()
@@ -287,7 +284,7 @@ def engine_bootloader():
         threading.Thread(target=tm.run, daemon=True).start()
 
     # --------------------------------------------------------
-    # MAIN LOOP
+    # LOOP
     # --------------------------------------------------------
 
     try:
@@ -347,4 +344,5 @@ if __name__ == "__main__":
 
 
 
-#_#_
+
+#_#_#
