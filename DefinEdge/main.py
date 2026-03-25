@@ -18,15 +18,19 @@ from display_monitor import DisplayMonitor
 # ============================================================
 
 STRATEGY_CONFIG = [
-
     {
-        "parent_symbol": "Nifty 50",
-        "parent_exchange": "NSE",
-        "parent_type": "FUT",
+        "parent_IDX_Symbol" : "Nifty 50",
+        "parent_IDX_Exchange": "NSE",
+        "parent_IDX_Type" : "IDX",
+
+        "parent_symbol": "NIFTY",        
+        "parent_exchange": "NFO",      
+        "parent_type": "FUTIDX",
 
         "child_exchange": "NFO",
-        "product_type": "OPT",
-        "qty": 65,
+        "product_type": "OPTIDX",
+        "qty": int(65),
+        "lot_size":int(2),
 
         "max_retry": 3,
         "strike_dist": 50,
@@ -37,20 +41,50 @@ STRATEGY_CONFIG = [
     },
 
     {
-        "parent_symbol": "RELIANCE",
-        "parent_exchange": "NSE",
-        "parent_type": "IDX",
+        "parent_IDX_Symbol" : "Nifty Bank",
+        "parent_IDX_Exchange": "NSE",
+        "parent_IDX_Type" : "IDX",
 
-        "child_exchange": "NSE",
-        "product_type": "STOCK",
-        "qty": 10,
+        "parent_symbol": "BANKNIFTY",        
+        "parent_exchange": "NFO",      
+        "parent_type": "FUTIDX",
+
+        "child_exchange": "NFO",
+        "product_type": "OPTIDX",
+        "qty": int(30),
+        "lot_size":int(4),
 
         "max_retry": 2,
-        "strike_dist": None
-    }
+        "strike_dist": 100,
 
+        # runtime injected
+        "ce_token": None,
+        "pe_token": None
+    },
+
+    {
+        "parent_IDX_Symbol" : "RELIANCE",
+        "parent_IDX_Exchange": "NSE",
+        "parent_IDX_Type" : "EQ",
+
+        "parent_symbol": "RELIANCE",        
+        "parent_exchange": "NFO",      
+        "parent_type": "FUTIDX",
+
+
+        "child_exchange": "NSE",
+        "product_type": "EQ",
+        "qty": int(5),
+        "lot_size":int(1),
+
+        "max_retry": 1,
+        "strike_dist": None,
+       
+        # runtime injected
+        "ce_token": None,
+        "pe_token": None
+    },
 ]
-
 
 # ============================================================
 # TOKEN RESOLUTION
