@@ -30,22 +30,6 @@ load_dotenv(dotenv_file)
 totp_secret = os.getenv("EDGE_TOTP_SECRET")
 
 # ============================================================
-#  ORDER OBJECT
-# ============================================================
-
-class Order:
-    def __init__(self, security_id, exchange_segment, transaction_type,
-                 quantity, order_type, product_type, price: float = 0.0):
-        self.security_id = security_id
-        self.exchange_segment = exchange_segment
-        self.transaction_type = transaction_type
-        self.quantity = quantity
-        self.order_type = order_type
-        self.product_type = product_type
-        self.price = price
-
-
-# ============================================================
 #   DEFINEEDGE API CLASS
 # ============================================================
 
@@ -262,17 +246,25 @@ class EdgeApi:
     #     IntegrateOrders  METHODS
     # ========================================================
 
-    def Place_Order(self, order: Order):
-
-        return self.io.place_order(
-            exchange=order.exchange_segment,
-            order_type=order.transaction_type,
-            price=order.price,
-            price_type="MARKET",
-            product_type=order.product_type,
-            quantity=order.quantity,
-            tradingsymbol=order.security_id
+    def Place_Order(self,exchange: str,order_type: str,price: float,price_type: str,product_type: str,quantity: int,tradingsymbol: str,):
+        
+        order = self.io.place_order( 
+            exchange=exchange,
+            order_type=order_type,
+            price=price,
+            price_type=price_type,
+            product_type=product_type,
+            quantity=quantity,
+            tradingsymbol=tradingsymbol,
         )
+            
+
+        info(f"Order placed: {order}")
+
+        # Get status of a single order.
+        info(io.order(order_id=order["order_id"]))
+
+        return order
 
 
     def Modify_Order(self,order_id,order_type,leg_name,quantity,price,trigger_price,disclosed_quantity,validity):
