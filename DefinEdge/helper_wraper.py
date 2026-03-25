@@ -36,7 +36,7 @@ class APIEngine():
 
         # WEBSOCKET STATE
         self._is_ws_connected = False
-        self._subscribed_instruments = set()
+        self._subscribed_instruments: list= []
 
         # THREAD FLAGS
         self._router_running = False
