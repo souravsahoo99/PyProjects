@@ -69,7 +69,7 @@ STRATEGY_CONFIG = [
 
         "parent_symbol": "RELIANCE",        
         "parent_exchange": "NFO",      
-        "parent_type": "FUTIDX",
+        "parent_type": "FUTSTK",
 
 
         "child_exchange": "NSE",
@@ -91,27 +91,27 @@ STRATEGY_CONFIG = [
         "parent_IDX_Type" : "EQ",
 
         "parent_symbol": "RELIANCE",        
-        "parent_exchange": "NSE",      
-        "parent_type": "EQ",
+        "parent_exchange": "NFO",      
+        "parent_type": "FUTSTK",
 
 
         "child_exchange": "NFO",
-        "product_type": "FUTIDX",
+        "product_type": "OPTSTK",
         "qty": int(500),
         "lot_size":int(1),
 
-        "max_retry": 1,
+        "max_retry": 2,
         "strike_dist": None,
        
         # runtime injected
         "ce_token": None,
         "pe_token": None
     },
-
 ]
 
+
 # ============================================================
-# TOKEN RESOLUTION
+# TOKEN RESOLUTION   
 # ============================================================
 
 def resolve_parent_token(registry, exchange, symbol, parent_type):
