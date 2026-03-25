@@ -84,6 +84,30 @@ STRATEGY_CONFIG = [
         "ce_token": None,
         "pe_token": None
     },
+
+    {
+        "parent_IDX_Symbol" : "RELIANCE",
+        "parent_IDX_Exchange": "NSE",
+        "parent_IDX_Type" : "EQ",
+
+        "parent_symbol": "RELIANCE",        
+        "parent_exchange": "NSE",      
+        "parent_type": "EQ",
+
+
+        "child_exchange": "NFO",
+        "product_type": "FUTIDX",
+        "qty": int(500),
+        "lot_size":int(1),
+
+        "max_retry": 1,
+        "strike_dist": None,
+       
+        # runtime injected
+        "ce_token": None,
+        "pe_token": None
+    },
+
 ]
 
 # ============================================================
