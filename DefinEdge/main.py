@@ -17,18 +17,19 @@ from display_monitor import DisplayMonitor
 #  STRATEGY CONFIG
 # ============================================================
 
+
 STRATEGY_CONFIG = [
     {
-        "parent_IDX_Symbol" : "Nifty 50",
-        "parent_IDX_Exchange": "NSE",
-        "parent_IDX_Type" : "IDX",
+        "parent_IDX_symbol" : "Nifty 50",
+        "parent_IDX_exchange": "NSE",
+        "parent_IDX_inst_type" : "IDX",
 
         "parent_symbol": "NIFTY",        
         "parent_exchange": "NFO",      
-        "parent_type": "FUTIDX",
+        "parent_inst_type": "FUTIDX",
 
-        "child_exchange": "NFO",
-        "product_type": "OPTIDX",
+        "child_exchange" : "NFO",
+        "child_inst_type": "OPTIDX",
         "qty": int(65),
         "lot_size":int(2),
 
@@ -41,16 +42,39 @@ STRATEGY_CONFIG = [
     },
 
     {
-        "parent_IDX_Symbol" : "Nifty Bank",
-        "parent_IDX_Exchange": "NSE",
-        "parent_IDX_Type" : "IDX",
+        "parent_IDX_symbol" : "NIFTYBEES",
+        "parent_IDX_exchange": "NSE",
+        "parent_IDX_inst_type" : "EQ",
+
+        "parent_symbol": "Nifty 50",        
+        "parent_exchange": "NSE",      
+        "parent_inst_type": "IDX",
+
+
+        "child_exchange" : "NSE",
+        "child_inst_type": "EQ",
+        "qty": int(0),
+        "lot_size":int(1),
+
+        "max_retry": 2,
+        "strike_dist": None,
+       
+        # runtime injected
+        "ce_token": None,
+        "pe_token": None
+    },
+
+    {
+        "parent_IDX_symbol" : "Nifty Bank",
+        "parent_IDX_exchange": "NSE",
+        "parent_IDX_inst_type" : "IDX",
 
         "parent_symbol": "BANKNIFTY",        
         "parent_exchange": "NFO",      
-        "parent_type": "FUTIDX",
+        "parent_inst_type": "FUTIDX",
 
-        "child_exchange": "NFO",
-        "product_type": "OPTIDX",
+        "child_exchange" : "NFO",
+        "child_inst_type": "OPTIDX",
         "qty": int(30),
         "lot_size":int(4),
 
@@ -63,17 +87,17 @@ STRATEGY_CONFIG = [
     },
 
     {
-        "parent_IDX_Symbol" : "RELIANCE",
-        "parent_IDX_Exchange": "NSE",
-        "parent_IDX_Type" : "EQ",
+        "parent_IDX_symbol" : "RELIANCE",
+        "parent_IDX_exchange": "NSE",
+        "parent_IDX_inst_type" : "EQ",
 
         "parent_symbol": "RELIANCE",        
         "parent_exchange": "NFO",      
-        "parent_type": "FUTSTK",
+        "parent_inst_type": "FUTSTK",
 
 
-        "child_exchange": "NSE",
-        "product_type": "EQ",
+        "child_exchange"    : "NSE",
+        "child_inst_type": "EQ",
         "qty": int(5),
         "lot_size":int(1),
 
@@ -86,18 +110,111 @@ STRATEGY_CONFIG = [
     },
 
     {
-        "parent_IDX_Symbol" : "RELIANCE",
-        "parent_IDX_Exchange": "NSE",
-        "parent_IDX_Type" : "EQ",
+        "parent_IDX_symbol" : "SBIN",
+        "parent_IDX_exchange": "NSE",
+        "parent_IDX_inst_type" : "EQ",
 
-        "parent_symbol": "RELIANCE",        
+        "parent_symbol": "SBIN",        
         "parent_exchange": "NFO",      
-        "parent_type": "FUTSTK",
+        "parent_inst_type": "FUTSTK",
 
 
         "child_exchange": "NFO",
-        "product_type": "OPTSTK",
+        "child_inst_type": "OPTSTK",
         "qty": int(500),
+        "lot_size":int(1),
+
+        "max_retry": 2,
+        "strike_dist": None,
+       
+        # runtime injected
+        "ce_token": None,
+        "pe_token": None
+    },
+
+    {
+        "parent_IDX_symbol" : "NATGASMINI",
+        "parent_IDX_exchange": "MCX",
+        "parent_IDX_inst_type" : "FUTCOM",
+
+        "parent_symbol": "NATURALGAS",        
+        "parent_exchange": "MCX",      
+        "parent_inst_type": "FUTCOM",
+
+
+        "child_exchange": "MCX",
+        "child_inst_type": "FUTCOM",
+        "qty": int(250),
+        "lot_size":int(1),
+
+        "max_retry": 2,
+        "strike_dist": None,
+       
+        # runtime injected
+        "ce_token": None,
+        "pe_token": None
+    },
+
+    {
+        "parent_IDX_symbol" : "GOLDM",
+        "parent_IDX_exchange": "MCX",
+        "parent_IDX_inst_type" : "FUTCOM",
+
+        "parent_symbol": "GOLD",        
+        "parent_exchange": "MCX",      
+        "parent_inst_type": "FUTCOM",
+
+
+        "child_exchange": "MCX",
+        "child_inst_type": "OPTFUT",
+        "qty": int(100),
+        "lot_size":int(1),
+
+        "max_retry": 2,
+        "strike_dist": None,
+       
+        # runtime injected
+        "ce_token": None,
+        "pe_token": None
+    },    
+
+    {
+        "parent_IDX_symbol" : "GOLDBEES",
+        "parent_IDX_exchange": "NSE",
+        "parent_IDX_inst_type" : "EQ",
+
+        "parent_symbol": "GOLDM",        
+        "parent_exchange": "MCX",      
+        "parent_inst_type": "FUTCOM",
+
+
+        "child_exchange": "NSE",
+        "child_inst_type": "EQ",
+        "qty": int(5),
+        "lot_size":int(1),
+
+        "max_retry": 2,
+        "strike_dist": None,
+       
+        # runtime injected
+        "ce_token": None,
+        "pe_token": None
+    },
+
+
+    {
+        "parent_IDX_symbol" : "SILVERBEES",
+        "parent_IDX_exchange": "NSE",
+        "parent_IDX_inst_type" : "EQ",
+
+        "parent_symbol": "SILVER",        
+        "parent_exchange": "MCX",      
+        "parent_inst_type": "FUTCOM",
+
+
+        "child_exchange": "NSE",
+        "child_inst_type": "EQ",
+        "qty": int(3),
         "lot_size":int(1),
 
         "max_retry": 2,
