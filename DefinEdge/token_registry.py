@@ -39,7 +39,7 @@ class TokenRegistry:
 
         self._loaded = False
 
-        self._registered_keys = set()   # (exchange, token)
+        self._registered_keys: list= []   # list[(exchange, token), ]
         # ____________________________________________________
         # INTERNAL STORAGE
         # ----------------------------------------------------
