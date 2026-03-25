@@ -22,9 +22,9 @@ api_token = os.getenv("EDGE_API_TOKEN")
 api_secret = os.getenv("EDGE_API_SECRET")
 
 
-# ============================================================
-# API ENGINE
-# ============================================================
+# ===========================================================
+#     API - ENGINE
+# ===========================================================
 
 class APIEngine():
 
@@ -50,18 +50,38 @@ class APIEngine():
         # WS HEALTH
         self._last_tick_time = time.time()
 
+# ============ Resolute Exchange as per Broker ==============
 
+    def _resolute_exchange(self,exchange):
+        
+        exc = None
+
+        if exchange == "NSE" or "Nse":
+            exc = self.api.c2i.EXCHANGE_TYPE_NSE
+        elif exchange == "BSE" or "Bse":
+            exc = self.api.c2i.EXCHANGE_TYPE_BSE
+        elif exchange == "NFO" or "Nfo":
+            exc = self.api.c2i.EXCHANGE_TYPE_NFO
+        elif exchange == "BFO" or "Bfo":
+            exc = self.api.c2i.EXCHANGE_TYPE_BFO
+        elif exchange == "MCX" or "Mcx":
+            exc = self.api.c2i.EXCHANGE_TYPE_MCX            
+        elif exchange == "CDS" or "Cds":
+            exc = self.api.c2i.EXCHANGE_TYPE_CDS
+
+        return exc
+    
 # ============================================================
 # REST data (UNCHANGED)
 # ============================================================
 
     @retry(tries=3, delay=2, backoff=2)
     def get_ohlc(self, exchange, trade_sym, start, interval="min"):
-
+        exc= self._resolute_exchange(exchange)
         now = datetime.now()
 
         raw = self.api.Get_Intraday_Data(
-            exchange=exchange,
+            exchange=exc,
             trading_symbol=trade_sym,
             timeframe=interval,
             start=start,
@@ -73,12 +93,12 @@ class APIEngine():
 
     @retry(tries=3, delay=1, backoff=2)
     def get_tick_data_rest(self, exchange, trade_sym):
-
+        exc= self._resolute_exchange(exchange)
         now = datetime.now()
         start = now - timedelta(minutes=1)
 
         price = self.api.Get_Tick_Data(
-            exchange=exchange,
+            exchange=exc,
             trading_symbol=trade_sym,
             start=start,
             end=now
@@ -91,8 +111,8 @@ class APIEngine():
 
     @retry(tries=1, delay=1, backoff=1)
     def get_ltp_rest(self, exchange, trade_sym):
-
-        df= self.api.Get_LTP(exchange=exchange, trading_symbol=trade_sym)
+        exc= self._resolute_exchange(exchange)
+        df= self.api.Get_LTP(exchange=exc, trading_symbol=trade_sym)
         if df is None:
             return None
         else:
@@ -102,24 +122,9 @@ class APIEngine():
 # REST ORDER PLACING
 # ============================================================
 
-    def place_market(self,exchange,order_type,quantity,trading_symbol):
+    def place_market(self,exchange,order_type,trading_symbol,quantity:int):
 
-        Exchange_ = None
-
-        if exchange == "NSE" or "Nse":
-            Exchange_ = self.api.c2i.EXCHANGE_TYPE_NSE
-        elif exchange == "BSE" or "Bse":
-            Exchange_ = self.api.c2i.EXCHANGE_TYPE_BSE
-        elif exchange == "NFO" or "Nfo":
-            Exchange_ = self.api.c2i.EXCHANGE_TYPE_NFO
-        elif exchange == "BFO" or "Bfo":
-            Exchange_ = self.api.c2i.EXCHANGE_TYPE_BFO
-        elif exchange == "MCX" or "Mcx":
-            Exchange_ = self.api.c2i.EXCHANGE_TYPE_MCX            
-        elif exchange == "CDS" or "Cds":
-            Exchange_ = self.api.c2i.EXCHANGE_TYPE_CDS
-
-
+        Exchange_ = self._resolute_exchange(exchange)
         Order_type = None
 
         if order_type == "BUY" or "Buy" or "buy" or "B":
@@ -138,24 +143,9 @@ class APIEngine():
         )
     # =========== LIMIT ORDER ===========
 
-    def place_limit(self,exchange,order_type,price,price_type,quantity,trading_symbol):
+    def place_limit(self,exchange,order_type,trading_symbol,quantity:int,price:float):
 
-        Exchange_ = None
-
-        if exchange == "NSE" or "Nse":
-            Exchange_ = self.api.c2i.EXCHANGE_TYPE_NSE
-        elif exchange == "BSE" or "Bse":
-            Exchange_ = self.api.c2i.EXCHANGE_TYPE_BSE
-        elif exchange == "NFO" or "Nfo":
-            Exchange_ = self.api.c2i.EXCHANGE_TYPE_NFO
-        elif exchange == "BFO" or "Bfo":
-            Exchange_ = self.api.c2i.EXCHANGE_TYPE_BFO
-        elif exchange == "MCX" or "Mcx":
-            Exchange_ = self.api.c2i.EXCHANGE_TYPE_MCX            
-        elif exchange == "CDS" or "Cds":
-            Exchange_ = self.api.c2i.EXCHANGE_TYPE_CDS
-
-
+        Exchange_ = self._resolute_exchange(exchange)
         Order_type = None
 
         if order_type == "BUY" or "Buy" or "buy" or "B":
@@ -172,6 +162,29 @@ class APIEngine():
             quantity=quantity,
             tradingsymbol=trading_symbol,
         )
+
+# ============================================================
+#  ORDER CONFIRMATION (REST Based)
+# ============================================================
+
+    def confirm_order_execution(self, order_id):
+
+        order_Id = str(order_id)
+
+        if order_id is not None: 
+            status1 = self.api.Get_Order_By_ID(order_Id)
+            status2 = self.api.Get_Positions()
+            status3 = self.api.Get_TradeBook()
+            status4 = self.api.Get_Orderbook()
+
+            if status1 == "COMPLETED" :
+                return True
+        
+            elif status2 ==  "ACTIVE" :
+                return True
+            
+            else:
+                return False
 
 
 # ============================================================
@@ -347,8 +360,9 @@ class APIEngine():
 # ============================================================
 
     def get_ltp_live(self, exchange, token):
-
-        key = f"{exchange}|{token}"
+        
+        Exchange_ = self._resolute_exchange(exchange)
+        key = f"{Exchange_}|{token}"
 
         with self.api._tick_lock:
 
@@ -360,8 +374,6 @@ class APIEngine():
                 except Exception:
                     return None
 
-        return None
-
 
 # ============================================================
 # BEST LTP (UNCHANGED)
@@ -370,32 +382,11 @@ class APIEngine():
     def get_best_ltp(self, exchange, token):
 
         ltp = self.get_ltp_live(exchange, token)
+        
         if ltp is not None:
             return ltp
-
-        return self.get_ltp_rest(exchange, token)
-
-
-# ============================================================
-# ORDER CONFIRMATION (UNCHANGED)
-# ============================================================
-
-    def confirm_order_execution(self, order_id):
-
-        order_id = str(order_id)
-
-        with self._order_lock:
-            status = self._order_buffer.get(order_id)
-
-        if status:
-
-            status = status.upper()
-
-            if status in ["TRADED", "FILLED", "COMPLETE", "EXECUTED"]:
-                return True
-
-        else: 
-            status = self.api.Get_Order_By_ID(order_id)
+        else :
+            return self.get_ltp_rest(exchange, token)
 
 
 # ============================================================
