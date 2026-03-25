@@ -228,7 +228,7 @@ STRATEGY_CONFIG = [
 
 
 # ============================================================
-# TOKEN RESOLUTION   
+# TOKEN RESOLUTION   (unsolved)
 # ============================================================
 
 def resolve_parent_token(registry, exchange, symbol, parent_type):
@@ -245,7 +245,7 @@ def resolve_parent_token(registry, exchange, symbol, parent_type):
 
 
 # ============================================================
-# NODE SCOPE
+# NODE SCOPE (unsolved)
 # ============================================================
 
 def resolve_node_scope(product_type):
