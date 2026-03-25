@@ -1,5 +1,5 @@
 # ============================================================
-# HELPER WRAPPER v3.2
+# HELPER WRAPPER v3.3
 # Broker Wrapper Layer (DefineEdge Backend)
 # Production Safe Version
 # Thread Safe + WS safe
@@ -56,13 +56,13 @@ class APIEngine():
 # ============================================================
 
     @retry(tries=3, delay=2, backoff=2)
-    def get_ohlc(self, exchange, token, start, interval="min"):
+    def get_ohlc(self, exchange, trade_sym, start, interval="min"):
 
         now = datetime.now()
 
         raw = self.api.Get_Intraday_Data(
             exchange=exchange,
-            trading_symbol=token,
+            trading_symbol=trade_sym,
             timeframe=interval,
             start=start,
             end=now
@@ -72,23 +72,14 @@ class APIEngine():
 
 
     @retry(tries=3, delay=1, backoff=2)
-    def get_ltp_rest(self, exchange, token):
-
-        df= self.api.Get_LTP(exchange=exchange, trading_symbol=token)
-        if df is None:
-            return None
-        else:
-            return df
-
-    @retry(tries=3, delay=1, backoff=2)
-    def get_tick_data_rest(self, exchange, token):
+    def get_tick_data_rest(self, exchange, trade_sym):
 
         now = datetime.now()
         start = now - timedelta(minutes=1)
 
         price = self.api.Get_Tick_Data(
             exchange=exchange,
-            trading_symbol=token,
+            trading_symbol=trade_sym,
             start=start,
             end=now
         )
@@ -97,6 +88,90 @@ class APIEngine():
             return None
 
         return pd.DataFrame(list(price))
+
+    @retry(tries=1, delay=1, backoff=1)
+    def get_ltp_rest(self, exchange, trade_sym):
+
+        df= self.api.Get_LTP(exchange=exchange, trading_symbol=trade_sym)
+        if df is None:
+            return None
+        else:
+            return df
+        
+# ============================================================
+# REST ORDER PLACING
+# ============================================================
+
+    def place_market(self,exchange,order_type,quantity,trading_symbol):
+
+        Exchange_ = None
+
+        if exchange == "NSE" or "Nse":
+            Exchange_ = self.api.c2i.EXCHANGE_TYPE_NSE
+        elif exchange == "BSE" or "Bse":
+            Exchange_ = self.api.c2i.EXCHANGE_TYPE_BSE
+        elif exchange == "NFO" or "Nfo":
+            Exchange_ = self.api.c2i.EXCHANGE_TYPE_NFO
+        elif exchange == "BFO" or "Bfo":
+            Exchange_ = self.api.c2i.EXCHANGE_TYPE_BFO
+        elif exchange == "MCX" or "Mcx":
+            Exchange_ = self.api.c2i.EXCHANGE_TYPE_MCX            
+        elif exchange == "CDS" or "Cds":
+            Exchange_ = self.api.c2i.EXCHANGE_TYPE_CDS
+
+
+        Order_type = None
+
+        if order_type == "BUY" or "Buy" or "buy" or "B":
+            Order_type = self.api.c2i.ORDER_TYPE_BUY
+        elif order_type == "SELL" or "Sell" or "sell" or "S":
+            Order_type =self.api.c2i.ORDER_TYPE_SELL
+
+        self.api.Place_Order(
+            exchange=Exchange_,
+            order_type=Order_type,
+            price=0.0,
+            price_type=self.api.c2i.PRICE_TYPE_MARKET,
+            product_type=self.api.c2i.PRODUCT_TYPE_NORMAL,
+            quantity=quantity,
+            tradingsymbol=trading_symbol,
+        )
+    # =========== LIMIT ORDER ===========
+
+    def place_limit(self,exchange,order_type,price,price_type,quantity,trading_symbol):
+
+        Exchange_ = None
+
+        if exchange == "NSE" or "Nse":
+            Exchange_ = self.api.c2i.EXCHANGE_TYPE_NSE
+        elif exchange == "BSE" or "Bse":
+            Exchange_ = self.api.c2i.EXCHANGE_TYPE_BSE
+        elif exchange == "NFO" or "Nfo":
+            Exchange_ = self.api.c2i.EXCHANGE_TYPE_NFO
+        elif exchange == "BFO" or "Bfo":
+            Exchange_ = self.api.c2i.EXCHANGE_TYPE_BFO
+        elif exchange == "MCX" or "Mcx":
+            Exchange_ = self.api.c2i.EXCHANGE_TYPE_MCX            
+        elif exchange == "CDS" or "Cds":
+            Exchange_ = self.api.c2i.EXCHANGE_TYPE_CDS
+
+
+        Order_type = None
+
+        if order_type == "BUY" or "Buy" or "buy" or "B":
+            Order_type = self.api.c2i.ORDER_TYPE_BUY
+        elif order_type == "SELL" or "Sell" or "sell" or "S":
+            Order_type =self.api.c2i.ORDER_TYPE_SELL
+
+        self.api.Place_Order(
+            exchange=Exchange_,
+            order_type=Order_type,
+            price=price,
+            price_type=self.api.c2i.PRICE_TYPE_LIMIT,
+            product_type=self.api.c2i.PRODUCT_TYPE_NORMAL,
+            quantity=quantity,
+            tradingsymbol=trading_symbol,
+        )
 
 
 # ============================================================
@@ -352,4 +427,4 @@ class APIEngine():
 
 
 
-#_#_#_#_
+#_#_#_#_#
