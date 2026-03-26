@@ -61,7 +61,7 @@ class EdgeApi:
 
         # SUBSCRIPTION STATE (DefineEdge MODEL)
         self._subscribed: list[tuple[str, str]] = []     # [(iws.c2i.EXCHANGE_TYPE_NSE, "11536"),(iws.c2i.EXCHANGE_TYPE_NSE, "3456"),]
-                                                         # [("NSE", "26000"),("NSE", "26009"),("NFO", "66022"),("NFO", "66023")]
+        
         self._login()
         self._integrateData(self.c2i)
         self._integrateOrders(self.c2i)

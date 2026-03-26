@@ -32,31 +32,31 @@ def test_rest_ohlc(Engine):
     days_ago = datetime.now() - timedelta(days=10)
     start_ = days_ago.replace(hour=9, minute=15, second=0, microsecond=0)
 
-    data = Engine.get_ohlc(exchange='NSE',trade_sym='Nifty 50',start=start_ ,interval= "min")
+    data = Engine.get_ohlc(exchange='NSE',token='Nifty 50',start=start_ ,interval= "min")
 
     print("\n***** Fetched OHLC Data *****\n")
 
     print(data.iloc[-15:])
 
 
+def test_rest_ltp(Engine):
+    
+    print("\n========== TEST 2 : REST TICK LTP ==========\n")   
+
+    data = Engine.get_ltp_rest(exchange='NSE', token='Nifty 50')
+
+    print(data)
+
+
 def test_rest_tick_data(Engine):
 
-    print("\n========== TEST 2 : REST TICK DATA ==========\n")
+    print("\n========== TEST 3 : REST TICK DATA ==========\n")
 
-    data = Engine.get_tick_data_rest(exchange='NSE',trade_sym='Nifty 50')
+    data = Engine.get_tick_data_rest(exchange='NSE',token='Nifty 50')
 
     print("\n***** Fetched Tick Data *****\n")
 
     print(data.iloc[-15:])
-
-
-def test_rest_ltp(Engine):
-    
-    print("\n========== TEST 3 : REST TICK LTP ==========\n")   
-
-    data = Engine.get_ltp_rest(exchange='NSE', trade_sym='Nifty 50')
-
-    print(data)
 
 
 # ============================================================

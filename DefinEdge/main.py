@@ -1,6 +1,6 @@
 # ============================================================
-# MAIN TRADING ENGINE v6.1 (SURGICAL FIX)
-# ATM Resolution Fixed | TOKEN_BUS Compatible | No Duplicates
+# MAIN TRADING ENGINE v8.0 (UNIFIED)
+# Single File: Config + Resolver + Engine
 # ============================================================
 
 import time
@@ -14,272 +14,157 @@ from display_monitor import DisplayMonitor
 
 
 # ============================================================
-#  STRATEGY CONFIG
+# STRATEGY CONFIG (LOCKED)
 # ============================================================
-
 
 STRATEGY_CONFIG = [
     {
-        "parent_IDX_symbol" : "Nifty 50",
+        "parent_IDX_symbol": "Nifty 50",
         "parent_IDX_exchange": "NSE",
-        "parent_IDX_inst_type" : "IDX",
+        "parent_IDX_inst_type": "IDX",
 
-        "parent_symbol": "NIFTY",        
-        "parent_exchange": "NFO",      
+        "parent_symbol": "NIFTY",
+        "parent_exchange": "NFO",
         "parent_inst_type": "FUTIDX",
 
-        "child_exchange" : "NFO",
+        "child_exchange": "NFO",
         "child_inst_type": "OPTIDX",
-        "qty": int(65),
-        "lot_size":int(2),
+        "qty": 65,
+        "lot_size": 2,
 
         "max_retry": 3,
         "strike_dist": 50,
 
-        # runtime injected
         "ce_token": None,
         "pe_token": None
     },
 
     {
-        "parent_IDX_symbol" : "NIFTYBEES",
+        "parent_IDX_symbol": "RELIANCE",
         "parent_IDX_exchange": "NSE",
-        "parent_IDX_inst_type" : "EQ",
+        "parent_IDX_inst_type": "EQ",
 
-        "parent_symbol": "Nifty 50",        
-        "parent_exchange": "NSE",      
-        "parent_inst_type": "IDX",
-
-
-        "child_exchange" : "NSE",
-        "child_inst_type": "EQ",
-        "qty": int(0),
-        "lot_size":int(1),
-
-        "max_retry": 2,
-        "strike_dist": None,
-       
-        # runtime injected
-        "ce_token": None,
-        "pe_token": None
-    },
-
-    {
-        "parent_IDX_symbol" : "Nifty Bank",
-        "parent_IDX_exchange": "NSE",
-        "parent_IDX_inst_type" : "IDX",
-
-        "parent_symbol": "BANKNIFTY",        
-        "parent_exchange": "NFO",      
-        "parent_inst_type": "FUTIDX",
-
-        "child_exchange" : "NFO",
-        "child_inst_type": "OPTIDX",
-        "qty": int(30),
-        "lot_size":int(4),
-
-        "max_retry": 2,
-        "strike_dist": 100,
-
-        # runtime injected
-        "ce_token": None,
-        "pe_token": None
-    },
-
-    {
-        "parent_IDX_symbol" : "RELIANCE",
-        "parent_IDX_exchange": "NSE",
-        "parent_IDX_inst_type" : "EQ",
-
-        "parent_symbol": "RELIANCE",        
-        "parent_exchange": "NFO",      
+        "parent_symbol": "RELIANCE",
+        "parent_exchange": "NFO",
         "parent_inst_type": "FUTSTK",
 
-
-        "child_exchange"    : "NSE",
+        "child_exchange": "NSE",
         "child_inst_type": "EQ",
-        "qty": int(5),
-        "lot_size":int(1),
+        "qty": 5,
+        "lot_size": 1,
 
         "max_retry": 1,
         "strike_dist": None,
-       
-        # runtime injected
+
         "ce_token": None,
         "pe_token": None
-    },
-
-    {
-        "parent_IDX_symbol" : "SBIN",
-        "parent_IDX_exchange": "NSE",
-        "parent_IDX_inst_type" : "EQ",
-
-        "parent_symbol": "SBIN",        
-        "parent_exchange": "NFO",      
-        "parent_inst_type": "FUTSTK",
-
-
-        "child_exchange": "NFO",
-        "child_inst_type": "OPTSTK",
-        "qty": int(500),
-        "lot_size":int(1),
-
-        "max_retry": 2,
-        "strike_dist": None,
-       
-        # runtime injected
-        "ce_token": None,
-        "pe_token": None
-    },
-
-    {
-        "parent_IDX_symbol" : "NATGASMINI",
-        "parent_IDX_exchange": "MCX",
-        "parent_IDX_inst_type" : "FUTCOM",
-
-        "parent_symbol": "NATURALGAS",        
-        "parent_exchange": "MCX",      
-        "parent_inst_type": "FUTCOM",
-
-
-        "child_exchange": "MCX",
-        "child_inst_type": "FUTCOM",
-        "qty": int(250),
-        "lot_size":int(1),
-
-        "max_retry": 2,
-        "strike_dist": None,
-       
-        # runtime injected
-        "ce_token": None,
-        "pe_token": None
-    },
-
-    {
-        "parent_IDX_symbol" : "GOLDM",
-        "parent_IDX_exchange": "MCX",
-        "parent_IDX_inst_type" : "FUTCOM",
-
-        "parent_symbol": "GOLD",        
-        "parent_exchange": "MCX",      
-        "parent_inst_type": "FUTCOM",
-
-
-        "child_exchange": "MCX",
-        "child_inst_type": "OPTFUT",
-        "qty": int(100),
-        "lot_size":int(1),
-
-        "max_retry": 2,
-        "strike_dist": None,
-       
-        # runtime injected
-        "ce_token": None,
-        "pe_token": None
-    },    
-
-    {
-        "parent_IDX_symbol" : "GOLDBEES",
-        "parent_IDX_exchange": "NSE",
-        "parent_IDX_inst_type" : "EQ",
-
-        "parent_symbol": "GOLDM",        
-        "parent_exchange": "MCX",      
-        "parent_inst_type": "FUTCOM",
-
-
-        "child_exchange": "NSE",
-        "child_inst_type": "EQ",
-        "qty": int(5),
-        "lot_size":int(1),
-
-        "max_retry": 2,
-        "strike_dist": None,
-       
-        # runtime injected
-        "ce_token": None,
-        "pe_token": None
-    },
-
-
-    {
-        "parent_IDX_symbol" : "SILVERBEES",
-        "parent_IDX_exchange": "NSE",
-        "parent_IDX_inst_type" : "EQ",
-
-        "parent_symbol": "SILVER",        
-        "parent_exchange": "MCX",      
-        "parent_inst_type": "FUTCOM",
-
-
-        "child_exchange": "NSE",
-        "child_inst_type": "EQ",
-        "qty": int(3),
-        "lot_size":int(1),
-
-        "max_retry": 2,
-        "strike_dist": None,
-       
-        # runtime injected
-        "ce_token": None,
-        "pe_token": None
-    },
+    }
 ]
 
 
 # ============================================================
-# TOKEN RESOLUTION   (unsolved)
+# RESOLUTION (CHECKPOINT 2.1)
 # ============================================================
 
-def resolve_parent_token(registry, exchange, symbol, parent_type):
+def resolve_config_tokens(engine, registry, config):
 
-    # FUT placeholder retained (no change)
-    if parent_type == "FUT":
-        futures = registry.get_futures(symbol)
-        if futures:
-            return futures[0].token
-        return None
+    # ---------------- IDX ----------------
+    idx_symbol = registry.get_symbol_for_Index(
+        config["parent_IDX_exchange"],
+        config["parent_IDX_symbol"],
+        config["parent_IDX_inst_type"]
+    )
 
-    #  force dictionary lookup + TOKEN_BUS registration
-    return registry.get_token(exchange, symbol)
+    registry.get_token(config["parent_IDX_exchange"], idx_symbol)
+
+    # ---------------- PARENT ----------------
+    inst = config["parent_inst_type"]
+
+    if inst == "IDX":
+
+        parent_symbol = registry.get_symbol_for_Index(
+            config["parent_exchange"],
+            config["parent_symbol"],
+            inst
+        )
+
+    else:
+        expiry = registry.get_nearest_expiry(
+            config["parent_exchange"],
+            config["parent_symbol"],
+            inst
+        )
+
+        parent_symbol = registry.get_symbol_for_futures(
+            config["parent_exchange"],
+            config["parent_symbol"],
+            inst,
+            expiry
+        )
+
+    parent_token = registry.get_token(
+        config["parent_exchange"],
+        parent_symbol
+    )
+
+    config["parent_token"] = parent_token
+    config["parent_trading_symbol"] = parent_symbol
+
+    # ---------------- CHILD ----------------
+    child_inst = config["child_inst_type"]
+
+    # ===== OPTIONS =====
+    if child_inst in ["OPTIDX", "OPTSTK", "OPTFUT"]:
+
+        if config["strike_dist"]:
+
+            result = registry.register_atm_options(
+                engine,
+                config["parent_IDX_symbol"],
+                config["parent_IDX_exchange"],
+                config["child_exchange"],
+                config["strike_dist"]
+            )
+
+            (ce_sym, ce_tok), (pe_sym, pe_tok) = result
+
+            config["ce_token"] = ce_tok
+            config["pe_token"] = pe_tok
+
+    # ===== EQ =====
+    elif child_inst == "EQ":
+
+        child_symbol = config["parent_IDX_symbol"]
+
+        token = registry.get_token(
+            config["child_exchange"],
+            child_symbol
+        )
+
+        config["child_token"] = token
 
 
 # ============================================================
-# NODE SCOPE (unsolved)
+# BUILD NODES
 # ============================================================
 
-def resolve_node_scope(product_type):
-    return "CHILD" if product_type == "OPT" else "PARENT"
-
-
-# ============================================================
-# BUILD SIGNAL NODES
-# ============================================================
-
-def build_signal_nodes(engine, registry):
+def build_signal_nodes(engine):
 
     nodes = []
 
-    for config in STRATEGY_CONFIG:
+    for cfg in STRATEGY_CONFIG:
 
-        symbol = config["parent_symbol"]
-        exchange = config["parent_exchange"]
-        parent_type = config.get("parent_type", "IDX")
-        product_type = config.get("product_type", "STOCK")
-
-        token = resolve_parent_token(registry, exchange, symbol, parent_type)
-
-        if token is None:
-            print(f"[ENGINE] Token resolution failed → {symbol}")
+        token = cfg.get("parent_token")
+        if not token:
             continue
 
         node = InstrumentNode(
             engine,
-            exchange,
-            symbol,
+            cfg["parent_exchange"],
+            cfg["parent_symbol"],
             token,
-            instrument_type=product_type,
-            node_scope=resolve_node_scope(product_type)
+            instrument_type=cfg["parent_inst_type"],
+            node_scope="PARENT"
         )
 
         nodes.append(node)
@@ -288,74 +173,50 @@ def build_signal_nodes(engine, registry):
 
 
 # ============================================================
-# BUILD TRADE MANAGERS (NO GENERATOR CALLS HERE)
+# BUILD TRADE MANAGERS
 # ============================================================
 
-def build_trade_managers(engine, registry):
+def build_trade_managers(engine):
 
     managers = []
 
-    for config in STRATEGY_CONFIG:
+    for cfg in STRATEGY_CONFIG:
 
-        parent_symbol = config["parent_symbol"]
-        parent_exchange = config["parent_exchange"]
-        parent_type = config.get("parent_type", "IDX")
-
-        child_exchange = config["child_exchange"]
-        product_type = config["product_type"]
-
-        qty = config["qty"]
-        max_retry = config["max_retry"]
-
-        parent_token = resolve_parent_token(
-            registry,
-            parent_exchange,
-            parent_symbol,
-            parent_type
-        )
-
-        if parent_token is None:
+        parent_token = cfg.get("parent_token")
+        if not parent_token:
             continue
 
         child_token = parent_token
 
-        #  use pre-resolved tokens ONLY
-        if product_type == "OPT":
+        if cfg["child_inst_type"] in ["OPTIDX", "OPTSTK", "OPTFUT"]:
 
-            ce_token = config.get("ce_token")
-            pe_token = config.get("pe_token")
-
-            if not ce_token or not pe_token:
-                print(f"[ENGINE] Missing CE/PE tokens → {parent_symbol}")
+            if not cfg.get("ce_token"):
                 continue
 
-            child_token = ce_token
+            child_token = cfg["ce_token"]
+
+        elif cfg["child_inst_type"] == "EQ":
+
+            child_token = cfg.get("child_token")
 
         tm = TradeManager(
-
             engine=engine,
-
-            parent_exchange=parent_exchange,
-            child_exchange=child_exchange,
-
-            signal_symbol=parent_symbol,
-            trading_symbol=parent_symbol,
-
+            parent_exchange=cfg["parent_exchange"],
+            child_exchange=cfg["child_exchange"],
+            signal_symbol=cfg["parent_symbol"],
+            trading_symbol=cfg["parent_symbol"],
             parent_token=parent_token,
             child_token=child_token,
-
-            product_type=product_type,
-            qty=qty,
-
+            product_type=cfg["child_inst_type"],
+            qty=cfg["qty"],
             ws_ltp=None,
             rest_ltp=None,
-
-            max_retry=max_retry
+            max_retry=cfg["max_retry"]
         )
 
-        if product_type == "OPT":
-            tm.ce_token = config["ce_token"]
-            tm.pe_token = config["pe_token"]
+        if cfg["child_inst_type"] in ["OPTIDX", "OPTSTK", "OPTFUT"]:
+            tm.ce_token = cfg["ce_token"]
+            tm.pe_token = cfg["pe_token"]
 
         managers.append(tm)
 
@@ -363,12 +224,12 @@ def build_trade_managers(engine, registry):
 
 
 # ============================================================
-# ENGINE BOOT
+# ENGINE
 # ============================================================
 
 def engine_bootloader():
 
-    print("\n[ENGINE] Booting Trading Engine\n")
+    print("\n[ENGINE] Booting...\n")
 
     engine = APIEngine()
     engine.market_data_map = {}
@@ -376,148 +237,64 @@ def engine_bootloader():
     registry = TokenRegistry(api=engine.api)
     registry.load_master()
 
-    # --------------------------------------------------------
-    # REGISTER + RESOLVE TOKENS
-    # --------------------------------------------------------
-
-    for config in STRATEGY_CONFIG:
-
-        symbol = config["parent_symbol"]
-        exchange = config["parent_exchange"]
-        parent_type = config.get("parent_type", "IDX")
-
+    # -------- RESOLVE --------
+    for cfg in STRATEGY_CONFIG:
         try:
-            #  forces TOKEN_BUS entry
-            parent_token = resolve_parent_token(registry, exchange, symbol, parent_type)
-
-            if parent_token is None:
-                raise Exception("Parent token not found")
-
+            resolve_config_tokens(engine, registry, cfg)
         except Exception as e:
-            print(f"[ENGINE] Parent registration failed → {symbol} | {e}")
-            continue
+            print(f"[RESOLVE ERROR] {cfg['parent_symbol']} → {e}")
 
-        # ----------------------------------------------------
-        #  ATM RESOLUTION (ONLY ONCE HERE)
-        # ----------------------------------------------------
-
-        if config["product_type"] == "OPT":
-
-            try:
-
-                result = registry.register_atm_options(
-                    engine,
-                    config["parent_symbol"],
-                    config["parent_exchange"],
-                    config["child_exchange"],
-                    config["strike_dist"]
-                )
-
-                (ce_symbol, ce_token), (pe_symbol, pe_token) = result
-
-                config["ce_token"] = ce_token
-                config["pe_token"] = pe_token
-
-            except Exception as e:
-
-                print(f"[ENGINE] ATM option registration failed → {symbol} | {e}")
-                continue
-
-    # --------------------------------------------------------
-    # SUBSCRIBE
-    # --------------------------------------------------------
-
+    # -------- SUBSCRIBE --------
     for inst in TOKEN_BUS:
         engine.subscribe(inst["exchange"], inst["token"])
-
-    # --------------------------------------------------------
-    # WS START
-    # --------------------------------------------------------
 
     engine.start_ws()
     engine.wait_for_ws()
 
-    print("[ENGINE] WebSocket connected\n")
+    print("[ENGINE] WS Connected\n")
 
-    # --------------------------------------------------------
-    # BUILD SYSTEM
-    # --------------------------------------------------------
+    # -------- BUILD --------
+    nodes = build_signal_nodes(engine)
+    for n in nodes:
+        n.initialize()
+        n.start()
 
-    nodes = build_signal_nodes(engine, registry)
+    managers = build_trade_managers(engine)
 
-    for node in nodes:
-        node.initialize()
-        node.start()
-
-    trade_managers = build_trade_managers(engine, registry)
-
-    monitor = DisplayMonitor(engine, trade_managers, nodes)
-
+    monitor = DisplayMonitor(engine, managers, nodes)
     threading.Thread(target=monitor.start, daemon=True).start()
 
-    for tm in trade_managers:
+    for tm in managers:
         threading.Thread(target=tm.run, daemon=True).start()
 
-    # --------------------------------------------------------
-    # LOOP
-    # --------------------------------------------------------
-
-    try:
-        while True:
-            time.sleep(1)
-
-    except KeyboardInterrupt:
-        print("\n[ENGINE] Interrupted by user")
-
-    finally:
-
-        print("[ENGINE] Shutting down")
-
-        for node in nodes:
-            node.stop()
-
-        engine.shutdown()
+    # -------- LOOP --------
+    while True:
+        time.sleep(1)
 
 
 # ============================================================
-# ENTRY POINT
+# ENTRY
 # ============================================================
 
 if __name__ == "__main__":
 
-    restart_limit = 3
-    restart_delay = 5
+    restart_limit = 4
     restart_count = 0
 
+    restart_delay = 5
+
     while True:
-
-        print(f"\n[SUPERVISOR] Engine start attempt {restart_count + 1}\n")
-
-        try:
-            engine_bootloader()
-            break
-
-        except KeyboardInterrupt:
-            print("\n[ENGINE] Interrupted by user")
-            break
-
-        except Exception as e:
-
-            restart_count += 1
-            print(f"\n[ENGINE] Crash detected → {e}")
-
-            if restart_count >= restart_limit:
-                print("[SUPERVISOR] Restart limit reached.")
+        if restart_count <= restart_limit :     
+            try:
+                engine_bootloader()
                 break
+            except Exception as e:
+                restart_count += 1            
+                print(f"[CRASH] {e}")
+                time.sleep(restart_delay)
 
-            print(f"[SUPERVISOR] Restarting in {restart_delay} seconds\n")
-            time.sleep(restart_delay)
-
-    print("\n[ENGINE] Trading Engine stopped\n")
-
-
-
-
+        else:
+            break
 
 
-#_#_#
+#_#_#_#_
