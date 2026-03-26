@@ -1,5 +1,5 @@
 # ============================================================
-# TOKEN REGISTRY v11.3
+# TOKEN REGISTRY v11.5
 # Official DefineEdge Replica Engine
 # Backward Compatible | Placeholder Safe
 # ============================================================
@@ -39,10 +39,10 @@ class TokenRegistry:
 
         self._loaded = False
 
-        self._registered_keys: list= []   # list[touple(exchange, token), ]
+        self._registered_keys: list= []   # list[ touple(exchange, token), ]  
+                                          # [("NSE", "26000"),("NSE", "26009"),("NFO", "66022"),("NFO", "66023")]
         # ____________________________________________________
         # INTERNAL STORAGE
-        # ----------------------------------------------------
 
         self._symbols_file = abspath(join(dirname(__file__), "allmaster.csv"))
 
@@ -179,14 +179,53 @@ class TokenRegistry:
         else:
             raise Exception("Registry isn't Loaded")
 
+# ============================================================
+# EXPIRY GENERATOR (PATH B EXTENSION)
+# ============================================================
+
+    def get_nearest_expiry(self,exchange: str, symbol: str, inst_type:str):
+
+        exc_ = None
+        if exchange == "NFO" or "MCX" or "BFO" or "CDS" :
+            exc_ = exchange
+        else:
+            raise Exception ("'EXCHANGE_TYPE' Mismatch")            
+
+        inst_ = None
+        if inst_type == "OPTIDX" or "OPTSTK" or "OPTFUT" or "FUTIDX" or "FUTSTK" or "FUTCOM" :
+            inst_ = inst_type
+        else:
+            raise Exception ("'INSTRUMENT_TYPE' Mismatch")
+        
+
+        expiries = set()
+        today = datetime.now().date()
+
+        for i in self._symbol_generator():
+
+            if (i["segment"] == exc_ and i["symbol"] == symbol and i["instrument_type"] == inst_):
+                expiries.add(i["expiry"])
+
+        if not expiries:
+            raise Exception("No Expiry Found")
+
+        expiry_dates = sorted([
+            datetime.strptime(exp, "%d%m%Y").date()
+            for exp in expiries
+        ])
+
+        for exp_date in expiry_dates:
+            if exp_date > today:
+                return exp_date.strftime("%d%m%Y")
+
+        raise Exception(f"No valid expiry found for {symbol}")
+
 
 # ============================================================
 # OPTION SYMBOL GENERATOR (PATH B CORE)
 # ============================================================
 
-
     def get_symbol_for_option(self,exchange: str, symbol: str, inst_type:str, strike:str, opt_type:str , expiry:str):
-
 
         strike_symbol: Union[str, None] = next(
             (
@@ -202,6 +241,7 @@ class TokenRegistry:
 
         else:
             raise Exception(f"SYMBOL not found for {symbol} in MASTER file")
+
 
     def get_symbol_for_Index(self,exchange: str, symbol: str, inst_type:str = "IDX", opt_type:str = "IDX" ):
 
@@ -219,35 +259,39 @@ class TokenRegistry:
         else:
             raise Exception(f"SYMBOL not found for {symbol} in MASTER file")        
 
-# ============================================================
-# EXPIRY GENERATOR (PATH B EXTENSION)
-# ============================================================
 
-    def get_nearest_expiry(self, exchange, symbol):
+    def get_symbol_for_futures(self,exchange: str, symbol: str, inst_type:str , expiry:str ):
 
-        today = datetime.now().date()
+        exc_ = None
+        if exchange == "NFO" or "MCX" or "BFO" or "CDS" :
+            exc_ = exchange
+        else:
+            raise Exception ("'EXCHANGE_TYPE' Mismatch")            
 
-        expiries = set()
+        inst_ = None
+        if inst_type == "FUTSTK" or "FUTIDX" :
+            inst_ = inst_type
+        elif inst_type == "FUTCOM" :
+            inst_ = inst_type
+            exc_ = "MCX"
+        else:
+            raise Exception ("'INSTRUMENT_TYPE' Mismatch")
 
-        for i in self._symbol_generator():
+        strike_symbol: Union[str, None] = next(
+            (
+                i["trading_symbol"]
+                for i in self._symbol_generator()
+                if i["segment"] == exc_ and i["symbol"] == symbol and i["instrument_type"] == inst_ and i["expiry"] == expiry 
+            ),
+            None,
+        )
+                
+        if strike_symbol:
+            return (strike_symbol)
 
-            if (i["segment"] == exchange and i["symbol"] == symbol and i["instrument_type"] == "OPTIDX"):
-                expiries.add(i["expiry"])
-
-        if not expiries:
-            raise Exception("No Expiry Found")
-
-        expiry_dates = sorted([
-            datetime.strptime(exp, "%d%m%Y").date()
-            for exp in expiries
-        ])
-
-        for exp_date in expiry_dates:
-            if exp_date > today:
-                return exp_date.strftime("%d%m%Y")
-
-        raise Exception(f"No valid expiry found for {symbol}")
-
+        else:
+            raise Exception(f"SYMBOL not found for {symbol} in MASTER file")            
+          
 
 # ============================================================
 # ATM OPTIONS (MODIFIED)
@@ -316,9 +360,7 @@ class TokenRegistry:
         return []
 
 
-    def get_futures(self, symbol):
-        # Placeholder
-        return []
+
 
 
 
