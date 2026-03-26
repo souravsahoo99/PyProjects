@@ -1,5 +1,5 @@
 # ============================================================
-# TOKEN REGISTRY v11.5
+# TOKEN REGISTRY v11.7
 # Official DefineEdge Replica Engine
 # Backward Compatible | Placeholder Safe
 # ============================================================
@@ -192,7 +192,7 @@ class TokenRegistry:
             raise Exception ("'EXCHANGE_TYPE' Mismatch")            
 
         inst_ = None
-        if inst_type == "OPTIDX" or "OPTSTK" or "OPTFUT" or "FUTIDX" or "FUTSTK" or "FUTCOM" :
+        if inst_type == "OPTIDX" or "OPTSTK" or "OPTFUT" or "FUTIDX" or "FUTSTK" or "FUTCOM" or "OPTCUR" or "FUTCUR":
             inst_ = inst_type
         else:
             raise Exception ("'INSTRUMENT_TYPE' Mismatch")
@@ -227,11 +227,30 @@ class TokenRegistry:
 
     def get_symbol_for_option(self,exchange: str, symbol: str, inst_type:str, strike:str, opt_type:str , expiry:str):
 
+        exc_ = None
+        if exchange == "NFO" or "BFO" or "MCX" or "CDS" :
+            exc_ = exchange
+        else:
+            raise Exception ("'EXCHANGE_TYPE' Mismatch")          
+
+        inst_ = None
+        if inst_type == "OPTSTK" or "OPTIDX" :
+            inst_ = inst_type
+        elif inst_type == "OPTFUT" :
+            inst_ = inst_type
+            exc_ = "MCX"
+        elif inst_type == "OPTCUR" :
+            inst_ = inst_type
+            exc_ = "CDS"            
+        else:
+            raise Exception ("'INSTRUMENT_TYPE' Mismatch")
+
+
         strike_symbol: Union[str, None] = next(
             (
                 i["trading_symbol"]
                 for i in self._symbol_generator()
-                if i["segment"] == exchange and i["symbol"] == symbol and i["instrument_type"] == inst_type and i["expiry"] == expiry and i["option_type"] == opt_type  and i["strike"] == strike
+                if i["segment"] == exc_ and i["symbol"] == symbol and i["instrument_type"] == inst_ and i["expiry"] == expiry and i["option_type"] == opt_type  and i["strike"] == strike
             ),
             None,
         )
@@ -243,13 +262,22 @@ class TokenRegistry:
             raise Exception(f"SYMBOL not found for {symbol} in MASTER file")
 
 
-    def get_symbol_for_Index(self,exchange: str, symbol: str, inst_type:str = "IDX", opt_type:str = "IDX" ):
+    def get_symbol_for_Index(self,exchange: str, symbol: str, inst_type:str , opt_type:str  ):
+
+        exc_ = None
+        if exchange == "NFO" or "BFO" or "CDS" or "MCX":
+            raise Exception ("'EXCHANGE_TYPE' Mismatch")             
+        else: exc_ = exchange  
+
+        inst_ = None
+        if inst_type == "IDX" or "EQ" :
+            inst_= inst_type
 
         strike_symbol: Union[str, None] = next(
             (
                 i["trading_symbol"]
                 for i in self._symbol_generator()
-                if i["segment"] == exchange and i["symbol"] == symbol and i["instrument_type"] == inst_type  and i["option_type"] == opt_type 
+                if i["segment"] == exc_ and i["symbol"] == symbol and i["instrument_type"] == inst_  and i["option_type"] == opt_type 
             ),
             None,
         )
@@ -263,7 +291,7 @@ class TokenRegistry:
     def get_symbol_for_futures(self,exchange: str, symbol: str, inst_type:str , expiry:str ):
 
         exc_ = None
-        if exchange == "NFO" or "MCX" or "BFO" or "CDS" :
+        if exchange == "NFO" or "BFO" or "MCX" or "CDS" :
             exc_ = exchange
         else:
             raise Exception ("'EXCHANGE_TYPE' Mismatch")            
@@ -274,6 +302,9 @@ class TokenRegistry:
         elif inst_type == "FUTCOM" :
             inst_ = inst_type
             exc_ = "MCX"
+        elif inst_type == "FUTCUR" :
+            inst_ = inst_type
+            exc_ = "CDS"            
         else:
             raise Exception ("'INSTRUMENT_TYPE' Mismatch")
 
@@ -352,6 +383,9 @@ class TokenRegistry:
 
 
 
+
+
+#_#_#_#_#_
 
 
 

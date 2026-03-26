@@ -84,6 +84,29 @@ STRATEGY_CONFIG = [
         "ce_token": None,
         "pe_token": None
     },
+
+    {
+        "parent_IDX_symbol" : "USDINR",
+        "parent_IDX_exchange": "CDS",
+        "parent_IDX_inst_type" : "FUTCUR",
+
+        "parent_symbol": "USDINR",        
+        "parent_exchange": "CDS",      
+        "parent_inst_type": "FUTCUR",
+
+
+        "child_exchange": "CDS",
+        "child_inst_type": "FUTCUR",
+        "qty": int(1),
+        "lot_size":int(1),
+
+        "max_retry": 2,
+        "strike_dist": None,
+       
+        # runtime injected
+        "ce_token": None,
+        "pe_token": None
+    },    
 ]
 
 
