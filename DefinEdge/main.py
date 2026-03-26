@@ -1,5 +1,5 @@
 # ============================================================
-# MAIN TRADING ENGINE v8.0 (UNIFIED)
+# MAIN TRADING ENGINE v8.1 (UNIFIED)
 # Single File: Config + Resolver + Engine
 # ============================================================
 
@@ -19,46 +19,71 @@ from display_monitor import DisplayMonitor
 
 STRATEGY_CONFIG = [
     {
-        "parent_IDX_symbol": "Nifty 50",
+        "parent_IDX_symbol" : "Nifty 50",
         "parent_IDX_exchange": "NSE",
-        "parent_IDX_inst_type": "IDX",
+        "parent_IDX_inst_type" : "IDX",
 
-        "parent_symbol": "NIFTY",
-        "parent_exchange": "NFO",
+        "parent_symbol": "NIFTY",        
+        "parent_exchange": "NFO",      
         "parent_inst_type": "FUTIDX",
 
-        "child_exchange": "NFO",
+        "child_exchange" : "NFO",
         "child_inst_type": "OPTIDX",
-        "qty": 65,
-        "lot_size": 2,
+        "qty": int(65),
+        "lot_size":int(2),
 
         "max_retry": 3,
         "strike_dist": 50,
 
+        # runtime injected
         "ce_token": None,
         "pe_token": None
     },
 
     {
-        "parent_IDX_symbol": "RELIANCE",
+        "parent_IDX_symbol" : "Nifty Bank",
         "parent_IDX_exchange": "NSE",
-        "parent_IDX_inst_type": "EQ",
+        "parent_IDX_inst_type" : "IDX",
 
-        "parent_symbol": "RELIANCE",
-        "parent_exchange": "NFO",
-        "parent_inst_type": "FUTSTK",
+        "parent_symbol": "BANKNIFTY",        
+        "parent_exchange": "NFO",      
+        "parent_inst_type": "FUTIDX",
+
+        "child_exchange" : "NFO",
+        "child_inst_type": "OPTIDX",
+        "qty": int(30),
+        "lot_size":int(4),
+
+        "max_retry": 2,
+        "strike_dist": 100,
+
+        # runtime injected
+        "ce_token": None,
+        "pe_token": None
+    },
+
+    {
+        "parent_IDX_symbol" : "GOLDBEES",
+        "parent_IDX_exchange": "NSE",
+        "parent_IDX_inst_type" : "EQ",
+
+        "parent_symbol": "GOLDM",        
+        "parent_exchange": "MCX",      
+        "parent_inst_type": "FUTCOM",
+
 
         "child_exchange": "NSE",
         "child_inst_type": "EQ",
-        "qty": 5,
-        "lot_size": 1,
+        "qty": int(5),
+        "lot_size":int(1),
 
-        "max_retry": 1,
+        "max_retry": 2,
         "strike_dist": None,
-
+       
+        # runtime injected
         "ce_token": None,
         "pe_token": None
-    }
+    },
 ]
 
 
@@ -295,6 +320,8 @@ if __name__ == "__main__":
 
         else:
             break
+
+
 
 
 #_#_#_#_

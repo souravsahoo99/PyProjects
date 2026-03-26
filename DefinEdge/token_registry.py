@@ -346,15 +346,6 @@ class TokenRegistry:
                 return {"exchange": exchange,"symbol": symbol,"token": token}
             
 
-    def get_index_spot_token(self, symbol):
-        return self.symbol_token_map.get(symbol.upper())
-
-
-    def get_option_token(self, symbol, expiry, strike, option_type):
-        # Placeholder (logic not defined)
-        return None
-
-
     def get_strikes(self, symbol, expiry):
         # Placeholder
         return []
