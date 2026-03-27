@@ -30,9 +30,12 @@ class Exchange_Clock:
         self._exchange_clock()
     
     def _exchange_clock(self):
-        if self.exch == "MCX" or "CDS" :
+        if self.exch == "CDS" or "Cds" or "cds" :
             self.clock = time(9, 0)
-        else: self.clock = time(9, 15)
+        elif self.exch == "MCX" or "Mcx" or "mcx" :
+            self.clock = time(9, 0)
+        else:
+            self.clock = time(9, 15)
 
     def clock(self):
         return self.clock
@@ -41,11 +44,12 @@ class Exchange_Clock:
         open = self.clock
         close = None
 
-        if self.exch == "MCX" :
-            close = time(23, 30)
-        elif self.exch == "CDS" :
-            close= time(17, 0)        
-        else: close = time(15, 30)
+        if self.exch == "CDS" or "Cds" or "cds" :
+            close= time(17, 0)  
+        elif self.exch == "MCX" or "Mcx" or "mcx" :
+            close = time(23, 30)      
+        else:
+            close = time(15, 30)
 
         now = datetime.now().time()
 
@@ -53,13 +57,13 @@ class Exchange_Clock:
             print (f"Exchange {self.exch} isn't Opened")  
             return False  
         elif now >= open and now < close:
-            print (f"Exchange {self.exch} is Open")     # Running Market  
+            print (f"Exchange {self.exch} is Open")     ## Running Market  
             return True        
         elif now >= close:
             print (f"Exchange {self.exch} is Closed")
             return False
         else:
-            raise Exception ("[Exchange_Clock] Unknown Error")
+            raise Exception ("[Exchange_Clock] Unknown Error !!!")
 
 # ============================================================
 #   TOKEN REGISTRY   
