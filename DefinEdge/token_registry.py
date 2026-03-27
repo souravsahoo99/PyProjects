@@ -53,11 +53,13 @@ class Exchange_Clock:
             print (f"Exchange {self.exch} isn't Opened")  
             return False  
         elif now >= open and now < close:
-            print (f"Exchange {self.exch} is Open")
+            print (f"Exchange {self.exch} is Open")     # Running Market  
             return True        
-        else:
+        elif now >= close:
             print (f"Exchange {self.exch} is Closed")
             return False
+        else:
+            raise Exception ("[Exchange_Clock] Unknown Error")
 
 # ============================================================
 #   TOKEN REGISTRY   
