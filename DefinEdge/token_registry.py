@@ -20,6 +20,7 @@ TOKEN_BUS = []
 # ============================================================
 #  Exchange CLOCK   
 # ============================================================
+
 class Exchange_Clock:
     
     def __init__(self, exchange=None):
@@ -47,9 +48,15 @@ class Exchange_Clock:
         else: close = time(15, 30)
 
         now = datetime.now().time()
-        if now >= open and now < close:
-            return True
+
+        if now < open :
+            print (f"Exchange {self.exch} isn't Opened")  
+            return False  
+        elif now >= open and now < close:
+            print (f"Exchange {self.exch} is Open")
+            return True        
         else:
+            print (f"Exchange {self.exch} is Closed")
             return False
 
 # ============================================================
