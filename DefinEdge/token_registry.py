@@ -10,7 +10,7 @@ import zipfile
 import requests
 from csv import reader
 from typing import Union
-from datetime import datetime, timedelta
+from datetime import datetime, time, timedelta
 from os.path import abspath, dirname, join
 
 # TokenMap for Global Scope
@@ -18,9 +18,43 @@ from os.path import abspath, dirname, join
 TOKEN_BUS = []               
 
 # ============================================================
+#  Exchange CLOCK   
+# ============================================================
+class Exchange_Clock:
+    
+    def __init__(self, exchange=None):
+        self.exc:str = exchange
+        self.clock = None
+
+        self._exchange_clock()
+    
+    def _exchange_clock(self):
+        if self.exc == "NSE" or "NFO" or "BSE" or " BFO" :
+            self.clock = time(9, 15)
+        else: self.clock = time(9, 0)
+
+    def clock(self):
+        return self.clock
+
+    def is_open(self):
+        open = self.clock
+        close = None
+
+        if self.exc == "MCX" :
+            close = time(23, 30)
+        elif self.exc == "CDS" :
+            close= time(17, 0)        
+        else: close = time(15, 30)
+
+        now = datetime.now().time()
+        if now >= open and now < close:
+            return True
+        else:
+            return False
+
+# ============================================================
 #   TOKEN REGISTRY   
 # ============================================================
-
 
 class TokenRegistry:
 
