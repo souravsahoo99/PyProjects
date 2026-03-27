@@ -30,9 +30,9 @@ class Exchange_Clock:
         self._exchange_clock()
     
     def _exchange_clock(self):
-        if self.exch == "NSE" or "NFO" or "BSE" or " BFO" :
-            self.clock = time(9, 15)
-        else: self.clock = time(9, 0)
+        if self.exch == "MCX" or "CDS" :
+            self.clock = time(9, 0)
+        else: self.clock = time(9, 15)
 
     def clock(self):
         return self.clock
