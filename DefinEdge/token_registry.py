@@ -23,13 +23,13 @@ TOKEN_BUS = []
 class Exchange_Clock:
     
     def __init__(self, exchange=None):
-        self.exc:str = exchange
+        self.exch  = str(exchange)
         self.clock = None
 
         self._exchange_clock()
     
     def _exchange_clock(self):
-        if self.exc == "NSE" or "NFO" or "BSE" or " BFO" :
+        if self.exch == "NSE" or "NFO" or "BSE" or " BFO" :
             self.clock = time(9, 15)
         else: self.clock = time(9, 0)
 
@@ -40,9 +40,9 @@ class Exchange_Clock:
         open = self.clock
         close = None
 
-        if self.exc == "MCX" :
+        if self.exch == "MCX" :
             close = time(23, 30)
-        elif self.exc == "CDS" :
+        elif self.exch == "CDS" :
             close= time(17, 0)        
         else: close = time(15, 30)
 
