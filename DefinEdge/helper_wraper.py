@@ -397,14 +397,15 @@ class APIEngine():
 #  GET BEST LTP (UNCHANGED)
 # ============================================================
 
-    def get_best_ltp(self, exchange, token):
+    def get_best_ltp(self, exchange, token, trade_sym):
 
         ltp = self.get_ltp_live(exchange, token)
         
         if ltp is not None:
             return ltp
         else :
-            return self.get_ltp_rest(exchange, token)
+            return self.get_ltp_rest(exchange, trade_sym)
+
 
 
 # ============================================================
