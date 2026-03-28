@@ -1,14 +1,14 @@
 # ============================================================
-# TOKEN REGISTRY v12.0
+# TOKEN REGISTRY v12.1
 # Official DefineEdge Replica Engine
 # Backward Compatible | Placeholder Safe
 # ============================================================
 
 import os
 import io
-import time
 import zipfile
 import requests
+import time as t_
 from csv import reader
 from typing import Union
 from datetime import datetime, time, timedelta
@@ -26,23 +26,23 @@ class Exchange_Clock:
     
     def __init__(self, exchange=None):
         self.exch  = str(exchange)
-        self.clock = None
+        self._clock = None
 
         self._exchange_clock()
     
     def _exchange_clock(self):
         if self.exch in ["CDS" , "Cds" , "cds"]:
-            self.clock = time(9, 0)
+            self._clock = time(9, 0)
         elif self.exch in ["MCX", "Mcx", "mcx"]:
-            self.clock = time(9, 0)
+            self._clock = time(9, 0)
         else:
-            self.clock = time(9, 15)
+            self._clock = time(9, 15)
 
     def clock(self):
-        return self.clock
+        return self._clock
 
     def is_open(self):
-        open = self.clock
+        open = self._clock
         close = None
 
         if self.exch in ["CDS" , "Cds" , "cds"]:
@@ -100,17 +100,17 @@ class TokenRegistry:
 
     def _ensure_master_file(self):
         
-        download_time = None      
+        download_time = None                  # Placeholder Download time instance
         # ---------- FILE NOT PRESENT ----------
         if not os.path.exists(self._symbols_file):
 
-            response = requests.get(self.MASTER_URL)
+            response = requests.get(self.MASTER_URL, timeout=10)
             response.raise_for_status()
 
             with zipfile.ZipFile(io.BytesIO(response.content), "r") as z:
                 z.extract("allmaster.csv", abspath(dirname(__file__)))
 
-            time.sleep(0.1)
+            t_.sleep(0.1)
             download_time = datetime.now().date().time()
             return
 
@@ -126,13 +126,13 @@ class TokenRegistry:
 
             print("[TOKEN_REGISTRY] Refreshing master CSV...")
 
-            response = requests.get(self.MASTER_URL)
+            response = requests.get(self.MASTER_URL, timeout=10)
             response.raise_for_status()
 
             with zipfile.ZipFile(io.BytesIO(response.content), "r") as z:
                 z.extract("allmaster.csv", abspath(dirname(__file__)))
           
-            time.sleep(0.1)
+            t_.sleep(0.1)
             download_time = datetime.now().date().time()
             return
         # ---------- OTHERWISE USE EXISTING ----------

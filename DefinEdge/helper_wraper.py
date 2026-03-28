@@ -1,5 +1,5 @@
 # ============================================================
-# HELPER WRAPPER v3.3
+# HELPER WRAPPER v3.5
 # Broker Wrapper Layer (DefineEdge Backend)
 # Production Safe Version
 # Thread Safe + WS safe
@@ -56,18 +56,20 @@ class APIEngine():
         
         exc = None
 
-        if exchange == "NSE" or "Nse":
+        if exchange in ["NSE", "Nse", "nse"]:
             exc = self.api.c2i.EXCHANGE_TYPE_NSE
-        elif exchange == "BSE" or "Bse":
+        elif exchange in ["BSE", "Bse", "bse"]:
             exc = self.api.c2i.EXCHANGE_TYPE_BSE
-        elif exchange == "NFO" or "Nfo":
+        elif exchange in ["NFO", "Nfo", "nfo"]:
             exc = self.api.c2i.EXCHANGE_TYPE_NFO
-        elif exchange == "BFO" or "Bfo":
+        elif exchange in ["BFO", "Bfo", "bfo"]:
             exc = self.api.c2i.EXCHANGE_TYPE_BFO
-        elif exchange == "MCX" or "Mcx":
+        elif exchange in ["MCX", "Mcx", "mcx"]:
             exc = self.api.c2i.EXCHANGE_TYPE_MCX            
-        elif exchange == "CDS" or "Cds":
+        elif exchange in ["CDS" , "Cds", "cds"]:
             exc = self.api.c2i.EXCHANGE_TYPE_CDS
+        else:
+            raise Exception (f"{exchange} is not valid. Use NSE, BSE, NFO, BFO, MCX or CDS.")
 
         return exc
     
@@ -127,9 +129,9 @@ class APIEngine():
         Exchange_ = self._resolute_exchange(exchange)
         Order_type = None
 
-        if order_type == "BUY" or "Buy" or "buy" or "B":
+        if order_type in ["B","BUY", "Buy", "buy"]:
             Order_type = self.api.c2i.ORDER_TYPE_BUY
-        elif order_type == "SELL" or "Sell" or "sell" or "S":
+        elif order_type in ["S","SELL","Sell", "sell"]:
             Order_type =self.api.c2i.ORDER_TYPE_SELL
 
         self.api.Place_Order(
@@ -148,9 +150,9 @@ class APIEngine():
         Exchange_ = self._resolute_exchange(exchange)
         Order_type = None
 
-        if order_type == "BUY" or "Buy" or "buy" or "B":
+        if order_type in ["B","BUY", "Buy", "buy"]:
             Order_type = self.api.c2i.ORDER_TYPE_BUY
-        elif order_type == "SELL" or "Sell" or "sell" or "S":
+        elif order_type in ["S","SELL","Sell", "sell"]:
             Order_type =self.api.c2i.ORDER_TYPE_SELL
 
         self.api.Place_Order(
@@ -418,4 +420,4 @@ class APIEngine():
 
 
 
-#_#_#_#_#
+#_#_#_#_#_
