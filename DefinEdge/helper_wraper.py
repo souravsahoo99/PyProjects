@@ -36,8 +36,8 @@ class APIEngine():
 
         # WEBSOCKET STATE
         self._is_ws_connected = False
-        self._subscribed_instruments: list= []
-                                            ## [("NSE", "26000"),("NSE", "26009"),("NFO", "66022"),("NFO", "66023")]
+        self._subscribed_instruments:list[tuple[str, str]] = []
+                                                                ## [("NSE", "26000"),("NSE", "26009"),("NFO", "66022"),("NFO", "66023")]
         # THREAD FLAGS
         self._router_running = False
         self._order_stream_running = False
