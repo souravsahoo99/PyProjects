@@ -1,11 +1,12 @@
 # ============================================================
-# TOKEN REGISTRY v11.9
+# TOKEN REGISTRY v12.0
 # Official DefineEdge Replica Engine
 # Backward Compatible | Placeholder Safe
 # ============================================================
 
 import os
 import io
+import time
 import zipfile
 import requests
 from csv import reader
@@ -18,7 +19,7 @@ from os.path import abspath, dirname, join
 TOKEN_BUS = []               
 
 # ============================================================
-#  Exchange CLOCK   
+#   Exchange CLOCK   
 # ============================================================
 
 class Exchange_Clock:
@@ -30,9 +31,9 @@ class Exchange_Clock:
         self._exchange_clock()
     
     def _exchange_clock(self):
-        if self.exch == "CDS" or "Cds" or "cds" :
+        if self.exch in ["CDS" , "Cds" , "cds"]:
             self.clock = time(9, 0)
-        elif self.exch == "MCX" or "Mcx" or "mcx" :
+        elif self.exch in ["MCX", "Mcx", "mcx"]:
             self.clock = time(9, 0)
         else:
             self.clock = time(9, 15)
@@ -44,9 +45,9 @@ class Exchange_Clock:
         open = self.clock
         close = None
 
-        if self.exch == "CDS" or "Cds" or "cds" :
+        if self.exch in ["CDS" , "Cds" , "cds"]:
             close= time(17, 0)  
-        elif self.exch == "MCX" or "Mcx" or "mcx" :
+        elif self.exch in ["MCX", "Mcx", "mcx"]:
             close = time(23, 30)      
         else:
             close = time(15, 30)
@@ -94,26 +95,51 @@ class TokenRegistry:
         self._symbols_file = abspath(join(dirname(__file__), "allmaster.csv"))
 
 # ============================================================
-# DOWNLOAD
+#    DOWNLOAD
 # ============================================================
 
     def _ensure_master_file(self):
+        
+        download_time = None      
+        # ---------- FILE NOT PRESENT ----------
+        if not os.path.exists(self._symbols_file):
 
-        try:
-            open(self._symbols_file, "r")
+            response = requests.get(self.MASTER_URL)
+            response.raise_for_status()
+
+            with zipfile.ZipFile(io.BytesIO(response.content), "r") as z:
+                z.extract("allmaster.csv", abspath(dirname(__file__)))
+
+            time.sleep(0.1)
+            download_time = datetime.now().date().time()
             return
-        except FileNotFoundError:
-            pass
 
-        response = requests.get(self.MASTER_URL)
-        response.raise_for_status()
+        # ---------- FILE EXISTS → CHECK FRESHNESS ----------
+        file_timestamp = os.path.getmtime(self._symbols_file)
+        file_date = datetime.fromtimestamp(file_timestamp).date()
 
-        with zipfile.ZipFile(io.BytesIO(response.content), "r") as z:
-            z.extract("allmaster.csv", abspath(dirname(__file__)))
+        today_ = datetime.now().date()
+        current_time = datetime.now().time()
+        EDGE_upload_time = time(8, 0)
+        # ---------- REDOWNLOAD CONDITION ----------
+        if file_date < today_ and current_time >= EDGE_upload_time:
 
+            print("[TOKEN_REGISTRY] Refreshing master CSV...")
+
+            response = requests.get(self.MASTER_URL)
+            response.raise_for_status()
+
+            with zipfile.ZipFile(io.BytesIO(response.content), "r") as z:
+                z.extract("allmaster.csv", abspath(dirname(__file__)))
+          
+            time.sleep(0.1)
+            download_time = datetime.now().date().time()
+            return
+        # ---------- OTHERWISE USE EXISTING ----------
+        return
 
 # ============================================================
-# GENERATOR
+#    GENERATOR
 # ============================================================
 
     def _symbol_generator(self):
@@ -142,7 +168,7 @@ class TokenRegistry:
 
 
 # ============================================================
-# OFFICIAL LOOKUP
+#    OFFICIAL LOOKUP
 # ============================================================
 
     def get_token_for_symbol(self, exchange: str, symbol: str) -> tuple[str, str]:
@@ -163,7 +189,7 @@ class TokenRegistry:
 
 
 # ============================================================
-# LOAD MASTER
+#    LOAD  MASTER
 # ============================================================
 
     def load_master(self):
@@ -191,7 +217,7 @@ class TokenRegistry:
 
 
 # ============================================================
-# CORE LOOKUPS
+#    CORE  LOOKUPS
 # ============================================================
 
     def get_symbol(self, exchange, token):
@@ -227,19 +253,19 @@ class TokenRegistry:
             raise Exception("Registry isn't Loaded")
 
 # ============================================================
-# EXPIRY GENERATOR (PATH B EXTENSION)
+#   EXPIRY GENERATOR (PATH B EXTENSION)
 # ============================================================
 
     def get_nearest_expiry(self,exchange: str, symbol: str, inst_type:str):
 
         exc_ = None
-        if exchange == "NFO" or "MCX" or "BFO" or "CDS" :
+        if exchange in ["NFO", "MCX", "BFO", "CDS"]:
             exc_ = exchange
         else:
             raise Exception ("'EXCHANGE_TYPE' Mismatch")            
 
         inst_ = None
-        if inst_type == "OPTIDX" or "OPTSTK" or "OPTFUT" or "FUTIDX" or "FUTSTK" or "FUTCOM" or "OPTCUR" or "FUTCUR":
+        if inst_type in ["OPTIDX", "OPTSTK", "OPTFUT", "FUTIDX", "FUTSTK", "FUTCOM", "OPTCUR", "FUTCUR"]:
             inst_ = inst_type
         else:
             raise Exception ("'INSTRUMENT_TYPE' Mismatch")
@@ -269,19 +295,19 @@ class TokenRegistry:
 
 
 # ============================================================
-# OPTION SYMBOL GENERATOR (PATH B CORE)
+#   OPTION SYMBOL GENERATOR (PATH B CORE)
 # ============================================================
 
     def get_symbol_for_option(self,exchange: str, symbol: str, inst_type:str, strike:str, opt_type:str , expiry:str):
 
         exc_ = None
-        if exchange == "NFO" or "BFO" or "MCX" or "CDS" :
+        if exchange in ["NFO", "MCX", "BFO", "CDS"]:
             exc_ = exchange
         else:
             raise Exception ("'EXCHANGE_TYPE' Mismatch")          
 
         inst_ = None
-        if inst_type == "OPTSTK" or "OPTIDX" :
+        if inst_type in ["OPTSTK", "OPTIDX"]:
             inst_ = inst_type
         elif inst_type == "OPTFUT" :
             inst_ = inst_type
@@ -308,16 +334,19 @@ class TokenRegistry:
         else:
             raise Exception(f"SYMBOL not found for {symbol} in MASTER file")
 
+# ============================================================
+#   INDEX SYMBOL GENERATOR
+# ============================================================
 
     def get_symbol_for_Index(self,exchange: str, symbol: str, inst_type:str , opt_type:str  ):
 
         exc_ = None
-        if exchange == "NFO" or "BFO" or "CDS" or "MCX":
+        if exchange in ["NFO", "BFO", "CDS", "MCX"]:
             raise Exception ("'EXCHANGE_TYPE' Mismatch")             
         else: exc_ = exchange  
 
         inst_ = None
-        if inst_type == "IDX" or "EQ" :
+        if inst_type in ["IDX", "EQ"]:
             inst_= inst_type
 
         strike_symbol: Union[str, None] = next(
@@ -334,17 +363,20 @@ class TokenRegistry:
         else:
             raise Exception(f"SYMBOL not found for {symbol} in MASTER file")        
 
+# ============================================================
+#   FUTURES SYMBOL GENERATOR
+# ============================================================
 
     def get_symbol_for_futures(self,exchange: str, symbol: str, inst_type:str , expiry:str ):
 
         exc_ = None
-        if exchange == "NFO" or "BFO" or "MCX" or "CDS" :
+        if exchange in ["NFO", "BFO", "MCX", "CDS"]:
             exc_ = exchange
         else:
             raise Exception ("'EXCHANGE_TYPE' Mismatch")            
 
         inst_ = None
-        if inst_type == "FUTSTK" or "FUTIDX" :
+        if inst_type in ["FUTSTK" , "FUTIDX"]:
             inst_ = inst_type
         elif inst_type == "FUTCOM" :
             inst_ = inst_type
@@ -432,10 +464,5 @@ class TokenRegistry:
 
 
 
-#_#_#_#_#_#
 
-
-
-
-
-#_#_#_#_#
+#_#_#_#_#_#_#_
