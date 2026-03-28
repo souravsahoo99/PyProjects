@@ -1,5 +1,5 @@
 # ============================================================
-# HELPER WRAPPER v3.5
+# HELPER WRAPPER v3.7
 # Broker Wrapper Layer (DefineEdge Backend)
 # Production Safe Version
 # Thread Safe + WS safe
@@ -11,8 +11,8 @@ import os
 import time
 import threading
 import pandas as pd
-from datetime import datetime, timedelta
 from retry import retry
+from datetime import datetime, timedelta
 from dotenv import find_dotenv, load_dotenv
 
 
@@ -23,7 +23,7 @@ api_secret = os.getenv("EDGE_API_SECRET")
 
 
 # ============================================================
-#     API - ENGINE
+#     API - ENGINE   
 # ============================================================
 
 class APIEngine():
@@ -87,7 +87,7 @@ class APIEngine():
         return Order_type
 
 # ============================================================
-# REST data (UNCHANGED)
+#   REST  DATA 
 # ============================================================
 
     @retry(tries=3, delay=2, backoff=2)
@@ -134,7 +134,7 @@ class APIEngine():
             return df
         
 # ============================================================
-# REST ORDER PLACING
+#   REST  - ORDER PLACING  
 # ============================================================
 
     def place_market(self,exchange,order_type,trading_symbol,quantity:int):
@@ -151,6 +151,7 @@ class APIEngine():
             quantity=quantity,
             tradingsymbol=trading_symbol,
         )
+    
     # =========== LIMIT ORDER ===========
 
     def place_limit(self,exchange,order_type,trading_symbol,quantity:int,price:float):
@@ -169,7 +170,7 @@ class APIEngine():
         )
 
 # ============================================================
-#  ORDER CONFIRMATION (REST Based)
+#   ORDER CONFIRMATION (REST Based)
 # ============================================================
 
     def confirm_order_execution(self, order_id):
@@ -193,7 +194,7 @@ class APIEngine():
 
 
 # ============================================================
-# WEBSOCKET ROUTER (UNCHANGED)
+#  WEBSOCKET ROUTER (UNCHANGED)
 # ============================================================
 
     def _router_loop(self):
@@ -236,7 +237,7 @@ class APIEngine():
 
 
 # ============================================================
-# ORDER ROUTER (UNCHANGED)
+#  WEBSOCKET - ORDER ROUTER 
 # ============================================================
 
     def _order_router(self):
@@ -260,11 +261,11 @@ class APIEngine():
             except Exception:
                 pass
 
-            time.sleep(0.05)
+            time.sleep(0.3)
 
 
 # ============================================================
-# WS MONITOR (UNCHANGED LOGIC)
+#  WS - MONITOR 
 # ============================================================
 
     def _ws_monitor(self):
@@ -293,10 +294,45 @@ class APIEngine():
 
 
 # ============================================================
-# WEBSOCKET CONTROL (FIXED)
+#  WEBSOCKET CONTROLs 
 # ============================================================
 
-    @retry(tries=5, delay=2, backoff=2)
+
+    def subscribe(self, exchange, token):
+
+        instrument = (exchange, token)
+
+        self._subscribed_instruments.add(instrument)
+
+        # Always register in broker (deferred-safe)
+        self.api.Subscribe_inst([instrument])
+
+
+    def wait_for_ws(self, timeout=5.0):
+
+        start = time.time()
+
+        while not self._is_ws_connected:
+
+            if time.time() - start > timeout:
+                raise TimeoutError("WebSocket connection timeout")
+
+            time.sleep(0.2)
+
+    def close_ws(self):
+
+        self._router_running = False
+        self._order_stream_running = False
+        self._ws_monitor_running = False
+
+        try:
+            self.api.Close_Websocket()
+        except Exception:
+            pass
+
+        self._is_ws_connected = False
+
+
     def start_ws(self):
 
         #  Ensure subscriptions prepared BEFORE start
@@ -324,44 +360,21 @@ class APIEngine():
         threading.Thread(target=self._ws_monitor, daemon=True).start()
 
         self._is_ws_connected = True
-
-
-    def subscribe(self, exchange, token):
-
-        instrument = (exchange, token)
-
-        self._subscribed_instruments.add(instrument)
-
-        # Always register in broker (deferred-safe)
-        self.api.Subscribe_inst([instrument])
-
-
-    def wait_for_ws(self, timeout=5.0):
-
-        start = time.time()
-
-        while not self._is_ws_connected:
-
-            if time.time() - start > timeout:
-                raise TimeoutError("WebSocket connection timeout")
-
-            time.sleep(0.1)
+        print("[WS] Web-Socket thread_ started.")
 
 
     def restart_ws(self):
-
         print("[WS] Restarting WebSocket...")
 
         self.close_ws()
         time.sleep(1)
-
         self.start_ws()
 
-        print("[WS] Reconnected (subscriptions auto-restored).")
+        print("[WS] Reconnected (subscriptions restored).")
 
 
 # ============================================================
-# LIVE LTP (UNCHANGED)
+#  LIVE LTP  (WS)
 # ============================================================
 
     def get_ltp_live(self, exchange, token):
@@ -381,7 +394,7 @@ class APIEngine():
 
 
 # ============================================================
-# BEST LTP (UNCHANGED)
+#  GET BEST LTP (UNCHANGED)
 # ============================================================
 
     def get_best_ltp(self, exchange, token):
@@ -395,22 +408,8 @@ class APIEngine():
 
 
 # ============================================================
-# SHUTDOWN ( SAFE FIX )
+#  SHUTDOWN 
 # ============================================================
-
-    def close_ws(self):
-
-        self._router_running = False
-        self._order_stream_running = False
-        self._ws_monitor_running = False
-
-        try:
-            self.api.Close_Websocket()
-        except Exception:
-            pass
-
-        self._is_ws_connected = False
-
 
     def shutdown(self):
 
@@ -423,4 +422,4 @@ class APIEngine():
 
 
 
-#_#_#_#_#_
+#_#_#_#_#_#_
