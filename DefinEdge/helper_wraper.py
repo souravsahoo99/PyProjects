@@ -73,6 +73,19 @@ class APIEngine():
 
         return exc
     
+    def _resolute_ordertype(self,order_type):
+
+        Order_type = None
+
+        if order_type in ["B","BUY", "Buy", "buy"]:
+            Order_type = self.api.c2i.ORDER_TYPE_BUY
+        elif order_type in ["S","SELL","Sell", "sell"]:
+            Order_type =self.api.c2i.ORDER_TYPE_SELL
+        else:
+            raise Exception (f"{order_type} is not valid. Use BUY or SELL.")
+
+        return Order_type
+
 # ============================================================
 # REST data (UNCHANGED)
 # ============================================================
@@ -127,12 +140,7 @@ class APIEngine():
     def place_market(self,exchange,order_type,trading_symbol,quantity:int):
 
         Exchange_ = self._resolute_exchange(exchange)
-        Order_type = None
-
-        if order_type in ["B","BUY", "Buy", "buy"]:
-            Order_type = self.api.c2i.ORDER_TYPE_BUY
-        elif order_type in ["S","SELL","Sell", "sell"]:
-            Order_type =self.api.c2i.ORDER_TYPE_SELL
+        Order_type = self._resolute_ordertype(order_type)
 
         self.api.Place_Order(
             exchange=Exchange_,
@@ -148,12 +156,7 @@ class APIEngine():
     def place_limit(self,exchange,order_type,trading_symbol,quantity:int,price:float):
 
         Exchange_ = self._resolute_exchange(exchange)
-        Order_type = None
-
-        if order_type in ["B","BUY", "Buy", "buy"]:
-            Order_type = self.api.c2i.ORDER_TYPE_BUY
-        elif order_type in ["S","SELL","Sell", "sell"]:
-            Order_type =self.api.c2i.ORDER_TYPE_SELL
+        Order_type = self._resolute_ordertype(order_type)
 
         self.api.Place_Order(
             exchange=Exchange_,
