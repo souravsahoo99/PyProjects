@@ -188,11 +188,14 @@ class TokenRegistry:
 
 
 # ============================================================
-#    LOAD  MASTER
+#   LOAD - MASTER 
 # ============================================================
 
     def load_master(self):
-
+        
+        if self._loaded == True:
+            return
+        
         for item in self._symbol_generator():
 
             try:
