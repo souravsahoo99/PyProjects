@@ -1,10 +1,10 @@
 # ============================================================
-# HELPER WRAPPER v3.9
+# HELPER WRAPPER v3.7
 # Broker Wrapper Layer (DefineEdge Backend)
 # Production Safe Version
 # Thread Safe + WS safe
 # ============================================================
-from token_registry import TokenRegistry
+
 from edgeAPI_helper import EdgeApi
 
 import os
@@ -32,15 +32,11 @@ class APIEngine():
 
         self.api = EdgeApi(api_token, api_secret)
 
-        # TOKEN REGISTRY Integration (New) 
-        self.registry = TokenRegistry(api=self.api)
-        self.registry.load_master()
-
         self.market_data_map = {}
 
         # WEBSOCKET STATE
         self._is_ws_connected = False
-        self._subscribed_instruments:set[tuple[str, str]] = set()
+        self._subscribed_instruments:list[tuple[str, str]] = []
                                                                 ## [("NSE", "26000"),("NSE", "26009"),("NFO", "66022"),("NFO", "66023")]
         # THREAD FLAGS
         self._router_running = False
@@ -54,50 +50,41 @@ class APIEngine():
         # WS HEALTH
         self._last_tick_time = time.time()
 
-# ============================================================
-#  UNIFIED TOKEN FLOW (CORE)
-# ============================================================
-
-    def _get_token(self, exchange, trading_symbol):
-        return self.registry.get_token(exchange, trading_symbol)
-
-
-    def resolve_and_subscribe(self, exchange, trading_symbol):
-        
-        token = self._get_token(exchange, trading_symbol)
-
-        self.subscribe(exchange, token)
-
-        return token
-
 # ============ Resolute Exchange as per Broker ==============
 
-    def _resolute_exchange(self,exchange):        
+    def _resolute_exchange(self,exchange):
+        
+        exc = None
 
-        if   exchange in ["NSE", "Nse", "nse"]:
-            return self.api.c2i.EXCHANGE_TYPE_NSE
+        if exchange in ["NSE", "Nse", "nse"]:
+            exc = self.api.c2i.EXCHANGE_TYPE_NSE
         elif exchange in ["BSE", "Bse", "bse"]:
-            return self.api.c2i.EXCHANGE_TYPE_BSE
+            exc = self.api.c2i.EXCHANGE_TYPE_BSE
         elif exchange in ["NFO", "Nfo", "nfo"]:
-            return self.api.c2i.EXCHANGE_TYPE_NFO
+            exc = self.api.c2i.EXCHANGE_TYPE_NFO
         elif exchange in ["BFO", "Bfo", "bfo"]:
-            return self.api.c2i.EXCHANGE_TYPE_BFO
+            exc = self.api.c2i.EXCHANGE_TYPE_BFO
         elif exchange in ["MCX", "Mcx", "mcx"]:
-            return self.api.c2i.EXCHANGE_TYPE_MCX            
+            exc = self.api.c2i.EXCHANGE_TYPE_MCX            
         elif exchange in ["CDS" , "Cds", "cds"]:
-            return self.api.c2i.EXCHANGE_TYPE_CDS
+            exc = self.api.c2i.EXCHANGE_TYPE_CDS
         else:
             raise Exception (f"{exchange} is not valid. Use NSE, BSE, NFO, BFO, MCX or CDS.")
 
-
+        return exc
+    
     def _resolute_ordertype(self,order_type):
 
-        if order_type in ["B","BUY","buy"]:
-            return self.api.c2i.ORDER_TYPE_BUY
-        elif order_type in ["S","SELL","sell"]:
-            return self.api.c2i.ORDER_TYPE_SELL
+        Order_type = None
+
+        if order_type in ["B","BUY", "Buy", "buy"]:
+            Order_type = self.api.c2i.ORDER_TYPE_BUY
+        elif order_type in ["S","SELL","Sell", "sell"]:
+            Order_type =self.api.c2i.ORDER_TYPE_SELL
         else:
             raise Exception (f"{order_type} is not valid. Use BUY or SELL.")
+
+        return Order_type
 
 # ============================================================
 #   REST  DATA 
@@ -420,17 +407,18 @@ class APIEngine():
             return self.get_ltp_rest(exchange, trade_sym)
 
 
+
 # ============================================================
 #  SHUTDOWN 
 # ============================================================
 
     def shutdown(self):
 
-        self.close_ws()
         print("[ENGINE] Shutting down API layer...")
-
-        self.api.Close_Websocket()
+        self.close_ws()
         print("[ENGINE] API layer shutdown complete.")
+
+
 
 
 

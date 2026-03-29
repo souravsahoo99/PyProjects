@@ -1,5 +1,5 @@
 # ============================================================
-# TOKEN REGISTRY v12.3
+# TOKEN REGISTRY v12.2
 # Official DefineEdge Replica Engine
 # Backward Compatible | Placeholder Safe
 # ============================================================
@@ -77,17 +77,20 @@ class TokenRegistry:
     def __init__(self, api=None):
 
         self.api = api
-        #_____________________________________________________
-        #   Live _Cache 
+        #_____________________________________
+        # Live Cache 
 
         self.symbol_to_token = {}      # (exchange, symbol) → token
         self.token_to_symbol = {}      # (exchange, token) → symbol
         self.symbol_token_map = {}     # symbol → token
 
         self._loaded = False
-        
+
+        #self._registered_keys: list= []   # list[ touple(exchange, token), ]  
+                                          # [("NSE", "26000"),("NSE", "26009"),("NFO", "66022"),("NFO", "66023")]
         # ____________________________________________________
         # INTERNAL STORAGE
+
         self._symbols_file = abspath(join(dirname(__file__), "allmaster.csv"))
 
 # ============================================================
@@ -95,7 +98,8 @@ class TokenRegistry:
 # ============================================================
 
     def _ensure_master_file(self):
-
+        
+        download_time = None                  # Placeholder Download time instance
         # ---------- FILE NOT PRESENT ----------
         if not os.path.exists(self._symbols_file):
 
@@ -106,7 +110,8 @@ class TokenRegistry:
                 z.extract("allmaster.csv", abspath(dirname(__file__)))
 
             t_.sleep(0.1)
-            return False                              # no reload needed (first load)
+
+            return
 
         # ---------- FILE EXISTS → CHECK FRESHNESS ----------
         file_timestamp = os.path.getmtime(self._symbols_file)
@@ -120,6 +125,10 @@ class TokenRegistry:
         if file_date < today_ and current_time >= EDGE_upload_time:
 
             print("[TOKEN_REGISTRY] Refreshing master CSV...")
+            self._loaded = False             # Critical Safty Valve
+            self.symbol_to_token.clear()     # Clear Cache
+            self.token_to_symbol.clear()     # Clear Cache
+            self.symbol_token_map.clear()    # Clear Cache
 
             response = requests.get(self.MASTER_URL, timeout=10)
             response.raise_for_status()
@@ -129,10 +138,9 @@ class TokenRegistry:
           
             t_.sleep(0.1)
 
-            return True                               # trigger reload
+            return
         # ---------- OTHERWISE USE EXISTING ----------
-        else: 
-            return False
+        return
 
 # ============================================================
 #    GENERATOR
@@ -140,13 +148,10 @@ class TokenRegistry:
 
     def _symbol_generator(self):
 
-        refresh_triggered = self._ensure_master_file()
-
-        #  *if new file downloaded → reload cache
-        if refresh_triggered == True:
-            self._reload_master_atomic()
+        self._ensure_master_file()
 
         with open(self._symbols_file, "r") as fp:
+
             csv_reader = reader(fp)
 
             for line in csv_reader:
@@ -165,82 +170,37 @@ class TokenRegistry:
                     "price_mult": line[13],
                 }
 
-    # _______________________________________________________
-    # RAW GENERATOR (no recursion)
 
-    def _symbol_generator_raw(self):
+# ============================================================
+#    OFFICIAL LOOKUP
+# ============================================================
 
-        with open(self._symbols_file, "r") as fp:
-            csv_reader = reader(fp)
+    def get_token_for_symbol(self, exchange: str, symbol: str) -> tuple[str, str]:
 
-            for line in csv_reader:
-                yield {
-                    "segment": line[0],
-                    "token": line[1],
-                    "symbol": line[2],
-                    "trading_symbol": line[3],
-                    "instrument_type": line[4],
-                    "expiry": line[5],
-                    "tick_size": line[6],
-                    "lot_size": line[7],
-                    "option_type": line[8],
-                    "strike": str(int(int(line[9]) /(int(line[11]) * (10 ** int(line[10]))))),
-                    "isin": line[12],
-                    "price_mult": line[13],
-                }
+        token: Union[str, None] = next(
+            (
+                i["token"]
+                for i in self._symbol_generator()
+                if i["segment"] == exchange and i["trading_symbol"] == symbol
+            ),
+            None,
+        )
 
-    # ============================================================
-    #  ATOMIC CACHE RELOAD CORE  
-    # ============================================================
+        if token:
+            return (exchange, token)
 
-    def _reload_master_atomic(self):
+        raise Exception(f"Token not found for {symbol}")
 
-        print("[TOKEN_REGISTRY] Rebuilding cache (atomic)...")
 
-        # NEW TEMP CACHE
-        new_symbol_to_token = {}
-        new_token_to_symbol = {}
-        new_symbol_token_map = {}
-
-        for item in self._symbol_generator_raw():
-
-            try:
-                exchange = item["segment"]
-                token = str(item["token"])
-                symbol = item["trading_symbol"]
-
-                if not exchange or not symbol or not token:
-                    continue
-
-                symbol = symbol.upper().strip()
-
-                new_symbol_to_token[(exchange, symbol)] = token
-                new_token_to_symbol[(exchange, token)] = symbol
-                new_symbol_token_map[symbol] = token
-
-            except Exception:
-                continue
-
-        #  ATOMIC CACHE SWAP
-        self.symbol_to_token = new_symbol_to_token
-        self.token_to_symbol = new_token_to_symbol
-        self.symbol_token_map = new_symbol_token_map
-
-        self._loaded = True 
-
-        print("[TOKEN_REGISTRY] Cache swap complete (zero downtime)")
-
-    # ============================================================
-    # INITIAL LOAD
-    # ============================================================
+# ============================================================
+#    LOAD  MASTER
+# ============================================================
 
     def load_master(self):
         
         if self._loaded == True:
             return
         
-        self._reload_master_atomic()    
-
         for item in self._symbol_generator():
 
             try:
@@ -261,28 +221,6 @@ class TokenRegistry:
                 continue
 
         self._loaded = True
-
-
-# ________________________________________________________________________________________________________________________________________________________________________________ #
-# ============================================================
-#    OFFICIAL LOOKUP
-# ============================================================
-
-    def get_token_for_symbol(self, exchange: str, symbol: str) -> tuple[str, str]:
-
-        token: Union[str, None] = next(
-            (
-                i["token"]
-                for i in self._symbol_generator()
-                if i["segment"] == exchange and i["trading_symbol"] == symbol
-            ),
-            None,
-        )
-
-        if token:
-            return (exchange, token)
-
-        raise Exception(f"Token not found for {symbol}")
 
 
 # ============================================================
@@ -308,16 +246,19 @@ class TokenRegistry:
         if not self._loaded:
             self.load_master()
 
-        TOKEN = self.symbol_to_token.get((exchange, trading_sym.upper()))
+            TOKEN = self.symbol_to_token.get((exchange, trading_sym.upper()))
 
-        if not TOKEN:
-            raise Exception("TOKEN not found ")
+            if not TOKEN:
+                raise Exception("TOKEN not found ")
 
-        derived_symbol = self.get_symbol(exchange, TOKEN)
+            derived_symbol = self.get_symbol(exchange, TOKEN)
 
-        self.reg_inst(symbol_type=derived_symbol ,token=TOKEN)
+            self.reg_inst(symbol_type=derived_symbol ,token=TOKEN)
 
-        return TOKEN
+            return TOKEN
+
+        else:
+            raise Exception("Registry isn't Loaded")
 
 # ============================================================
 #   EXPIRY GENERATOR (PATH B EXTENSION)
