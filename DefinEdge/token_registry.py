@@ -199,7 +199,8 @@ class TokenRegistry:
         self.symbol_to_token = new_symbol_to_token
         self.token_to_symbol = new_token_to_symbol
         self.symbol_token_map = new_symbol_token_map
-
+            
+        t_.sleep(0.5)      # slight delay to ensure cache is ready
         self._loaded = True 
 
         print("[TOKEN_REGISTRY] Cache swap complete (zero downtime)")
@@ -214,8 +215,6 @@ class TokenRegistry:
             return
         else:       
             self._reload_master_atomic()    
-
-        self._loaded = True
 
 
 # ===============================================================================
@@ -262,8 +261,6 @@ class TokenRegistry:
 
         if not self._loaded:
             self.load_master()
-            
-            t_.sleep(0.5)      # slight delay to ensure cache is ready
 
         TOKEN = self.symbol_to_token.get((exchange, trading_sym.upper()))
 
