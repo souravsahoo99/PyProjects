@@ -171,6 +171,7 @@ class TokenRegistry:
 
         for line in self._symbol_generator_raw():
             yield line
+#            yield from self._symbol_generator_raw()           # else use this line for yielding
 
 # ============================================================
 # ATOMIC RELOAD (CORE)
