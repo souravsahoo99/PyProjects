@@ -168,10 +168,13 @@ class TokenRegistry:
 
         if refresh_trigger and self._loaded:
             self._reload_master_atomic()
+        else: 
+            pass
 
         for line in self._symbol_generator_raw():
             yield line
 #            yield from self._symbol_generator_raw()           # else use this line for yielding
+
 
 # ============================================================
 # ATOMIC RELOAD (CORE)
