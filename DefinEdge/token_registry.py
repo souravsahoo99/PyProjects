@@ -111,7 +111,6 @@ class TokenRegistry:
                 z.extract("allmaster.csv", abspath(dirname(__file__)))
 
             t_.sleep(0.1)
-            download_time = datetime.now().date().time()
             return
 
         # ---------- FILE EXISTS → CHECK FRESHNESS ----------
@@ -125,7 +124,8 @@ class TokenRegistry:
         if file_date < today_ and current_time >= EDGE_upload_time:
 
             print("[TOKEN_REGISTRY] Refreshing master CSV...")
-
+            self._loaded = False          # Critical Safty Valve
+            
             response = requests.get(self.MASTER_URL, timeout=10)
             response.raise_for_status()
 
@@ -133,7 +133,6 @@ class TokenRegistry:
                 z.extract("allmaster.csv", abspath(dirname(__file__)))
           
             t_.sleep(0.1)
-            download_time = datetime.now().date().time()
             return
         # ---------- OTHERWISE USE EXISTING ----------
         return
