@@ -228,7 +228,7 @@ class TokenRegistry:
         token: Union[str, None] = next(
             (
                 i["token"]
-                for i in self._symbol_generator_raw()
+                for i in self._symbol_generator()
                 if i["segment"] == exchange and i["trading_symbol"] == symbol
             ),
             None,
