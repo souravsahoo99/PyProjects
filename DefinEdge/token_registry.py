@@ -138,8 +138,7 @@ class TokenRegistry:
         refresh_trigger = self._ensure_master_file()
 
         if refresh_trigger and self._loaded:
-            with self._lock:
-                self._reload_master_atomic()
+            self._reload_master_atomic()
 
 # ------------------------------------------------------------------------------- 
 #    GENERATOR 
@@ -270,16 +269,14 @@ class TokenRegistry:
     def get_token(self, exchange, trading_sym):
 
         if not self._loaded:
-            with self._lock:
-                self.load_master()
+            self.load_master()
 
-        with self._lock:
-            TOKEN = self.symbol_to_token.get((exchange, trading_sym))     # No Upper Casing needed
-            derived_symbol = self.get_symbol(exchange, TOKEN)
-        
+        TOKEN = self.symbol_to_token.get((exchange, trading_sym))     # No Upper Casing needed
         if not TOKEN:
             raise Exception("TOKEN not found ")
 
+        derived_symbol = self.get_symbol(exchange, TOKEN)
+        
         self.reg_inst(symbol_type=derived_symbol ,token=TOKEN)
 
         return TOKEN
