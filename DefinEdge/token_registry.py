@@ -1,5 +1,5 @@
 # ============================================================
-# TOKEN REGISTRY v12.4
+# TOKEN REGISTRY v12.5
 # Official DefineEdge Replica Engine
 # Backward Compatible | Placeholder Safe
 # ============================================================
@@ -262,6 +262,8 @@ class TokenRegistry:
 
         if not self._loaded:
             self.load_master()
+            
+            t_.sleep(0.5)      # slight delay to ensure cache is ready
 
         TOKEN = self.symbol_to_token.get((exchange, trading_sym.upper()))
 
@@ -481,6 +483,13 @@ class TokenRegistry:
     def get_strikes(self, symbol, expiry):
         # Placeholder
         return []
+
+
+
+
+
+
+#_#_#_#_#_#_#_
 
 
 
