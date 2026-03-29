@@ -91,7 +91,7 @@ class TokenRegistry:
         self._symbols_file = abspath(join(dirname(__file__), "allmaster.csv"))
 
 # ============================================================
-#    DOWNLOAD   
+#    DOWNLOAD - MASTER ZIP & EXTRACT CSV
 # ============================================================
 
     def _ensure_master_file(self):
@@ -116,7 +116,7 @@ class TokenRegistry:
         current_time = datetime.now().time()
         EDGE_upload_time = time(8, 0)
 
-        # ---------- REDOWNLOAD CONDITION ----------
+        # ----------  RE-DOWNLOAD CONDITIONs  ----------
         if file_date < today_ and current_time >= EDGE_upload_time:
 
             print("[TOKEN_REGISTRY] Refreshing master CSV...")
@@ -128,18 +128,46 @@ class TokenRegistry:
                 z.extract("allmaster.csv", abspath(dirname(__file__)))
           
             t_.sleep(0.1)
-
-            return True                               # trigger reload
-        # ---------- OTHERWISE USE EXISTING ----------
+            return True  
+            # trigger reload in 'symbol_generator'
+            
+        # ----------  OTHERWISE USE EXISTING  ----------
         else: 
             return False
 
 # ============================================================
 #    GENERATOR 
 # ============================================================
+    def _symbol_generator_raw(self):
 
+        with open(self._symbols_file, "r") as fp:
+            csv_reader = reader(fp)
+
+            for line in csv_reader:
+                yield {
+                    "segment": line[0],
+                    "token": line[1],
+                    "symbol": line[2],
+                    "trading_symbol": line[3],
+                    "instrument_type": line[4],
+                    "expiry": line[5],
+                    "tick_size": line[6],
+                    "lot_size": line[7],
+                    "option_type": line[8],
+                    "strike": str(int(int(line[9]) /(int(line[11]) * (10 ** int(line[10]))))),
+                    "isin": line[12],
+                    "price_mult": line[13],
+                }
+
+# ============================================================
     def _symbol_generator(self):
 
+        refresh_trigger = self._ensure_master_file()
+
+        if refresh_trigger == True:
+            self._reload_master_atomic()
+        
+        # --------  Original Generator Function  ----------     
         with open(self._symbols_file, "r") as fp:
 
             csv_reader = reader(fp)
@@ -161,13 +189,11 @@ class TokenRegistry:
                 }
 
 
-    # ============================================================
-    #  ATOMIC CACHE RELOAD CORE  
-    # ============================================================
+# ============================================================
+#   ATOMIC CACHE RELOAD   [ CORE ]  
+# ============================================================
 
     def _reload_master_atomic(self):
-
-        self._ensure_master_file()
 
         print("[TOKEN_REGISTRY] Rebuilding cache (atomic)...")
 
@@ -176,7 +202,7 @@ class TokenRegistry:
         new_token_to_symbol = {}
         new_symbol_token_map = {}
 
-        for item in self._symbol_generator():
+        for item in self._symbol_generator_raw():
 
             try:
                 exchange = item["segment"]
@@ -191,7 +217,8 @@ class TokenRegistry:
                 new_symbol_to_token[(exchange, symbol)] = token
                 new_token_to_symbol[(exchange, token)] = symbol
                 new_symbol_token_map[symbol] = token
-
+                t_.sleep(0.2)                                 # slight delay to ensure cache data safty
+            
             except Exception:
                 continue
 
@@ -200,22 +227,20 @@ class TokenRegistry:
         self.token_to_symbol = new_token_to_symbol
         self.symbol_token_map = new_symbol_token_map
             
-        t_.sleep(0.5)      # slight delay to ensure cache is ready
         self._loaded = True 
 
         print("[TOKEN_REGISTRY] Cache swap complete (zero downtime)")
 
-    # ============================================================
-    # INITIAL LOAD
-    # ============================================================
+# ============================================================
+#    INITIAL LOAD
+# ============================================================
 
     def load_master(self):
-        
-        if self._loaded == True:
-            return
-        else:       
-            self._reload_master_atomic()    
 
+        if self._loaded:
+            return
+
+        self._reload_master_atomic()
 
 # ===============================================================================
 #              OFFICIAL BROKER LOOKUP METHOD   (Preserved for Backup)           |
