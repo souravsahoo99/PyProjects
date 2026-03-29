@@ -90,9 +90,9 @@ class TokenRegistry:
         # INTERNAL STORAGE PATH
         self._symbols_file = abspath(join(dirname(__file__), "allmaster.csv"))
 
-# ============================================================
+# _______________________________________________________________________________ 
 #    DOWNLOAD - MASTER ZIP & EXTRACT CSV
-# ============================================================
+# ------------------------------------------------------------------------------- 
 
     def _ensure_master_file(self):
 
@@ -133,9 +133,9 @@ class TokenRegistry:
         else: 
             return False
 
-# ============================================================
+# ------------------------------------------------------------------------------- 
 #    GENERATOR 
-# ============================================================
+# ------------------------------------------------------------------------------- 
     def _symbol_generator_raw(self):
 
         with open(self._symbols_file, "r") as fp:
@@ -158,9 +158,9 @@ class TokenRegistry:
                     "price_mult": line[13],
                 }
 
-# ============================================================
-# GENERATOR WITH RELOAD
-# ============================================================
+# ------------------------------------------------------------------------------- 
+#   GENERATOR WITH RELOAD
+# ------------------------------------------------------------------------------- 
 
     def _symbol_generator(self):
 
@@ -175,9 +175,9 @@ class TokenRegistry:
             yield line
 #            yield from self._symbol_generator_raw()           # else use this line for yielding
 
-# ============================================================
-# ATOMIC RELOAD (CORE)
-# ============================================================
+# ------------------------------------------------------------------------------- 
+#   ATOMIC RELOAD (CORE)
+# ------------------------------------------------------------------------------- 
 
     def _reload_master_atomic(self):
 
@@ -216,9 +216,9 @@ class TokenRegistry:
 
         print("[TOKEN_REGISTRY] Cache swap complete (zero downtime)")
 
-# ============================================================
-# INITIAL LOAD
-# ============================================================
+# ------------------------------------------------------------------------------- 
+#   INITIAL  LOADing...
+# ------------------------------------------------------------------------------- 
 
     def load_master(self):
 
@@ -228,9 +228,9 @@ class TokenRegistry:
         self._reload_master_atomic()
 
 
-# ===============================================================================
+# -------------------------------------------------------------------------------
 #              OFFICIAL BROKER LOOKUP METHOD   (Preserved for Backup)           |
-#________________________________________________________________________________       
+# -------------------------------------------------------------------------------      
     def get_token_for_symbol(self, exchange: str, symbol: str) -> tuple[str, str]:
 
         token: Union[str, None] = next(
@@ -248,9 +248,9 @@ class TokenRegistry:
         raise Exception(f"Token not found for {symbol}")
 
 
-# ============================================================
+# ------------------------------------------------------------------------------- 
 #    CORE  LOOKUPS
-# ============================================================
+# ------------------------------------------------------------------------------- 
 
     def get_symbol(self, exchange, token):
         return self.token_to_symbol.get((exchange, str(token)))
@@ -281,7 +281,7 @@ class TokenRegistry:
         return TOKEN
 
 # ============================================================
-#   EXPIRY GENERATOR (PATH B EXTENSION)
+# |                   EXPIRY  GENERATOR                      |  
 # ============================================================
 
     def get_nearest_expiry(self,exchange: str, symbol: str, inst_type:str):
@@ -323,7 +323,7 @@ class TokenRegistry:
 
 
 # ============================================================
-#   OPTION SYMBOL GENERATOR (PATH B CORE)
+# |              OPTION  SYMBOL  GENERATOR                   |
 # ============================================================
 
     def get_symbol_for_option(self,exchange: str, symbol: str, inst_type:str, strike:str, opt_type:str , expiry:str):
@@ -363,7 +363,7 @@ class TokenRegistry:
             raise Exception(f"SYMBOL not found for {symbol} in MASTER file")
 
 # ============================================================
-#   INDEX SYMBOL GENERATOR
+# |             INDEX  SYMBOL  GENERATOR                     |
 # ============================================================
 
     def get_symbol_for_Index(self,exchange: str, symbol: str, inst_type:str , opt_type:str  ):
@@ -392,7 +392,7 @@ class TokenRegistry:
             raise Exception(f"SYMBOL not found for {symbol} in MASTER file")        
 
 # ============================================================
-#   FUTURES SYMBOL GENERATOR
+# |             FUTURES  SYMBOL  GENERATOR                   |
 # ============================================================
 
     def get_symbol_for_futures(self,exchange: str, symbol: str, inst_type:str , expiry:str ):
@@ -432,7 +432,7 @@ class TokenRegistry:
           
 
 # ============================================================
-# ATM OPTIONS (MODIFIED)
+# |                  ATM OPTIONS (FIXED)                     |   
 # ============================================================
 
     def register_atm_options(self, engine, parent_symbol, parent_exchange, child_exchange, strike_dist):
