@@ -1,7 +1,7 @@
 # ============================================================
 # HELPER WRAPPER v3.9
 # Broker Wrapper Layer (DefineEdge Backend)
-# Production Safe Version
+# Unified Token Flow Integrated
 # Thread Safe + WS safe
 # ============================================================
 from token_registry import TokenRegistry
@@ -92,12 +92,13 @@ class APIEngine():
 
     def _resolute_ordertype(self,order_type):
 
-        if order_type in ["B","BUY","buy"]:
+        if   order_type in ["B", "BUY", "buy", "Buy"]:
             return self.api.c2i.ORDER_TYPE_BUY
-        elif order_type in ["S","SELL","sell"]:
+        elif order_type in ["S","SELL","sell","Sell"]:
             return self.api.c2i.ORDER_TYPE_SELL
         else:
             raise Exception (f"{order_type} is not valid. Use BUY or SELL.")
+
 
 # ============================================================
 #   REST  DATA 
