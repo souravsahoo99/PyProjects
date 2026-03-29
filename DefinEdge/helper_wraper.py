@@ -1,5 +1,5 @@
 # ============================================================
-# HELPER WRAPPER v3.9
+# HELPER WRAPPER v4.0
 # Broker Wrapper Layer (DefineEdge Backend)
 # Unified Token Flow Integrated
 # Thread Safe + WS safe
@@ -98,7 +98,6 @@ class APIEngine():
             return self.api.c2i.ORDER_TYPE_SELL
         else:
             raise Exception (f"{order_type} is not valid. Use BUY or SELL.")
-
 
 # ============================================================
 #   REST  DATA 
@@ -316,10 +315,10 @@ class APIEngine():
 
         instrument = (exchange, token)
 
-        self._subscribed_instruments.add(instrument)
+        if instrument not in self._subscribed_instruments:
 
-        # Always register in broker (deferred-safe)
-        self.api.Subscribe_inst([instrument])
+            self._subscribed_instruments.add(instrument)
+            self.api.Subscribe_inst([instrument])
 
 
     def wait_for_ws(self, timeout=5.0):
@@ -417,8 +416,11 @@ class APIEngine():
         
         if ltp is not None:
             return ltp
-        else :
-            return self.get_ltp_rest(exchange, trade_sym)
+        
+        if not trade_sym:
+            raise Exception ("trade_symbol needed")
+        
+        return self.get_ltp_rest(exchange, trade_sym)
 
 
 # ============================================================
@@ -426,11 +428,11 @@ class APIEngine():
 # ============================================================
 
     def shutdown(self):
-
-        self.close_ws()
         print("[ENGINE] Shutting down API layer...")
-
-        self.api.Close_Websocket()
+        
+        self.close_ws()
+        time.sleep(0.5)
+        
         print("[ENGINE] API layer shutdown complete.")
 
 
