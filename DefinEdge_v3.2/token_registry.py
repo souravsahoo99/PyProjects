@@ -172,27 +172,6 @@ class TokenRegistry:
 
 
 # ============================================================
-#    OFFICIAL LOOKUP
-# ============================================================
-
-    def get_token_for_symbol(self, exchange: str, symbol: str) -> tuple[str, str]:
-
-        token: Union[str, None] = next(
-            (
-                i["token"]
-                for i in self._symbol_generator()
-                if i["segment"] == exchange and i["trading_symbol"] == symbol
-            ),
-            None,
-        )
-
-        if token:
-            return (exchange, token)
-
-        raise Exception(f"Token not found for {symbol}")
-
-
-# ============================================================
 #    LOAD  MASTER
 # ============================================================
 
@@ -222,6 +201,26 @@ class TokenRegistry:
 
         self._loaded = True
 
+
+# ============================================================
+#    OFFICIAL LOOKUP
+# ============================================================
+
+    def get_token_for_symbol(self, exchange: str, symbol: str) -> tuple[str, str]:
+
+        token: Union[str, None] = next(
+            (
+                i["token"]
+                for i in self._symbol_generator()
+                if i["segment"] == exchange and i["trading_symbol"] == symbol
+            ),
+            None,
+        )
+
+        if token:
+            return (exchange, token)
+
+        raise Exception(f"Token not found for {symbol}")
 
 # ============================================================
 #    CORE  LOOKUPS

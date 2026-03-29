@@ -1,5 +1,5 @@
 # ============================================================
-# TOKEN REGISTRY v12.3
+# TOKEN REGISTRY v12.4
 # Official DefineEdge Replica Engine
 # Backward Compatible | Placeholder Safe
 # ============================================================
@@ -135,18 +135,13 @@ class TokenRegistry:
             return False
 
 # ============================================================
-#    GENERATOR
+#    GENERATOR 
 # ============================================================
 
     def _symbol_generator(self):
 
-        refresh_triggered = self._ensure_master_file()
-
-        #  *if new file downloaded → reload cache
-        if refresh_triggered == True:
-            self._reload_master_atomic()
-
         with open(self._symbols_file, "r") as fp:
+
             csv_reader = reader(fp)
 
             for line in csv_reader:
@@ -165,35 +160,14 @@ class TokenRegistry:
                     "price_mult": line[13],
                 }
 
-    # _______________________________________________________
-    # RAW GENERATOR (no recursion)
-
-    def _symbol_generator_raw(self):
-
-        with open(self._symbols_file, "r") as fp:
-            csv_reader = reader(fp)
-
-            for line in csv_reader:
-                yield {
-                    "segment": line[0],
-                    "token": line[1],
-                    "symbol": line[2],
-                    "trading_symbol": line[3],
-                    "instrument_type": line[4],
-                    "expiry": line[5],
-                    "tick_size": line[6],
-                    "lot_size": line[7],
-                    "option_type": line[8],
-                    "strike": str(int(int(line[9]) /(int(line[11]) * (10 ** int(line[10]))))),
-                    "isin": line[12],
-                    "price_mult": line[13],
-                }
 
     # ============================================================
     #  ATOMIC CACHE RELOAD CORE  
     # ============================================================
 
     def _reload_master_atomic(self):
+
+        self._ensure_master_file()
 
         print("[TOKEN_REGISTRY] Rebuilding cache (atomic)...")
 
@@ -202,7 +176,7 @@ class TokenRegistry:
         new_token_to_symbol = {}
         new_symbol_token_map = {}
 
-        for item in self._symbol_generator_raw():
+        for item in self._symbol_generator():
 
             try:
                 exchange = item["segment"]
@@ -238,42 +212,23 @@ class TokenRegistry:
         
         if self._loaded == True:
             return
-        
-        self._reload_master_atomic()    
-
-        for item in self._symbol_generator():
-
-            try:
-                exchange = item["segment"]
-                token = str(item["token"])
-                symbol = item["trading_symbol"]
-
-                if not exchange or not symbol or not token:
-                    continue
-
-                symbol = symbol.upper().strip()
-
-                self.symbol_to_token[(exchange, symbol)] = token
-                self.token_to_symbol[(exchange, token)] = symbol
-                self.symbol_token_map[symbol] = token
-
-            except Exception:
-                continue
+        else:       
+            self._reload_master_atomic()    
 
         self._loaded = True
 
 
-# ________________________________________________________________________________________________________________________________________________________________________________ #
-# ============================================================
-#    OFFICIAL LOOKUP
-# ============================================================
+# ===============================================================================
+#              OFFICIAL BROKER LOOKUP METHOD                                    |
+#________________________________________________________________________________
+
 
     def get_token_for_symbol(self, exchange: str, symbol: str) -> tuple[str, str]:
 
         token: Union[str, None] = next(
             (
                 i["token"]
-                for i in self._symbol_generator()
+                for i in self._symbol_generator_raw()
                 if i["segment"] == exchange and i["trading_symbol"] == symbol
             ),
             None,
