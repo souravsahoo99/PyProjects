@@ -9,7 +9,7 @@ import io
 import zipfile
 import requests
 import threading
-import time as t_
+import time as tm_
 from csv import reader
 from typing import Union
 from datetime import datetime, time, timedelta
@@ -126,8 +126,8 @@ class TokenRegistry:
             with zipfile.ZipFile(io.BytesIO(response.content), "r") as z:
                 z.extract("allmaster.csv", abspath(dirname(__file__)))
           
-            t_.sleep(0.1)
-            return True    # trigger reload in 'symbol_generator'
+            tm_.sleep(0.1)
+            return True    # trigger condition for reload MASTER_CSV   
 
         # ----------  OTHERWISE USE EXISTING  ----------
         else: 
@@ -174,7 +174,6 @@ class TokenRegistry:
         for line in self._symbol_generator_raw():
             yield line
 #            yield from self._symbol_generator_raw()           # else use this line for yielding
-
 
 # ============================================================
 # ATOMIC RELOAD (CORE)
@@ -488,7 +487,6 @@ class TokenRegistry:
     def get_strikes(self, symbol, expiry):
         # Placeholder
         return []
-
 
 
 
