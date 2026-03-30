@@ -445,8 +445,8 @@ class APIEngine():
 
             if not trade_sym:
                 raise Exception ("trade_symbol not found")
-        
-            return self.get_ltp_rest(exchange, trade_sym)
+            price = self.get_ltp_rest(exchange, trade_sym)
+            return float(price)
         
         else: 
             return ltp
