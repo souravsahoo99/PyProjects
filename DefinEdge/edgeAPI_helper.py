@@ -1,5 +1,5 @@
 # ============================================================
-# DEFINEEDGE API HELPER v2.9
+# DEFINEEDGE API HELPER v3.0        
 # Production Broker Adapter
 # Engine Compatible
 # WebSocket Hardened
@@ -60,7 +60,7 @@ class EdgeApi:
         self._order_lock = threading.Lock()
 
         # SUBSCRIPTION STATE (DefineEdge MODEL)
-        self._subscribed: list= [set(),None]             # [(iws.c2i.EXCHANGE_TYPE_NSE, "11536"),(iws.c2i.EXCHANGE_TYPE_NSE, "3456"),]
+        self._subscribed: set[tuple[str,str]] = set()        # [(iws.c2i.EXCHANGE_TYPE_NSE, "11536"),(iws.c2i.EXCHANGE_TYPE_NSE, "3456"),]
                                                          # [("NSE", "26000"),("NSE", "26009"),("NFO", "66022"),("NFO", "66023")]
         self._login()
         self._integrateData(self.c2i)
@@ -69,7 +69,7 @@ class EdgeApi:
 
 
     # ========================================================
-    #    LOGIN                               
+    #    LOGIN                                                   
     # ========================================================
 
     def _login(self):
@@ -113,12 +113,12 @@ class EdgeApi:
         logger.info("WS LOGIN SUCCESS")
 
         self._ws_logged_in = True
-
         #  CRITICAL: SUBSCRIBE ONLY HERE
-        for sets in self._subscribed:
-            
-            iws.subscribe(self.c2i.SUBSCRIPTION_TYPE_TICK, sets)
-            iws.subscribe(self.c2i.SUBSCRIPTION_TYPE_ORDER, sets)       
+        if self._subscribed:
+            tokens = list(self._subscribed)
+
+        iws.subscribe(self.c2i.SUBSCRIPTION_TYPE_TICK, tokens)
+        iws.subscribe(self.c2i.SUBSCRIPTION_TYPE_ORDER, tokens)       
 
 
 
@@ -140,37 +140,33 @@ class EdgeApi:
 
     def _on_tick_update(self, iws, tick):
 
-        while True :
-            exchange = tick.get("e") 
-            token = tick.get("tk")
+        exchange = tick.get("e") 
+        token = tick.get("tk")
 
-            if token is None:
+        if not exchange or not token :
                 return
 
-            key = f"{exchange}|{token}"                     # Gagteway 'KEY' for fetching data
-            price = tick.get("lp") or tick.get("ltp")
+        key = f"{exchange}|{token}"                     # Gagteway 'KEY' for fetching data
+        price = tick.get("lp") or tick.get("ltp")
 
-            if price is None:
-                return
+        if price is None:
+            return
 
-            price = float(price)
-            tick["lp"] = price
+        tick_ = float(price)
 
-            with self._tick_lock:
-                self._tick_cache[key] = tick
+        with self._tick_lock:
+            self._tick_cache[key] = tick_
 
     # ===========   ORDER HANDLER   ==============
 
     def _on_order_update(self, iws, order):
 
-        while self._ws_running == True:
-            
-            order_id = order.get("orderId")
-            status = order.get("status")
+        order_id = order.get("order_id")
+        status = order.get("status")
 
-            if order_id and status:
-                with self._order_lock:
-                    self._order_buffer[str(order_id)] = str(status).upper()
+        if order_id and status:
+            with self._order_lock:
+                self._order_buffer[str(order_id)] = str(status).upper()
 
 
     # ========================================================
@@ -178,11 +174,6 @@ class EdgeApi:
     # ========================================================
 
     def Start_Websocket(self):
-
-        if self._ws_logged_in != True:
-            return
-        else:
-            pass
 
         self.iws.connect(daemonize=True)
         # iws.connect(daemonize=True, ssl_verify=False)  <  Replace this if above line isn't working #
@@ -209,7 +200,7 @@ class EdgeApi:
 
     def Subscribe_inst(self,exchange, token):
 
-        t = set(exchange,str(token))
+        t = (exchange,str(token))
         if t not in self._subscribed:    
             self._subscribed.add(t)
 
@@ -222,7 +213,7 @@ class EdgeApi:
 
     def Unsubscribe_inst(self,exchange, token):
 
-        t = set(exchange,str(token))
+        t = (exchange,str(token))
 
         if t in self._subscribed:
             self._subscribed.discard(t)
@@ -250,8 +241,6 @@ class EdgeApi:
             quantity=quantity,
             tradingsymbol=tradingsymbol,
         )
-
-        info(f"Order placed: {order}")
         return order
 
 
