@@ -1,5 +1,5 @@
 # ============================================================
-# HELPER WRAPPER v4.1
+# HELPER WRAPPER v4.2
 # Broker Wrapper Layer (DefineEdge Backend)
 # Unified Token Flow Integrated
 # Thread Safe + WS safe
@@ -168,7 +168,7 @@ class APIEngine():
         order_id = order.get("order_id")
         status = order.get("status")
 
-        if status == ["SUCCESS"]:
+        if status == "SUCCESS":
             return order_id
         else:
             raise Exception ("Market_Order not Placed")
@@ -192,7 +192,7 @@ class APIEngine():
         order_id = order.get("order_id")
         status = order.get("status")
 
-        if status == ["SUCCESS"]:
+        if status == "SUCCESS":
             return order_id
         else:
             raise Exception ("Limit_Order not Placed")
@@ -210,7 +210,7 @@ class APIEngine():
 
             result = req.get("status")
 
-            if result == ["SUCCESS"]:
+            if result == "SUCCESS":
                 return True
             else:
                 return False
@@ -225,7 +225,7 @@ class APIEngine():
 
             result = req.get("status")
 
-            if result == ["SUCCESS"]:
+            if result == "SUCCESS":
                 return True
             else:
                 return False
@@ -339,11 +339,9 @@ class APIEngine():
 
         instrument = (exchange, token)
 
-        if instrument in self._subscribed_instruments:
+        if instrument not in self._subscribed_instruments:
 
             self._subscribed_instruments.add(instrument)
-
-        for exchange, token in self._subscribed_instruments:
 
             Exchange_ = self._resolute_exchange(exchange)
             self.api.Subscribe_inst(Exchange_, token)
@@ -376,7 +374,7 @@ class APIEngine():
     def start_ws(self):
 
         # Start WS (non-blocking)
-        if self.api._subscribed is  None and self._subscribed_instruments is  None:
+        if not self._subscribed_instruments:
             raise Exception ("Instruments are not subscribed")
         else:
             self.api.Start_Websocket()
