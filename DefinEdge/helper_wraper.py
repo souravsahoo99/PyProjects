@@ -8,7 +8,7 @@ from token_registry import TokenRegistry
 from edgeAPI_helper import EdgeApi
 
 import os
-import time
+import time 
 import threading
 import pandas as pd
 from retry import retry
@@ -40,7 +40,7 @@ class APIEngine():
 
         # WEBSOCKET STATE
         self._is_ws_connected = False
-        self._subscribed_instruments: list = []
+        self._subscribed_instruments: list = [set(),None]
                                                                         ## [("NSE", "26000"),("NSE", "26009"),("NFO", "66022"),("NFO", "66023")]
         # THREAD FLAGS
         self._router_running = False
@@ -369,7 +369,7 @@ class APIEngine():
             pass
 
         self._is_ws_connected = False
-
+        time.sleep(1)
 
     def start_ws(self):
 
@@ -412,7 +412,7 @@ class APIEngine():
 
 
 # ============================================================
-#  LIVE LTP  (WS)
+#  LIVE LTP  (WS)                             
 # ============================================================
 
     def get_ltp_live(self, exchange, token):
@@ -424,7 +424,7 @@ class APIEngine():
 
             msg = self.api._tick_cache.get(key)
 
-            if msg:
+            if msg:                                # Logic could be improve
                 try:
                     return float(msg["lp"])
                 except Exception:
@@ -432,7 +432,7 @@ class APIEngine():
 
 
 # ============================================================
-#  GET BEST LTP (UNCHANGED)
+#  GET BEST LTP (FIXED)
 # ============================================================
 
     def get_best_ltp(self, exchange, token,):
@@ -460,7 +460,6 @@ class APIEngine():
         print("[ENGINE] Shutting down API layer...")
         
         self.close_ws()
-        time.sleep(1)
         
         print("[ENGINE] API layer shutdown complete.")
 
