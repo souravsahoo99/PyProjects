@@ -1,5 +1,5 @@
 # ============================================================
-# HELPER WRAPPER v4.0
+# HELPER WRAPPER v4.1
 # Broker Wrapper Layer (DefineEdge Backend)
 # Unified Token Flow Integrated
 # Thread Safe + WS safe
@@ -23,7 +23,7 @@ api_secret = os.getenv("EDGE_API_SECRET")
 
 
 # ============================================================
-#     API - ENGINE   
+#     API - ENGINE                                                                 
 # ============================================================
 
 class APIEngine():
@@ -40,8 +40,8 @@ class APIEngine():
 
         # WEBSOCKET STATE
         self._is_ws_connected = False
-        self._subscribed_instruments:set[tuple[str, str]] = set()
-                                                                ## [("NSE", "26000"),("NSE", "26009"),("NFO", "66022"),("NFO", "66023")]
+        self._subscribed_instruments: list = []
+                                                                        ## [("NSE", "26000"),("NSE", "26009"),("NFO", "66022"),("NFO", "66023")]
         # THREAD FLAGS
         self._router_running = False
         self._order_stream_running = False
@@ -137,14 +137,15 @@ class APIEngine():
 
         return pd.DataFrame(list(price))
 
+
     @retry(tries=1, delay=1, backoff=1)
     def get_ltp_rest(self, exchange, trade_sym):
-        exc= self._resolute_exchange(exchange)
-        df= self.api.Get_LTP(exchange=exc, trading_symbol=trade_sym)
-        if df is None:
+        exc = self._resolute_exchange(exchange)
+        price = self.api.Get_LTP(exchange=exc, trading_symbol=trade_sym)
+        if price is None:
             return None
         else:
-            return df
+            return price
         
 # ============================================================
 #   REST  - ORDER PLACING  
@@ -155,7 +156,7 @@ class APIEngine():
         Exchange_ = self._resolute_exchange(exchange)
         Order_type = self._resolute_ordertype(order_type)
 
-        self.api.Place_Order(
+        order = self.api.Place_Order(
             exchange=Exchange_,
             order_type=Order_type,
             price=0.0,
@@ -164,7 +165,14 @@ class APIEngine():
             quantity=quantity,
             tradingsymbol=trading_symbol,
         )
-    
+        order_id = order.get("order_id")
+        status = order.get("status")
+
+        if status == "SUCCESS":
+            return order_id
+        else:
+            raise Exception ("Market_Order not Placed")
+
     # =========== LIMIT ORDER ===========
 
     def place_limit(self,exchange,order_type,trading_symbol,quantity:int,price:float):
@@ -172,7 +180,7 @@ class APIEngine():
         Exchange_ = self._resolute_exchange(exchange)
         Order_type = self._resolute_ordertype(order_type)
 
-        self.api.Place_Order(
+        order = self.api.Place_Order(
             exchange=Exchange_,
             order_type=Order_type,
             price=price,
@@ -181,30 +189,46 @@ class APIEngine():
             quantity=quantity,
             tradingsymbol=trading_symbol,
         )
+        order_id = order.get("order_id")
+        status = order.get("status")
 
+        if status == "SUCCESS":
+            return order_id
+        else:
+            raise Exception ("Limit_Order not Placed")
+        
 # ============================================================
-#   ORDER CONFIRMATION (REST Based)
+#   ORDER CONFIRMATION and Cancellation (REST Based)
 # ============================================================
 
     def confirm_order_execution(self, order_id):
 
-        order_Id = str(order_id)
+        order_ID = str(order_id)
 
         if order_id is not None: 
-            status1 = self.api.Get_Order_By_ID(order_Id)
-            status2 = self.api.Get_Positions()
-            status3 = self.api.Get_TradeBook()
-            status4 = self.api.Get_Orderbook()
+            req = self.api.Get_Order_By_ID(order_ID)
 
-            if status1 == "COMPLETED" :
+            result = req.get("status")
+
+            if result == ["SUCCESS"]:
                 return True
-        
-            elif status2 ==  "ACTIVE" :
-                return True
-            
             else:
                 return False
 
+
+    def cancel_order_by_id(self, order_id):
+
+        order_ID = str(order_id)
+
+        if order_id is not None: 
+            req = self.api.Cancel_Order(order_ID)
+
+            result = req.get("status")
+
+            if result == ["SUCCESS"]:
+                return True
+            else:
+                return False
 
 # ============================================================
 #  WEBSOCKET ROUTER (UNCHANGED)
@@ -313,12 +337,13 @@ class APIEngine():
 
     def subscribe(self, exchange, token):
 
+        Exchange_ = self._resolute_exchange(exchange)
         instrument = (exchange, token)
 
         if instrument not in self._subscribed_instruments:
 
             self._subscribed_instruments.add(instrument)
-            self.api.Subscribe_inst([instrument])
+            self.api.Subscribe_inst(Exchange_, token)
 
 
     def wait_for_ws(self, timeout=5.0):
@@ -410,17 +435,21 @@ class APIEngine():
 #  GET BEST LTP (UNCHANGED)
 # ============================================================
 
-    def get_best_ltp(self, exchange, token, trade_sym):
+    def get_best_ltp(self, exchange, token,):
 
-        ltp = self.get_ltp_live(exchange, token)
+        ltp:float = self.get_ltp_live(exchange, token)
         
-        if ltp is not None:
+        if ltp is None:
+
+            trade_sym = self.registry.get_symbol(exchange, token)
+
+            if not trade_sym:
+                raise Exception ("trade_symbol not found")
+        
+            return self.get_ltp_rest(exchange, trade_sym)
+        
+        else: 
             return ltp
-        
-        if not trade_sym:
-            raise Exception ("trade_symbol needed")
-        
-        return self.get_ltp_rest(exchange, trade_sym)
 
 
 # ============================================================
@@ -431,11 +460,11 @@ class APIEngine():
         print("[ENGINE] Shutting down API layer...")
         
         self.close_ws()
-        time.sleep(0.5)
+        time.sleep(1)
         
         print("[ENGINE] API layer shutdown complete.")
 
 
 
 
-#_#_#_#_#_#_
+#_#_#_#_#_#_#

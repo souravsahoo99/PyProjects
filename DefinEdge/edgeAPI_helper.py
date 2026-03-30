@@ -1,5 +1,5 @@
 # ============================================================
-# DEFINEEDGE API HELPER v2.7
+# DEFINEEDGE API HELPER v2.9
 # Production Broker Adapter
 # Engine Compatible
 # WebSocket Hardened
@@ -60,27 +60,25 @@ class EdgeApi:
         self._order_lock = threading.Lock()
 
         # SUBSCRIPTION STATE (DefineEdge MODEL)
-        self._subscribed: list[tuple[str, str]] = []     # [(iws.c2i.EXCHANGE_TYPE_NSE, "11536"),(iws.c2i.EXCHANGE_TYPE_NSE, "3456"),]
+        self._subscribed: list= [set(),None]             # [(iws.c2i.EXCHANGE_TYPE_NSE, "11536"),(iws.c2i.EXCHANGE_TYPE_NSE, "3456"),]
                                                          # [("NSE", "26000"),("NSE", "26009"),("NFO", "66022"),("NFO", "66023")]
         self._login()
         self._integrateData(self.c2i)
         self._integrateOrders(self.c2i)
         self._iWebsocket(self.c2i)
 
+
     # ========================================================
-    #  LOGIN
+    #    LOGIN                               
     # ========================================================
 
     def _login(self):
 
         c2i = ConnectToIntegrate()
-        Totp = pyotp.TOTP(totp_secret).now()
 
-        c2i.login(
-            api_token=self.api_token,
-            api_secret=self.api_secret,
-            totp=Totp,
-        )
+        t_otp = pyotp.TOTP(totp_secret).now()
+
+        c2i.login(api_token= self.api_token, api_secret= self.api_secret, totp= t_otp,)
 
         self.c2i = c2i
         self.api_session_key = c2i.api_session_key
@@ -117,10 +115,10 @@ class EdgeApi:
         self._ws_logged_in = True
 
         #  CRITICAL: SUBSCRIBE ONLY HERE
-        if self._subscribed:
+        for sets in self._subscribed:
             
-            iws.subscribe(self.c2i.SUBSCRIPTION_TYPE_TICK, self._subscribed)
-            iws.subscribe(self.c2i.SUBSCRIPTION_TYPE_ORDER, self._subscribed)            
+            iws.subscribe(self.c2i.SUBSCRIPTION_TYPE_TICK, sets)
+            iws.subscribe(self.c2i.SUBSCRIPTION_TYPE_ORDER, sets)       
 
 
 
@@ -161,7 +159,7 @@ class EdgeApi:
             with self._tick_lock:
                 self._tick_cache[key] = tick
 
-    # ===========   ORDER HANDLER   =============
+    # ===========   ORDER HANDLER   ==============
 
     def _on_order_update(self, iws, order):
 
@@ -207,39 +205,34 @@ class EdgeApi:
         except Exception as e:
             logger.error(f"WS close error: {e}")
 
-    # ======    Additional Websocket Functions    ========
+    # ========    Additional Websocket Functions    ========
 
-    def Subscribe_inst(self, tokens):
+    def Subscribe_inst(self,exchange, token):
 
-        if not tokens:
-            return
-
-        # STORE ALWAYS
-        for t in tokens:
+        t = set(exchange,str(token))
+        if t not in self._subscribed:    
             self._subscribed.add(t)
 
-        #  ONLY SUBSCRIBE IF WS READY
-        if self._ws_logged_in:
+        # # ONLY SUBSCRIBE IF WS READY (Not Applicable for DefineEdge_SDK)
+    """ if self._ws_logged_in:
             try:
-                self.iws.subscribe(self.c2i.SUBSCRIPTION_TYPE_TICK,tokens)
-
+                self.iws.subscribe(self.c2i.SUBSCRIPTION_TYPE_TICK,t)
             except Exception as e:
-                logger.error(f"Subscribe error: {e}")
+                logger.error(f"Subscribe error: {e}") """
 
-    def Unsubscribe_inst(self, tokens):
+    def Unsubscribe_inst(self,exchange, token):
 
-        if not tokens:
-            return
+        t = set(exchange,str(token))
 
-        for t in tokens:
+        if t in self._subscribed:
             self._subscribed.discard(t)
 
-        if self._ws_logged_in:
+        # # ONLY UNSUBSCRIBE IF WS READY (Not Applicable for DefineEdge_SDK)
+    """ if self._ws_logged_in:
             try:
-                self.iws.unsubscribe(self.c2i.SUBSCRIPTION_TYPE_TICK,tokens
-                                     )
+                self.iws.unsubscribe(self.c2i.SUBSCRIPTION_TYPE_TICK,t)                                     
             except Exception as e:
-                logger.error(f"Unsubscribe error: {e}")
+                logger.error(f"Unsubscribe error: {e}") """
 
 
     # ========================================================
@@ -257,13 +250,8 @@ class EdgeApi:
             quantity=quantity,
             tradingsymbol=tradingsymbol,
         )
-            
 
         info(f"Order placed: {order}")
-
-        # Get status of a single order.
-        info(io.order(order_id=order["order_id"]))
-
         return order
 
 
@@ -288,26 +276,22 @@ class EdgeApi:
 
         return self.io.cancel_order(order_id)
 
+    def Get_Order_By_ID(self, order_id):
 
+        return self.io.order(order_id)
+
+    # ========================================================                          
     def Get_Positions(self):
 
         return self.io.positions()
-
 
     def Get_Orderbook(self):
 
         return self.io.orders()
 
-
     def Get_TradeBook(self):
 
         return self.io.trades()
-
-
-    def Get_Order_By_ID(self, order_id):
-
-        return self.io.order(order_id)
-
 
     # ========================================================
     #     IntegrateData  (REST)  OHLC fetching
@@ -399,9 +383,9 @@ class EdgeApi:
             raise Exception(f"Token not found for {symbol} in symbols file")
 
 
-# ==========================================================
-# ================= Download MASTER File ===================
-# __________________________________________________________
+# -----------------------------------------------------------
+# ================= Download MASTER File ====================
+# ___________________________________________________________
 
 def Load_Master(url="https://app.definedgesecurities.com/public/allmaster.zip"):
 
@@ -421,4 +405,5 @@ def Load_Master(url="https://app.definedgesecurities.com/public/allmaster.zip"):
 
 
 
-#_#_#_#_#
+
+#_#_#_#_#_#
