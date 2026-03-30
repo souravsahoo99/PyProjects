@@ -23,7 +23,7 @@ api_secret = os.getenv("EDGE_API_SECRET")
 
 
 # ============================================================
-#     API - ENGINE                                                                 
+#     API - ENGINE                                                
 # ============================================================
 
 class APIEngine():
@@ -40,7 +40,7 @@ class APIEngine():
 
         # WEBSOCKET STATE
         self._is_ws_connected = False
-        self._subscribed_instruments: list = [set(),None]
+        self._subscribed_instruments: set[tuple[str,str]] = set() 
                                                                         ## [("NSE", "26000"),("NSE", "26009"),("NFO", "66022"),("NFO", "66023")]
         # THREAD FLAGS
         self._router_running = False

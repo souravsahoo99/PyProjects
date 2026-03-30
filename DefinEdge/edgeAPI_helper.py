@@ -111,11 +111,13 @@ class EdgeApi:
     def _on_ws_login(self, iws):
 
         logger.info("WS LOGIN SUCCESS")
-
         self._ws_logged_in = True
+
         #  CRITICAL: SUBSCRIBE ONLY HERE
-        if self._subscribed:
-            tokens = list(self._subscribed)
+        if not self._subscribed:
+            return
+            
+        tokens = list(self._subscribed)
 
         iws.subscribe(self.c2i.SUBSCRIPTION_TYPE_TICK, tokens)
         iws.subscribe(self.c2i.SUBSCRIPTION_TYPE_ORDER, tokens)       
@@ -180,11 +182,6 @@ class EdgeApi:
 
         self._ws_running = True 
               
-        while True:
-            try:
-                pass                
-            except KeyboardInterrupt:
-                break
 
     def Close_Websocket(self):
 
