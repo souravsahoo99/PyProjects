@@ -376,7 +376,10 @@ class APIEngine():
     def start_ws(self):
 
         # Start WS (non-blocking)
-        self.api.Start_Websocket()
+        if self.api._subscribed is  None and self._subscribed_instruments is  None:
+            raise Exception ("Instruments are not subscribed")
+        else:
+            self.api.Start_Websocket()
 
         #  WAIT FOR ACTUAL WS LOGIN (CRITICAL FIX)
         start = time.time()
