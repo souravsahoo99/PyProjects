@@ -1,5 +1,5 @@
 # ============================================================
-# DEFINEEDGE API HELPER v3.0        
+# DEFINEEDGE API HELPER v3.1        
 # Production Broker Adapter
 # Engine Compatible
 # WebSocket Hardened
@@ -154,10 +154,10 @@ class EdgeApi:
         if price is None:
             return
 
-        tick_ = float(price)
+        tick["lp"] = float(price)
 
         with self._tick_lock:
-            self._tick_cache[key] = tick_
+            self._tick_cache[key] = tick
 
     # ===========   ORDER HANDLER   ==============
 

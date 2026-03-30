@@ -168,7 +168,7 @@ class APIEngine():
         order_id = order.get("order_id")
         status = order.get("status")
 
-        if status == "SUCCESS":
+        if status == ["SUCCESS"]:
             return order_id
         else:
             raise Exception ("Market_Order not Placed")
@@ -192,7 +192,7 @@ class APIEngine():
         order_id = order.get("order_id")
         status = order.get("status")
 
-        if status == "SUCCESS":
+        if status == ["SUCCESS"]:
             return order_id
         else:
             raise Exception ("Limit_Order not Placed")
@@ -337,14 +337,16 @@ class APIEngine():
 
     def subscribe(self, exchange, token):
 
-        Exchange_ = self._resolute_exchange(exchange)
         instrument = (exchange, token)
 
-        if instrument not in self._subscribed_instruments:
+        if instrument in self._subscribed_instruments:
 
             self._subscribed_instruments.add(instrument)
-            self.api.Subscribe_inst(Exchange_, token)
 
+        for exchange, token in self._subscribed_instruments:
+
+            Exchange_ = self._resolute_exchange(exchange)
+            self.api.Subscribe_inst(Exchange_, token)
 
     def wait_for_ws(self, timeout=5.0):
 
@@ -372,10 +374,6 @@ class APIEngine():
         time.sleep(1)
 
     def start_ws(self):
-
-        #  Ensure subscriptions prepared BEFORE start
-        for inst in self._subscribed_instruments:
-            self.api.Subscribe_inst([inst])
 
         # Start WS (non-blocking)
         self.api.Start_Websocket()
