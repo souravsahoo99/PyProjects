@@ -84,12 +84,61 @@ class Tradehull:
 
 
 # =================================================================================================================================================================== 
-	def _get_totp(self, totp_secret: str) -> str:
-		totp_secret = (totp_secret or "").replace(" ", "").strip()
-		if not totp_secret:
-			raise ValueError("totp_secret is required for auto TOTP generation")
-		return pyotp.TOTP(totp_secret).now()
+
+		
+	def _extract_token_id_from_input(self, text: str) -> str:
+		try:
+			parsed = urllib.parse.urlparse(text)
+			qs = urllib.parse.parse_qs(parsed.query)
+			if "tokenId" in qs and qs["tokenId"]:
+				return qs["tokenId"][0]
+		except Exception:
+			pass
+		return "Token ID not Valid"
+
+	def extract_access_token(self, resp: dict) -> str:
+		if not isinstance(resp, dict):
+			raise Exception(f"Invalid response type: {type(resp)} => {resp}")
+		token = resp.get("accessToken") or resp.get("access_token")
+		if token:
+			return token
+		data = resp.get("data")
+		if isinstance(data, dict):
+			token = data.get("accessToken") or data.get("access_token")
+			if token:
+				return token
+		raise Exception(f"Access token not found in response: {resp}")
 	
+	def _token_file_today(self) -> str:
+		os.makedirs("Dependencies", exist_ok=True)
+		today = datetime.date.today().strftime("%Y-%m-%d")
+		return os.path.join("Dependencies", f"token_{today}.txt")
+
+	def _delete_all_token_files(self):
+		os.makedirs("Dependencies", exist_ok=True)
+		for name in os.listdir("Dependencies"):
+			if name.startswith("token_") and name.endswith(".txt"):
+				try:
+					os.remove(os.path.join("Dependencies", name))
+				except:
+					pass
+
+	def _read_token_today(self) -> str:
+		p = self._token_file_today()
+		if not os.path.exists(p):
+			return ""
+		raw = open(p, "r", encoding="utf-8").read().strip()
+		return raw.split("|", 1)[-1].strip()
+	
+	def _save_token_today_once(self, token: str):
+		p = self._token_file_today()
+		if os.path.exists(p):
+			return
+		self._delete_all_token_files()
+		today = datetime.date.today().strftime("%Y-%m-%d")
+		open(p, "w", encoding="utf-8").write(f"{today}|{token}")
+
+# =================================================================================================================================================================== 
 	def get_login(self, ClientCode: str, token_id: str = "", mode: str = "access_token", **kwargs) -> bool:
 		"""
 		mode:
@@ -107,55 +156,9 @@ class Tradehull:
 			self.ClientCode = ClientCode
 
 			# -----------------------------
-			# 1) ACCESS TOKEN 
+			#   API KEY 
 			# -----------------------------
-			if mode == "access_token":
-				print("Attempting authentication using ACCESS TOKEN.")
-
-				saved = self._read_token_today()
-
-				if saved:
-					self.token_id = saved
-					self.dhan_context = DhanContext(self.ClientCode, self.token_id)
-					self.Dhan = dhanhq(self.dhan_context)
-
-					self.instrument_df = self.get_instrument_file()
-					print("Already logged in for today, so reusing the token")
-					print("Instrument file retrieved successfully")
-					return True
-
-				self.token_id = token_id
-				if not self.token_id:
-					print("Access token missing. Please provide token_id.")
-					return False
-
-				try:
-					login = DhanLogin(self.ClientCode)
-					r = login.renew_token(self.token_id)
-					new_tok = r.get("token")
-
-					if not new_tok:
-						print("Renew failed: token not found in response, Please try with new token.")
-						return False
-
-					self.token_id = new_tok
-					self._save_token_today_once(self.token_id)
-
-					self.dhan_context = DhanContext(self.ClientCode, self.token_id)
-					self.Dhan = dhanhq(self.dhan_context)
-
-					self.instrument_df = self.get_instrument_file()
-					print("Instrument file retrieved successfully")
-					return True
-
-				except Exception as e:
-					print(f"Token renew failed: {e}, Please try with new token.")
-					return False
-
-			# -----------------------------
-			# 2) API KEY 
-			# -----------------------------
-			elif mode == "api_key":
+			if mode == "api_key":
 				print("Attempting authentication using API KEY.")
 
 				api_key = kwargs.get("api_key")
@@ -200,103 +203,12 @@ class Tradehull:
 					print("Instrument file retrieved successfully")
 					return True
 
-			elif mode == "pin_totp":
-				print("Attempting authentication using PIN + TOTP.")
-				
-				saved = self._read_token_today()
-				if saved:
-					self.token_id = saved
-					self.dhan_context = DhanContext(self.ClientCode, self.token_id)
-					self.Dhan = dhanhq(self.dhan_context)
-					self.instrument_df = self.get_instrument_file()
-					print("Already logged in for today, so reusing the token")
-					return True
-
-				login = DhanLogin(self.ClientCode)
-
-				pin = kwargs.get("pin")
-
-				totp_secret = kwargs.get("totp_secret")
-				if totp_secret:
-					totp = self._get_totp(totp_secret)
-					print("Auto-generated TOTP.")
-				else:
-					totp = kwargs.get("totp") or input("Enter current TOTP (6-digit): ").strip()
-
-				resp = login.generate_token(pin=pin, totp=totp)
-				access_token = self.extract_access_token(resp)
-
-				self.token_id = access_token
-				self.dhan_context = DhanContext(self.ClientCode, self.token_id)
-				self.Dhan = dhanhq(self.dhan_context)
-				self._save_token_today_once(self.token_id)
-
-				self.instrument_df = self.get_instrument_file()
-				print("Instrument file retrieved successfully")
-				return True
-			else:
-				raise ValueError(f"Invalid mode: {mode}")
 
 		except Exception as e:
 			print("Login failed:", e)
 			self.logger.exception(f"Login failed: {e}")
 			traceback.print_exc()
 			return False
-# =================================================================================================================================================================== 
-	def _extract_token_id_from_input(self, text: str) -> str:
-		try:
-			parsed = urllib.parse.urlparse(text)
-			qs = urllib.parse.parse_qs(parsed.query)
-			if "tokenId" in qs and qs["tokenId"]:
-				return qs["tokenId"][0]
-		except Exception:
-			pass
-		return "Token ID not Valid"
-
-# =================================================================================================================================================================== 	
-
-	def _token_file_today(self) -> str:
-		os.makedirs("Dependencies", exist_ok=True)
-		today = datetime.date.today().strftime("%Y-%m-%d")
-		return os.path.join("Dependencies", f"token_{today}.txt")
-
-	def _delete_all_token_files(self):
-		os.makedirs("Dependencies", exist_ok=True)
-		for name in os.listdir("Dependencies"):
-			if name.startswith("token_") and name.endswith(".txt"):
-				try:
-					os.remove(os.path.join("Dependencies", name))
-				except:
-					pass
-
-	def _read_token_today(self) -> str:
-		p = self._token_file_today()
-		if not os.path.exists(p):
-			return ""
-		raw = open(p, "r", encoding="utf-8").read().strip()
-		return raw.split("|", 1)[-1].strip()
-	
-	def _save_token_today_once(self, token: str):
-		p = self._token_file_today()
-		if os.path.exists(p):
-			return
-		self._delete_all_token_files()
-		today = datetime.date.today().strftime("%Y-%m-%d")
-		open(p, "w", encoding="utf-8").write(f"{today}|{token}")
-
-# =================================================================================================================================================================== 
-	def extract_access_token(self, resp: dict) -> str:
-		if not isinstance(resp, dict):
-			raise Exception(f"Invalid response type: {type(resp)} => {resp}")
-		token = resp.get("accessToken") or resp.get("access_token")
-		if token:
-			return token
-		data = resp.get("data")
-		if isinstance(data, dict):
-			token = data.get("accessToken") or data.get("access_token")
-			if token:
-				return token
-		raise Exception(f"Access token not found in response: {resp}")
 
 # =================================================================================================================================================================== 
 # =========================================================================================================================================== 
