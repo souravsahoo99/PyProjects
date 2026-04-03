@@ -25,7 +25,7 @@ from collections import OrderedDict
 import pyotp
 warnings.filterwarnings("ignore")
 
-print("Codebase Version 3.2.1")
+print("Codebase Custom Version 3.2.1")
 
 class Tradehull:    
 	clientCode                                      : str
@@ -82,65 +82,14 @@ class Tradehull:
 			print(e)
 			traceback.print_exc()
 
-	def _extract_token_id_from_input(self, text: str) -> str:
-		try:
-			parsed = urllib.parse.urlparse(text)
-			qs = urllib.parse.parse_qs(parsed.query)
-			if "tokenId" in qs and qs["tokenId"]:
-				return qs["tokenId"][0]
-		except Exception:
-			pass
-		return "Token ID not Valid"
 
-	def extract_access_token(self, resp: dict) -> str:
-		if not isinstance(resp, dict):
-			raise Exception(f"Invalid response type: {type(resp)} => {resp}")
-		token = resp.get("accessToken") or resp.get("access_token")
-		if token:
-			return token
-		data = resp.get("data")
-		if isinstance(data, dict):
-			token = data.get("accessToken") or data.get("access_token")
-			if token:
-				return token
-		raise Exception(f"Access token not found in response: {resp}")
-	
+# =================================================================================================================================================================== 
 	def _get_totp(self, totp_secret: str) -> str:
 		totp_secret = (totp_secret or "").replace(" ", "").strip()
 		if not totp_secret:
 			raise ValueError("totp_secret is required for auto TOTP generation")
 		return pyotp.TOTP(totp_secret).now()
 	
-	def _token_file_today(self) -> str:
-		os.makedirs("Dependencies", exist_ok=True)
-		today = datetime.date.today().strftime("%Y-%m-%d")
-		return os.path.join("Dependencies", f"token_{today}.txt")
-
-	def _delete_all_token_files(self):
-		os.makedirs("Dependencies", exist_ok=True)
-		for name in os.listdir("Dependencies"):
-			if name.startswith("token_") and name.endswith(".txt"):
-				try:
-					os.remove(os.path.join("Dependencies", name))
-				except:
-					pass
-
-	def _read_token_today(self) -> str:
-		p = self._token_file_today()
-		if not os.path.exists(p):
-			return ""
-		raw = open(p, "r", encoding="utf-8").read().strip()
-		return raw.split("|", 1)[-1].strip()
-	
-	def _save_token_today_once(self, token: str):
-		p = self._token_file_today()
-		if os.path.exists(p):
-			return
-		self._delete_all_token_files()
-		today = datetime.date.today().strftime("%Y-%m-%d")
-		open(p, "w", encoding="utf-8").write(f"{today}|{token}")
-
-
 	def get_login(self, ClientCode: str, token_id: str = "", mode: str = "access_token", **kwargs) -> bool:
 		"""
 		mode:
@@ -293,8 +242,64 @@ class Tradehull:
 			self.logger.exception(f"Login failed: {e}")
 			traceback.print_exc()
 			return False
+# =================================================================================================================================================================== 
+	def _extract_token_id_from_input(self, text: str) -> str:
+		try:
+			parsed = urllib.parse.urlparse(text)
+			qs = urllib.parse.parse_qs(parsed.query)
+			if "tokenId" in qs and qs["tokenId"]:
+				return qs["tokenId"][0]
+		except Exception:
+			pass
+		return "Token ID not Valid"
 
+# =================================================================================================================================================================== 	
 
+	def _token_file_today(self) -> str:
+		os.makedirs("Dependencies", exist_ok=True)
+		today = datetime.date.today().strftime("%Y-%m-%d")
+		return os.path.join("Dependencies", f"token_{today}.txt")
+
+	def _delete_all_token_files(self):
+		os.makedirs("Dependencies", exist_ok=True)
+		for name in os.listdir("Dependencies"):
+			if name.startswith("token_") and name.endswith(".txt"):
+				try:
+					os.remove(os.path.join("Dependencies", name))
+				except:
+					pass
+
+	def _read_token_today(self) -> str:
+		p = self._token_file_today()
+		if not os.path.exists(p):
+			return ""
+		raw = open(p, "r", encoding="utf-8").read().strip()
+		return raw.split("|", 1)[-1].strip()
+	
+	def _save_token_today_once(self, token: str):
+		p = self._token_file_today()
+		if os.path.exists(p):
+			return
+		self._delete_all_token_files()
+		today = datetime.date.today().strftime("%Y-%m-%d")
+		open(p, "w", encoding="utf-8").write(f"{today}|{token}")
+
+# =================================================================================================================================================================== 
+	def extract_access_token(self, resp: dict) -> str:
+		if not isinstance(resp, dict):
+			raise Exception(f"Invalid response type: {type(resp)} => {resp}")
+		token = resp.get("accessToken") or resp.get("access_token")
+		if token:
+			return token
+		data = resp.get("data")
+		if isinstance(data, dict):
+			token = data.get("accessToken") or data.get("access_token")
+			if token:
+				return token
+		raise Exception(f"Access token not found in response: {resp}")
+
+# =================================================================================================================================================================== 
+# =========================================================================================================================================== 
 	def get_instrument_file(self):
 		global instrument_df
 		current_date = time.strftime("%Y-%m-%d")
@@ -324,6 +329,7 @@ class Tradehull:
 			instrument_df.to_csv("Dependencies\\" + expected_file)
 		return instrument_df
 
+# =========================================================================================================================================== 
 	def correct_step_df_creation(self):
 
 		self.correct_list = {} 
@@ -370,7 +376,8 @@ class Tradehull:
 
 			except Exception as e:
 				self.logger.exception(f"Error processing {name}: {e}")
-	
+# =========================================================================================================================================== 	
+# =========================================================================================================================================== 	
 	def get_ltp_data(self,names, debug="NO"):
 		try:
 			instrument_df = self.instrument_df.copy()
@@ -431,6 +438,8 @@ class Tradehull:
 					print(f"Exception for instrument name {name} as {e}")
 					continue
 			time.sleep(0.4)
+
+			# Data Fetching
 			data = self.Dhan.ticker_data(instruments)
 			ltp_data=dict()
 			
@@ -454,7 +463,7 @@ class Tradehull:
 			self.logger.exception(f"Exception at calling ltp as {e}")
 			return dict()
 
-
+# =========================================================================================================================================== 
 	def order_placement(self,tradingsymbol:str, exchange:str,quantity:int, price:int, trigger_price:int, order_type:str, transaction_type:str, trade_type:str,disclosed_quantity=0,after_market_order=False,validity ='DAY', amo_time='OPEN',bo_profit_value=None, bo_stop_loss_value=None, tag=None, should_slice=False)->str:
 		try:
 			tradingsymbol = tradingsymbol.upper()
@@ -507,30 +516,9 @@ class Tradehull:
 			print(f"'Got exception in place_order as {e}")
 			return None
 	
-	
-	def modify_order(self, order_id, order_type, quantity, price=0, trigger_price=0, disclosed_quantity=0, validity='DAY',leg_name = None):
-		try:
-			self.order_Type = {'LIMIT': self.Dhan.LIMIT, 'MARKET': self.Dhan.MARKET,'STOPLIMIT': self.Dhan.SL, 'STOPMARKET': self.Dhan.SLM}
-			Validity = {'DAY': "DAY", 'IOC': 'IOC'}
-			order_type = self.order_Type[order_type.upper()]
-			time_in_force = Validity[validity.upper()]
-			leg_name_check = ['ENTRY_LEG','TARGET_LEG','STOP_LOSS_LEG']
-			if leg_name is not None:
-				if leg_name.upper() in leg_name_check:
-					leg_name = leg_name.upper()
-				else:
-					raise Exception(f'Leg Name value must be "["ENTRY_LEG","TARGET_LEG","STOP_LOSS_LEG"]"')
-				
-			response = self.Dhan.modify_order(order_id =order_id, order_type=order_type, leg_name=leg_name, quantity=int(quantity), price=float(price), trigger_price=float(trigger_price), disclosed_quantity=int(disclosed_quantity), validity=time_in_force)
-			if response['status']=='failure':
-				raise Exception(response)
-			else:
-				orderid = response["data"]["orderId"]
-				return str(orderid)
-		except Exception as e:
-			print(f'Got exception in modify_order as {e}')
-			
 
+			
+	# =========================================================================================================================================== 
 	def cancel_order(self,OrderID:str)->None:
 		try:
 			response = self.Dhan.cancel_order(order_id=OrderID)
@@ -541,58 +529,8 @@ class Tradehull:
 		except Exception as e:
 			print(f'Got exception in cancel_order as {e}')
 		
-	
-	def place_slice_order(self, tradingsymbol, exchange, transaction_type, quantity,
-						   order_type, trade_type, price, trigger_price=0, disclosed_quantity=0,
-						   after_market_order=False, validity='DAY', amo_time='OPEN',
-						   bo_profit_value=None, bo_stop_loss_value=None):
-		try:
-			tradingsymbol = tradingsymbol.upper()
-			exchange = exchange.upper()
-			instrument_df = self.instrument_df.copy()
-			script_exchange = { "NSE": self.Dhan.NSE, "NFO": self.Dhan.NSE_FNO, "BFO": self.Dhan.BSE_FNO, "CUR": self.Dhan.CUR, "BSE": self.Dhan.BSE, "MCX": self.Dhan.MCX }
-			self.order_Type = {'LIMIT': self.Dhan.LIMIT, 'MARKET': self.Dhan.MARKET,'STOPLIMIT': self.Dhan.SL, 'STOPMARKET': self.Dhan.SLM}
-			product = {'MIS':self.Dhan.INTRA, 'MARGIN':self.Dhan.MARGIN, 'MTF':self.Dhan.MTF, 'CO':self.Dhan.CO,'BO':self.Dhan.BO, 'CNC': self.Dhan.CNC}
-			Validity = {'DAY': "DAY", 'IOC': 'IOC'}
-			transactiontype = {'BUY': self.Dhan.BUY, 'SELL': self.Dhan.SELL}
-			instrument_exchange = {'NSE':"NSE",'BSE':"BSE",'NFO':'NSE','BFO':'BSE','MCX':'MCX','CUR':'NSE'}
-			amo_time_check = ['OPEN', 'OPEN_30', 'OPEN_60']
+	# =========================================================================================================================================== 
 
-			if after_market_order:
-				if amo_time.upper() in ['OPEN', 'OPEN_30', 'OPEN_60']:
-					amo_time = amo_time.upper()
-				else:
-					raise Exception("amo_time value must be ['PRE_OPEN','OPEN','OPEN_30','OPEN_60']")			
-
-			exchangeSegment = script_exchange[exchange]
-			product_Type = product[trade_type.upper()]
-			order_type = self.order_Type[order_type.upper()]
-			order_side = transactiontype[transaction_type.upper()]
-			time_in_force = Validity[validity.upper()]
-			security_check = instrument_df[((instrument_df['SEM_TRADING_SYMBOL']==tradingsymbol)|(instrument_df['SEM_CUSTOM_SYMBOL']==tradingsymbol))&(instrument_df['SEM_EXM_EXCH_ID']==instrument_exchange[exchange])]
-			if security_check.empty:
-				raise Exception("Check the Tradingsymbol")
-			security_id = security_check.iloc[-1]['SEM_SMST_SECURITY_ID']
-			order = self.Dhan.place_slice_order(security_id=str(security_id), exchange_segment=exchangeSegment,
-											   transaction_type=order_side, quantity=quantity,
-											   order_type=order_type, product_type=product_Type, price=price,
-											   trigger_price=trigger_price,disclosed_quantity=disclosed_quantity,
-					after_market_order=after_market_order, validity=time_in_force, amo_time=amo_time,
-					bo_profit_value=bo_profit_value, bo_stop_loss_value=bo_stop_loss_value)
-
-			if order['status']=='failure':
-				raise Exception(order)
-			
-			if type(order["data"])!=list:
-				orderid = order["data"]["orderId"]
-				orderid = str(orderid)
-			if type(order["data"])==list:
-				id_list = order["data"]
-				orderid = [str(data['orderId']) for data in id_list]
-			return orderid
-		except Exception as e:
-			print(f"'Got exception in place_order as {e}")
-			return None	
 
 	def kill_switch(self,action):
 		try:
@@ -607,6 +545,7 @@ class Tradehull:
 		except Exception as e:
 			self.logger.exception(f"Error at Kill switch as {e}")
 
+# =========================================================================================================================================== 
 	def get_live_pnl(self):
 		"""
 			use to get live pnl
@@ -649,25 +588,13 @@ class Tradehull:
 			self.logger.exception(f'got exception in pnl as {e} ')
 			return 0
 
+# =========================================================================================================================================== 
 
-	def get_balance(self):
-		try:
-			response = self.Dhan.get_fund_limits()
-			if response['status']!='failure':
-				balance = float(response['data']['availabelBalance'])
-				return balance
-			else:
-				raise Exception(response)
-		except Exception as e:
-			print(f"Error at Gettting balance as {e}")
-			self.logger.exception(f"Error at Gettting balance as {e}")
-			return 0
-	
-
+# =========================================================================================================================================== 
 	def convert_to_date_time(self,epoch):
 		return self.Dhan.convert_to_date_time(self.Dhan,epoch)
-	
-
+	# ======================================================================================================================================= 
+# =========================================================================================================================================== 
 	def get_start_date(self):
 		try:
 			instrument_df = self.instrument_df.copy()
@@ -698,7 +625,8 @@ class Tradehull:
 		except Exception as e:
 			self.logger.exception(f"Error at getting start date as {e}")
 			return start_date, to_date
-
+		
+# =========================================================================================================================================== 
 	def get_historical_data(self,tradingsymbol,exchange,timeframe, sector = "NO",debug="NO"):			
 		try:
 			# tradingsymbol = tradingsymbol.upper()
@@ -769,7 +697,7 @@ class Tradehull:
 			self.logger.exception(f"Exception in Getting OHLC data as {e}")
 			# traceback.print_exc()
 
-
+# =========================================================================================================================================== 
 	def resample_timeframe(self, df, timeframe='5T'):
 		try:
 			df['timestamp'] = pd.to_datetime(df['timestamp'])
@@ -805,7 +733,7 @@ class Tradehull:
 		except Exception as e:
 			self.logger.exception(f"Error in resampling timeframe: {e}")
 			return pd.DataFrame()
-
+# =========================================================================================================================================== 
 	
 	def get_lot_size(self,tradingsymbol: str):
 		instrument_df = self.instrument_df.copy()
@@ -818,6 +746,8 @@ class Tradehull:
 			return int(data.iloc[0]['SEM_LOT_UNITS'])
 		
 
+	# =========================================================================================================================================== 	
+	# =========================================================================================================================================== 
 	def ATM_Strike_Selection(self, Underlying, Expiry):
 		try:
 
@@ -929,6 +859,7 @@ class Tradehull:
 			print('exception got in ce_pe_option_df',e)
 			return None, None, strike
 
+	# =========================================================================================================================================== 
 	def OTM_Strike_Selection(self, Underlying, Expiry,OTM_count=1):
 		try:
 			Underlying = Underlying.upper()
@@ -1046,7 +977,7 @@ class Tradehull:
 			print(f"Getting Error at OTM strike Selection as {e}")
 			return None,None,0,0
 
-
+	# =========================================================================================================================================== 
 	def ITM_Strike_Selection(self, Underlying, Expiry, ITM_count=1):
 		try:
 			Underlying = Underlying.upper()
@@ -1163,6 +1094,7 @@ class Tradehull:
 			print(f"Getting Error at OTM strike Selection as {e}")
 			return None,None,0,0
 
+# =========================================================================================================================================== 
 	def cancel_all_orders(self) -> dict:
 		try:
 			order_details=dict()
@@ -1225,6 +1157,7 @@ class Tradehull:
 			self.logger.exception("problem close all trades")
 			traceback.print_exc()
 
+# ===========================================================================================================
 	def order_report(self) -> Tuple[Dict, Dict]:
 		'''
 		If watchlist has more than two stock, using order_report, get the order status and order execution price
@@ -1403,7 +1336,7 @@ class Tradehull:
 				'data':response,
 			}
 		
-		
+# =========================================================================================================================================== 		
 	def get_option_greek(self, strike: int, expiry: int, asset: str, interest_rate: float, flag: str, scrip_type: str):
 		try:
 			asset = asset.upper()
@@ -1519,7 +1452,7 @@ class Tradehull:
 			print(f"Exception in get_option_greek: {e}")
 			return None
 
-
+# =========================================================================================================================================== 
 	def get_expiry_list(self, Underlying, exchange):
 		try:
 			Underlying = Underlying.upper()
@@ -1550,7 +1483,8 @@ class Tradehull:
 		except Exception as e:
 			print(f"Exception at getting Expiry list as {e}")
 			return list()
-		
+
+	# =========================================================================================================================================== 	
 	def get_option_chain(self, Underlying, exchange, expiry,num_strikes = 10):
 		try:
 			Underlying = Underlying.upper()
@@ -1619,7 +1553,7 @@ class Tradehull:
 		except Exception as e:
 			print(f"Getting Error at Option Chain as {e}")
 
-
+# =========================================================================================================================================== 
 	def format_option_chain(self,data):
 		"""
 		Formats JSON data into an Option Chain structure with the Strike Price column in the middle.
@@ -1684,65 +1618,11 @@ class Tradehull:
 		except Exception as e:
 			print(f"Unable to form the Option chain as {e}")
 			return data
-	
-
-	def send_telegram_alert(self,message, receiver_chat_id, bot_token):
-		"""
-		Sends a message via Telegram bot to a specific chat ID.
-		
-		Parameters:
-			message (str): The message to be sent.
-			receiver_chat_id (str): The chat ID of the receiver.
-			bot_token (str): The token of the Telegram bot.
-		"""
-		try:
-			encoded_message = urllib.parse.quote(message)
-			send_text = f'https://api.telegram.org/bot{bot_token}/sendMessage?chat_id={receiver_chat_id}&text={encoded_message}'
-			response = requests.get(send_text)
-			response.raise_for_status()
-			if int(response.status_code) ==200:
-				print(f"Message sent successfully")
-			else:
-				raise Exception(response.json())
-		except requests.exceptions.RequestException as e:
-			print(f"Failed to send message: {e}")
 
 
-	def margin_calculator(self, tradingsymbol, exchange, transaction_type, quantity, trade_type, price, trigger_price=0, debug = "NO"):
-		try:
-
-			tradingsymbol = tradingsymbol.upper()
-			exchange = exchange.upper()
-			instrument_df = self.instrument_df.copy()
-			script_exchange = {"NSE":self.Dhan.NSE, "NFO":self.Dhan.FNO, "BFO":"BSE_FNO", "CUR": self.Dhan.CUR, "BSE":self.Dhan.BSE, "MCX":self.Dhan.MCX, "INDEX":self.Dhan.INDEX}
-			instrument_exchange = {'NSE':"NSE",'BSE':"BSE",'NFO':'NSE','BFO':'BSE','MCX':'MCX','CUR':'NSE'}
-			exchange_segment = script_exchange[exchange]
-			product = {'MIS':self.Dhan.INTRA, 'MARGIN':self.Dhan.MARGIN, 'MTF':self.Dhan.MTF, 'CO':self.Dhan.CO,'BO':self.Dhan.BO, 'CNC': self.Dhan.CNC}
-			transactiontype = {'BUY': self.Dhan.BUY, 'SELL': self.Dhan.SELL}			
-			
-			product_Type = product[trade_type.upper()]
-			order_side = transactiontype[transaction_type.upper()]
-
-			security_check = instrument_df[((instrument_df['SEM_TRADING_SYMBOL']==tradingsymbol)|(instrument_df['SEM_CUSTOM_SYMBOL']==tradingsymbol))&(instrument_df['SEM_EXM_EXCH_ID']==instrument_exchange[exchange])]
-			if security_check.empty:
-				raise Exception("Check the Tradingsymbol")
-			security_id = security_check.iloc[-1]['SEM_SMST_SECURITY_ID']
-
-			response = self.Dhan.margin_calculator(str(security_id), exchange_segment, order_side, int(quantity), product_Type, float(price), float(trigger_price))
-			
-			if debug.upper()=="YES":
-				print(response)		
-
-			if response['status']=='success':
-				oc = response['data']
-				return oc
-			else:
-				raise Exception(response)					
-		except Exception as e:
-			print(f"Error at getting response from msrgin calculator as {e}")
-			return 0
-
-
+# =========================================================================================================================================== 
+# =========================================================================================================================================== 
+# =========================================================================================================================================== 
 	def get_quote_data(self,names, debug="NO"):
 		try:
 			instrument_df = self.instrument_df.copy()
@@ -1803,6 +1683,8 @@ class Tradehull:
 					print(f"Exception for instrument name {name} as {e}")
 					continue
 			time.sleep(2)
+
+			# Data Fetching
 			data = self.Dhan.quote_data(instruments)
 						
 			ltp_data=dict()
@@ -1826,7 +1708,7 @@ class Tradehull:
 			return dict()
 
 
-
+# =========================================================================================================================================== 
 	def get_ohlc_data(self,names, debug="NO"):
 		try:
 			instrument_df = self.instrument_df.copy()
@@ -1887,6 +1769,8 @@ class Tradehull:
 					print(f"Exception for instrument name {name} as {e}")
 					continue
 			time.sleep(2)
+			
+			# Data Fetching
 			data = self.Dhan.ohlc_data(instruments)
 						
 			ltp_data=dict()
@@ -1908,89 +1792,7 @@ class Tradehull:
 			print(f"Exception at calling OHLC as {e}")
 			self.logger.exception(f"Exception at calling OHLC as {e}")
 			return dict()
-
-
-	def heikin_ashi(self, df):
-		try:
-			if df.empty:
-				raise ValueError("Input DataFrame is empty.")
-			
-			required_columns = ['open', 'high', 'low', 'close', 'timestamp']
-			if not all(col in df.columns for col in required_columns):
-				raise ValueError(f"Input DataFrame must contain these columns: {required_columns}")
-
-			ha_close = (df['open'] + df['high'] + df['low'] + df['close']) / 4
-			ha_open = [df['open'].iloc[0]]  
-			ha_high = []
-			ha_low = []
-
-			for i in range(1, len(df)):
-				ha_open.append((ha_open[-1] + ha_close.iloc[i - 1]) / 2)
-				ha_high.append(max(df['high'].iloc[i], ha_open[-1], ha_close.iloc[i]))
-				ha_low.append(min(df['low'].iloc[i], ha_open[-1], ha_close.iloc[i]))
-
-			ha_high.insert(0, df['high'].iloc[0])
-			ha_low.insert(0, df['low'].iloc[0])
-
-			ha_df = pd.DataFrame({
-				'timestamp': df['timestamp'],
-				'open': ha_open,
-				'high': ha_high,
-				'low': ha_low,
-				'close': ha_close
-			})
-
-			return ha_df
-		except Exception as e:
-			self.logger.exception(f"Error in Heikin-Ashi calculation: {e}")
-			pass
-
-
-	def renko_bricks(self,data, box_size=7):
-		renko_data = []
-		current_brick_color = None
-		prev_close = None
-
-		for _, row in data.iterrows():
-			open_price, close_price = row['open'], row['close']
-
-			if prev_close is None:
-				prev_close = (open_price//box_size)*box_size
-
-			while abs(close_price - prev_close) >= box_size:
-				price_diff = close_price - prev_close
-				
-				if price_diff > 0:
-					if current_brick_color == 'red':
-						if price_diff < 2 * box_size:
-							break
-						prev_close += 2 * box_size  
-					else:
-						prev_close += box_size
-					
-					current_brick_color = 'green'
-
-				elif price_diff < 0:
-					if current_brick_color == 'green':
-						if -price_diff < 2 * box_size:
-							break
-						prev_close -= 2 * box_size  
-					else:
-						prev_close -= box_size
-					
-					current_brick_color = 'red'
-				
-				renko_data.append({
-					'timestamp': row['timestamp'],
-					'open': prev_close - box_size if current_brick_color == 'green' else prev_close + box_size,
-					'high': prev_close if current_brick_color == 'green' else prev_close + box_size,
-					'low': prev_close - box_size if current_brick_color == 'red' else prev_close,
-					'close': prev_close,
-					'brick_color': current_brick_color,
-				})
-
-		return pd.DataFrame(renko_data)
-
+		
 	# Long Term Historical Data
 	def get_long_term_historical_data(self, tradingsymbol, exchange, timeframe, from_date, to_date, sector = "NO", debug="NO"):
 		"""
@@ -2106,8 +1908,10 @@ class Tradehull:
 				from_str = current_from.strftime('%Y-%m-%d')
 				to_str = current_to.strftime('%Y-%m-%d')
 				print(f"Fetching data for {tradingsymbol} from {from_str} to {to_str}")
+				
 				time.sleep(0.4)
-
+			
+				# Data Fetching
 				if is_intraday:
 					response = self.Dhan.intraday_minute_data(
 						str(security_id), exchange_segment, instrument_type,
@@ -2137,6 +1941,8 @@ class Tradehull:
 			return pd.DataFrame()
 
 
+
+# ==========================================================================================================================
 	# 20 Market Depth Data
 	def get_market_depth_client(self, tradingsymbol: str, exchange: str, debug: str = "NO"):
 		
@@ -2187,7 +1993,7 @@ class Tradehull:
 			self.logger.exception(f"Exception in get_market_depth_client as {e}")
 			return None, None, None
 		
-
+	# ========================================================================================================================
 	def start_market_depth(self, tradingsymbol, exchange, debug="NO"):
 		depth_client, exch_code, sec_id = self.get_market_depth_client(tradingsymbol, exchange, debug)
 
@@ -2204,6 +2010,7 @@ class Tradehull:
 
 		return depth_client, exch_code, sec_id
 	
+	# ========================================================================================================================
 	def get_market_depth_df(self, depth_client, debug: str = "NO") -> pd.DataFrame:
 		
 		try:
@@ -2297,7 +2104,7 @@ class Tradehull:
 
 		return depth_clients
 
-	
+	# ============================================================
 	def convert_to_df(self, response):
 		try:
 			data = response.get("data", {}).get("data", {})
@@ -2330,7 +2137,7 @@ class Tradehull:
 
 		except:
 			return pd.DataFrame()
-
+# ============================================================
 
 	def get_expired_option_data( self, tradingsymbol: str, exchange: str, interval: int, expiry_flag: str, expiry_code: int, strike: str = "ATM", option_type: str = "CALL", required_data=None, from_date: str = "", to_date: str = ""):
 		try:
@@ -2418,6 +2225,7 @@ class Tradehull:
 			self.logger.exception(f"Exception in get_expired_option_data as {e}")
 			return None
 
+# ============================================================
 	def dhan_equity_step_creation(self) -> dict:
 		"""
 		Build step_size size dictionary for all stock option underlyings (OPTSTK)
@@ -2464,7 +2272,7 @@ class Tradehull:
 		except Exception as e:
 			print("Error in dhan_equity_step_creation:", e)
 			return {}
-
+# ============================================================
 	def _resolve_security_id(self, tradingsymbol: str, exchange: str) -> str:
 		tradingsymbol = tradingsymbol.upper().strip()
 		exchange = exchange.upper().strip()
@@ -2491,7 +2299,7 @@ class Tradehull:
 
 		return str(sec.iloc[-1]["SEM_SMST_SECURITY_ID"])
 
-
+# ============================================================
 	def _map_exchange_segment(self, exchange: str):
 		exchange = exchange.upper().strip()
 		script_exchange = {
@@ -2505,241 +2313,13 @@ class Tradehull:
 		if exchange not in script_exchange:
 			raise Exception(f"Invalid exchange: {exchange}")
 		return script_exchange[exchange]
+	# ============================================================
 
-	def place_super_order( self, tradingsymbol: str, exchange: str, transaction_type: str, quantity: int, order_type: str, trade_type: str, price: float = 0, target_price: float = 0, stop_loss_price: float = 0, trailing_jump: float = 0):
-		"""
-		Super Order = Entry + Target + SL (and optional trailing jump)
-		Returns: orderId (str)
-		"""
-		try:
-			security_id = self._resolve_security_id(tradingsymbol, exchange)
-			exchange_segment = self._map_exchange_segment(exchange)
 
-			order_type_map = {
-				"LIMIT": self.Dhan.LIMIT,
-				"MARKET": self.Dhan.MARKET,
-				"STOPLIMIT": self.Dhan.SL,
-				"STOPMARKET": self.Dhan.SLM
-			}
-			product_map = {
-				"MIS": self.Dhan.INTRA,
-				"MARGIN": self.Dhan.MARGIN,
-				"MTF": self.Dhan.MTF,
-				"CNC": self.Dhan.CNC
-			}
-			side_map = {"BUY": self.Dhan.BUY, "SELL": self.Dhan.SELL}
+# ============================================================================================================================================================================================
 
-			ot = order_type_map[order_type.upper()]
-			pt = product_map[trade_type.upper()]
-			side = side_map[transaction_type.upper()]
-
-			resp = self.Dhan.place_super_order(
-				security_id=security_id,
-				exchange_segment=exchange_segment,
-				transaction_type=side,
-				quantity=int(quantity),
-				order_type=ot,
-				product_type=pt,
-				price=float(price),
-				targetPrice=float(target_price),
-				stopLossPrice=float(stop_loss_price),
-				trailingJump=float(trailing_jump)
-			)
-
-			if resp.get("status") == "failure":
-				raise Exception(resp)
-
-			return str(resp["data"]["orderId"])
-
-		except Exception as e:
-			print(f"Got exception in place_super_order: {e}")
-			return None
 	
-	def modify_super_order( self, order_id: str, leg_name: str, quantity: int, order_type: str, price: float = 0, target_price: float = 0, stop_loss_price: float = 0, trailing_jump: float = 0):
-
-		"""
-		leg_name must be: ENTRY_LEG / TARGET_LEG / STOP_LOSS_LEG
-		Returns: orderId (str)
-		"""
-		try:
-			leg_name = leg_name.upper().strip()
-			if leg_name not in ["ENTRY_LEG", "TARGET_LEG", "STOP_LOSS_LEG"]:
-				raise Exception("leg_name must be ENTRY_LEG / TARGET_LEG / STOP_LOSS_LEG")
-
-			order_type_map = {
-				"LIMIT": self.Dhan.LIMIT,
-				"MARKET": self.Dhan.MARKET,
-				"STOPLIMIT": self.Dhan.SL,
-				"STOPMARKET": self.Dhan.SLM
-			}
-			ot = order_type_map[order_type.upper()]
-
-			resp = self.Dhan.modify_super_order(
-				order_id=str(order_id),
-				order_type=ot,
-				leg_name=leg_name,
-				quantity=int(quantity),
-				price=float(price),
-				targetPrice=float(target_price),
-				stopLossPrice=float(stop_loss_price),
-				trailingJump=float(trailing_jump)
-			)
-
-			if resp.get("status") == "failure":
-				raise Exception(resp)
-
-			return str(resp["data"]["orderId"])
-
-		except Exception as e:
-			print(f"Got exception in modify_super_order: {e}")
-			return None
-	
-	def cancel_super_order(self, order_id: str, leg_name: str = "ENTRY_LEG"):
-		"""
-		order_leg can be: ENTRY_LEG / TARGET_LEG / STOP_LOSS_LEG
-		Returns: orderStatus (str)
-		"""
-		try:
-			order_leg = leg_name.upper().strip()
-			if leg_name not in ["ENTRY_LEG", "TARGET_LEG", "STOP_LOSS_LEG"]:
-				raise Exception("order_leg must be ENTRY_LEG / TARGET_LEG / STOP_LOSS_LEG")
-
-			resp = self.Dhan.cancel_super_order(order_id=str(order_id), order_leg=order_leg)
-
-			if resp.get("status") == "failure":
-				raise Exception(resp)
-
-			return resp["data"].get("orderStatus")
-
-		except Exception as e:
-			print(f"Got exception in cancel_super_order: {e}")
-			return None
-
-	def get_super_orders(self):
-		try:
-			resp = self.Dhan.get_super_order_list()
-			if resp.get("status") == "failure":
-				raise Exception(resp)
-			return resp["data"]
-		except Exception as e:
-			print(f"Got exception in get_super_orders: {e}")
-			return None
-
-	def place_forever_order( self, tradingsymbol: str, exchange: str, transaction_type: str, quantity: int, order_type: str, trade_type: str, price: float = 0, trigger_price: float = 0, order_flag: str = "SINGLE", disclosed_quantity: int = 0, validity: str = "DAY", quantity_1: int = 0, price_1: float = 0, trigger_price_1: float = 0):
-		"""
-		Forever Orders:
-		- SINGLE: one forever order
-		- OCO: two legs 
-		Returns: orderId (str)
-		"""
-		try:
-			security_id = self._resolve_security_id(tradingsymbol, exchange)
-			exchange_segment = self._map_exchange_segment(exchange)
-
-			order_flag = order_flag.upper().strip()
-			if order_flag not in ["SINGLE", "OCO"]:
-				raise Exception("order_flag must be SINGLE or OCO")
-
-			order_type_map = {
-				"LIMIT": self.Dhan.LIMIT,
-				"MARKET": self.Dhan.MARKET,
-				"STOPLIMIT": self.Dhan.SL,
-				"STOPMARKET": self.Dhan.SLM
-			}
-			product_map = {
-				"MIS": self.Dhan.INTRA,
-				"MARGIN": self.Dhan.MARGIN,
-				"MTF": self.Dhan.MTF,
-				"CNC": self.Dhan.CNC
-			}
-			side_map = {"BUY": self.Dhan.BUY, "SELL": self.Dhan.SELL}
-			validity_map = {"DAY": "DAY", "IOC": "IOC"}
-
-			ot = order_type_map[order_type.upper()]
-			pt = product_map[trade_type.upper()]
-			side = side_map[transaction_type.upper()]
-			tif = validity_map[validity.upper()]
-
-			resp = self.Dhan.place_forever(
-				security_id=security_id,
-				exchange_segment=exchange_segment,
-				transaction_type=side,
-				quantity=int(quantity),
-				order_type=ot,
-				product_type=pt,
-				price=float(price),
-				trigger_Price=float(trigger_price),
-				disclosed_quantity=int(disclosed_quantity),
-				validity=tif,
-				order_flag=order_flag,
-				quantity1=int(quantity_1),
-				price1=float(price_1),
-				trigger_Price1=float(trigger_price_1)
-			)
-
-			if resp.get("status") == "failure":
-				raise Exception(resp)
-
-			return str(resp["data"]["orderId"])
-
-		except Exception as e:
-			print(f"Got exception in place_forever_order: {e}")
-			return None
-	
-	def modify_forever_order(self, order_id: str, order_flag: str, order_type: str, quantity: int, price: float, trigger_price: float = 0, disclosed_quantity: int = 0, validity: str = "DAY", leg_name: str = "TARGET_LEG"):
-
-		try:
-			order_flag = order_flag.upper().strip()
-			if order_flag not in ("SINGLE", "OCO"):
-				raise Exception("order_flag must be SINGLE or OCO")
-
-			leg_name = leg_name.upper().strip()
-			if leg_name not in ("TARGET_LEG", "STOP_LOSS_LEG"):
-				raise Exception("leg_name must be TARGET_LEG or STOP_LOSS_LEG")
-
-
-			order_type = order_type.upper().strip()
-			if order_type not in ("LIMIT", "MARKET", "STOP_LOSS", "STOP_LOSS_MARKET"):
-				raise Exception("order_type must be LIMIT/MARKET/STOP_LOSS/STOP_LOSS_MARKET")
-
-			validity = validity.upper().strip()
-			if validity not in ("DAY", "IOC"):
-				raise Exception("validity must be DAY or IOC")
-
-
-			payload_dbg = {
-				"orderId": str(order_id),
-				"orderFlag": order_flag,
-				"orderType": order_type,
-				"legName": leg_name,
-				"quantity": int(quantity),
-				"disclosedQuantity": int(disclosed_quantity),
-				"price": float(price),
-				"triggerPrice": float(trigger_price),
-				"validity": validity
-			}
-			print("FOREVER MODIFY DEBUG PAYLOAD:", payload_dbg)
-
-			resp = self.Dhan.modify_forever(
-				order_id=str(order_id),
-				order_flag=order_flag,
-				order_type=order_type,
-				leg_name=leg_name,
-				quantity=int(quantity),
-				price=float(price),
-				trigger_price=float(trigger_price),
-				disclosed_quantity=int(disclosed_quantity),
-				validity=validity
-			)
-
-			if resp.get("status") == "failure":
-				raise Exception(resp)
-
-			return str(resp.get("data", {}).get("orderId", order_id))
-
-		except Exception as e:
-			print(f"Got exception in modify_forever_order: {e}")
-			return None
+# ============================================================
 
 	def cancel_forever_order(self, order_id: str):
 		try:
@@ -2760,12 +2340,12 @@ class Tradehull:
 		except Exception as e:
 			print(f"Got exception in get_forever_orders: {e}")
 			return None
-	
+# ============================================================
 	def _token_path_today(self) -> str:
 		date_str = str(datetime.datetime.now().date())
 		os.makedirs("Dependencies", exist_ok=True)
 		return f"Dependencies/token_{self.ClientCode}_{date_str}.txt"
-
+# ============================================================
 	def _try_cached_pin_totp_token(self) -> bool:
 		path = self._token_path_today()
 		if not os.path.exists(path):
@@ -2786,65 +2366,8 @@ class Tradehull:
 			return False
 
 
-	def enable_pnl_based_exit(
-		self,
-		profit_value=None,     
-		loss_value=None,
-		product_types=("INTRADAY","DELIVERY"),
-		enable_kill_switch = False,
-		timeout=10) -> dict:
-		"""
-		Enables Dhan P&L Based Exit (POST /v2/pnlExit).
-		Uses self.token_id as 'access-token'.
 
-		Note:
-		- Config stays active only for current trading day and resets at session end.
-		- If profit_value is below current profit (or loss_value above current loss), it may trigger immediately.
-		"""
-		try:
-			if profit_value is None and loss_value is None:
-				raise ValueError("Provide at least one of profit_value or loss_value.")
-
-			if not getattr(self, "token_id", None):
-				raise ValueError("self.token_id is empty (Dhan access-token missing).")
-
-			def fmt_money(x):
-				d = Decimal(str(x)).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
-				return f"{d:.2f}"
-			loss_value = -(abs(loss_value))
-
-			payload = {
-				"dhanClientId": str(self.ClientCode),
-				"profitValue": fmt_money(profit_value) if profit_value is not None else None,
-				"lossValue": fmt_money(loss_value) if loss_value is not None else None,
-				"productType": list(product_types),
-				"enableKillSwitch": enable_kill_switch,
-			}
-			payload = {k: v for k, v in payload.items() if v is not None}
-
-			url = "https://api.dhan.co/v2/pnlExit"
-			headers = {
-				"Accept": "application/json",
-				"Content-Type": "application/json",
-				"access-token": str(self.token_id),
-				"dhanClientId": str(self.ClientCode),
-			}
-
-			r = requests.post(url, json=payload, headers=headers, timeout=timeout)
-			data = r.json() if r.content else {}
-
-			if not r.ok:
-				raise RuntimeError(f"enable_pnl_based_exit failed: HTTP {r.status_code} -> {data}")
-
-			return data
-
-		except Exception:
-			if hasattr(self, "logger"):
-				self.logger.exception("problem enabling pnl based exit")
-			return {}
-
-
-
+# ============================================================
 	def _map_conditional_exchange_segment(self, exchange: str) -> str:
 		"""
 		Conditional Trigger API supports only Equities and Indices.
@@ -2858,329 +2381,9 @@ class Tradehull:
 		if ex in ("IDX", "IDX_I"):
 			return "IDX_I"
 		raise Exception("Conditional trigger supports only NSE/BSE/IDX (Equities/Indices).")
-
+# ============================================================
 
 	def _money_2dp(self,x) -> str:
 		d = Decimal(str(x)).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
 		return f"{d:.2f}"
-
-
-	def place_conditional_trigger(self, tradingsymbol: str, exchange: str, quantity: int, price: float, trigger_price: float, order_type: str, transaction_type: str, trade_type: str, disclosed_quantity: int = 0, validity: str = "DAY", comparison_type: str = "PRICE_WITH_VALUE", operator: str = None, time_frame: str = "DAY", comparing_value: float = None, indicator_name: str = None, comparing_indicator_name: str = None, frequency: str = "ONCE", exp_date: str = None,  user_note: str = "", timeout: int = 10) -> str:
-		"""
-		Place a conditional trigger order using Dhan Alerts API.
-		This function creates an alert-based order and returns an `alertId` when the specified condition is satisfied.
-		"""
-		"""
-		POST /v2/alerts/orders
-		Returns alertId (str) on success else None.
-
-		Comparison Type (accepted):
-		TECHNICAL_WITH_VALUE
-		TECHNICAL_WITH_INDICATOR
-		TECHNICAL_WITH_CLOSE
-		PRICE_WITH_VALUE
-
-		Operator (accepted):
-		CROSSING_UP, CROSSING_DOWN, CROSSING_ANY_SIDE,
-		GREATER_THAN, LESS_THAN, GREATER_THAN_EQUAL, LESS_THAN_EQUAL,
-		EQUAL, NOT_EQUAL
-
-		Indicator Name (accepted):
-		SMA_5, SMA_10, SMA_20, SMA_50, SMA_100, SMA_200,
-		EMA_5, EMA_10, EMA_20, EMA_50, EMA_100, EMA_200,
-		BB_UPPER, BB_LOWER, RSI_14, ATR_14, STOCHASTIC, STOCHRSI_14,
-		MACD_26, MACD_12, MACD_HIST
-		"""
-		try:
-
-			ALLOWED_COMPARISON = {
-				"TECHNICAL_WITH_VALUE",
-				"TECHNICAL_WITH_INDICATOR",
-				"TECHNICAL_WITH_CLOSE",
-				"PRICE_WITH_VALUE",
-			}
-			ALLOWED_INDICATORS = {
-				"SMA_5","SMA_10","SMA_20","SMA_50","SMA_100","SMA_200",
-				"EMA_5","EMA_10","EMA_20","EMA_50","EMA_100","EMA_200",
-				"BB_UPPER","BB_LOWER","RSI_14","ATR_14","STOCHASTIC","STOCHRSI_14",
-				"MACD_26","MACD_12","MACD_HIST",
-			}
-			ALLOWED_OPERATORS = {
-				"CROSSING_UP","CROSSING_DOWN","CROSSING_ANY_SIDE",
-				"GREATER_THAN","LESS_THAN","GREATER_THAN_EQUAL","LESS_THAN_EQUAL",
-				"EQUAL","NOT_EQUAL",
-			}
-
-			ct = (comparison_type or "").upper().strip()
-			if ct not in ALLOWED_COMPARISON:
-				raise Exception(f"Invalid comparison_type: {comparison_type}")
-
-			op = (operator or "").upper().strip()
-			if op not in ALLOWED_OPERATORS:
-				raise Exception(f"Invalid operator: {operator}", "Allowed operators: ", ALLOWED_OPERATORS)
-
-			if indicator_name is not None:
-				ind = indicator_name.upper().strip()
-				if ind not in ALLOWED_INDICATORS:
-					raise Exception(f"Invalid indicator_name: {indicator_name}", "Allowed indicators: ", ALLOWED_INDICATORS)
-				indicator_name = ind
-
-			if comparing_indicator_name is not None:
-				cind = comparing_indicator_name.upper().strip()
-				if cind not in ALLOWED_INDICATORS:
-					raise Exception(f"Invalid comparing_indicator_name: {comparing_indicator_name}", "Allowed indicators: ", ALLOWED_INDICATORS)
-				comparing_indicator_name = cind
-
-			if ct == "TECHNICAL_WITH_VALUE":
-				if not indicator_name:
-					raise Exception("indicator_name is mandatory for TECHNICAL_WITH_VALUE")
-				if comparing_value is None:
-					raise Exception("comparing_value is mandatory for TECHNICAL_WITH_VALUE")
-
-			elif ct == "TECHNICAL_WITH_INDICATOR":
-				if not indicator_name:
-					raise Exception("indicator_name is mandatory for TECHNICAL_WITH_INDICATOR")
-				if not comparing_indicator_name:
-					raise Exception("comparing_indicator_name is mandatory for TECHNICAL_WITH_INDICATOR")
-
-			elif ct == "TECHNICAL_WITH_CLOSE":
-				if not indicator_name:
-					raise Exception("indicator_name is mandatory for TECHNICAL_WITH_CLOSE")
-
-			elif ct == "PRICE_WITH_VALUE":
-				if comparing_value is None:
-					raise Exception("comparing_value is mandatory for PRICE_WITH_VALUE")
-
-			security_id = self._resolve_security_id(tradingsymbol, exchange)
-			exchange_segment = self._map_conditional_exchange_segment(exchange)
-
-			if exp_date is None:
-				exp_date = (datetime.date.today() + datetime.timedelta(days=30)).strftime("%Y-%m-%d")
-
-			
-			order_type_map = {
-				"LIMIT": self.Dhan.LIMIT,
-				"MARKET": self.Dhan.MARKET,
-				"STOPLIMIT": self.Dhan.SL,
-				"STOPMARKET": self.Dhan.SLM
-			}
-			product_map = {
-				"MIS": self.Dhan.INTRA,
-				"CNC": self.Dhan.CNC,
-				"MARGIN": self.Dhan.MARGIN,
-				"MTF": self.Dhan.MTF
-			}
-			side_map = {"BUY": self.Dhan.BUY, "SELL": self.Dhan.SELL}
-			validity_map = {"DAY": self.Dhan.DAY, "IOC": self.Dhan.IOC}
-
-			ot = order_type_map.get(order_type.upper())
-			pt = product_map.get(trade_type.upper())
-			side = side_map.get(transaction_type.upper())
-			val = validity_map.get(validity.upper())
-
-			if time_frame in ['1', '5', '15', '25', '60']:
-				interval = int(time_frame)
-			elif time_frame.upper()=="DAY":
-				pass
-			else:
-				raise Exception("interval value must be ['1','5','15','25','60','DAY']")
-
-			if not ot:
-				raise Exception("order_type must be LIMIT/MARKET/STOPLIMIT/STOPMARKET")
-			if not pt:
-				raise Exception("trade_type must be MIS/CNC/MARGIN/MTF")
-			if not side:
-				raise Exception("transaction_type must be BUY/SELL")
-			if not val:
-				raise Exception("validity must be DAY/IOC")
-
-			condition = {
-				"comparisonType": ct,
-				"exchangeSegment": exchange_segment,
-				"securityId": str(security_id),
-				"operator": op,
-				"timeFrame": time_frame,
-				"expDate": exp_date,
-				"frequency": frequency,
-				"userNote": user_note or "",
-			}
-
-			if indicator_name and ct.startswith("TECHNICAL_"):
-				condition["indicatorName"] = indicator_name
-			if comparing_indicator_name and ct == "TECHNICAL_WITH_INDICATOR":
-				condition["comparingIndicatorName"] = comparing_indicator_name
-			if comparing_value is not None and ct in ("PRICE_WITH_VALUE", "TECHNICAL_WITH_VALUE"):
-				condition["comparingValue"] = float(comparing_value)
-
-			order_block = {
-				"transactionType": side,
-				"exchangeSegment": exchange_segment,
-				"productType": pt,
-				"orderType": ot,
-				"securityId": str(security_id),
-				"quantity": int(quantity),
-				"validity": val,
-				"price": self._money_2dp(price),
-				"discQuantity": str(int(disclosed_quantity)),
-				"triggerPrice": self._money_2dp(trigger_price),
-			}
-
-			payload = {
-				"dhanClientId": str(self.ClientCode),
-				"condition": condition,
-				"orders": [order_block],
-			}
-
-			headers = {
-				"Accept": "application/json",
-				"Content-Type": "application/json",
-				"access-token": str(self.token_id),
-				"dhanClientId": str(self.ClientCode),
-			}
-
-			url = "https://api.dhan.co/v2/alerts/orders"
-			r = requests.post(url, json=payload, headers=headers, timeout=timeout)
-			data = r.json() if r.content else {}
-
-			if not r.ok:
-				raise Exception(data)
-
-			alert_id = data.get("alertId")
-			if not alert_id:
-				raise Exception(f"Unexpected response: {data}")
-
-			return str(alert_id)
-
-		except Exception as e:
-			print(f"Got exception in place_conditional_trigger: {e}")
-			return None
-
-
-	def delete_conditional_trigger(self, alert_id: str, timeout: int = 10) -> dict:
-		"""
-		DELETE https://api.dhan.co/v2/alerts/orders/{alertId}
-
-		Returns example:
-		{
-		"alertId": "12345",
-		"alertStatus": "CANCELLED"
-		}
-		"""
-		try:
-			if not getattr(self, "token_id", None):
-				raise Exception("self.token_id missing (access-token)")
-			if not getattr(self, "ClientCode", None):
-				raise Exception("self.ClientCode missing (dhanClientId)")
-
-			alert_id = str(alert_id).strip()
-			if not alert_id:
-				raise Exception("alert_id is required")
-
-			url = f"https://api.dhan.co/v2/alerts/orders/{alert_id}"
-			headers = {
-				"Accept": "application/json",
-				"access-token": str(self.token_id),
-				"dhanClientId": str(self.ClientCode), 
-			}
-
-			r = requests.delete(url, headers=headers, timeout=timeout)
-			data = r.json() if r.content else {}
-
-			if not r.ok:
-				raise Exception(data)
-
-			return data
-
-		except Exception as e:
-			print(f"Got exception in delete_conditional_trigger: {e}")
-			return {}
-
-
-	def get_all_conditional_triggers(self, timeout: int = 10):
-		"""
-		GET https://api.dhan.co/v2/alerts/orders
-
-		Returns: list (as per docs) OR {} on failure
-		Example (list of dict):
-		[
-		{
-			"alertId": "...",
-			"alertStatus": "ACTIVE",
-			"createdTime": "...",
-			"triggeredTime": None,
-			"lastPrice": 245.5,
-			"condition": {...},
-			"orders": [...]
-		}
-		]
-		"""
-		try:
-			if not getattr(self, "token_id", None):
-				raise Exception("self.token_id missing (access-token)")
-			if not getattr(self, "ClientCode", None):
-				raise Exception("self.ClientCode missing (dhanClientId)")
-
-			url = "https://api.dhan.co/v2/alerts/orders"
-			headers = {
-				"Accept": "application/json",
-				"access-token": str(self.token_id),
-				"dhanClientId": str(self.ClientCode),
-			}
-
-			r = requests.get(url, headers=headers, timeout=timeout)
-			data = r.json() if r.content else None
-
-			if not r.ok:
-				raise Exception(data)
-
-			return data if isinstance(data, list) else data
-
-		except Exception as e:
-			print(f"Got exception in get_all_conditional_triggers: {e}")
-			return []
-
-
-
-	def get_conditional_trigger_by_id(self, alert_id: str, timeout: int = 10) -> dict:
-		"""
-		GET https://api.dhan.co/v2/alerts/orders/{alertId}
-
-		Returns example:
-		{
-		"alertId": "12345",
-		"alertStatus": "ACTIVE",
-		"createdTime": "...",
-		"triggeredTime": null,
-		"lastPrice": "245.50",
-		"condition": {...},
-		"orders": [...]
-		}
-		"""
-		try:
-			if not getattr(self, "token_id", None):
-				raise Exception("self.token_id missing (access-token)")
-			if not getattr(self, "ClientCode", None):
-				raise Exception("self.ClientCode missing (dhanClientId)")
-
-			alert_id = str(alert_id).strip()
-			if not alert_id:
-				raise Exception("alert_id is required")
-
-			url = f"https://api.dhan.co/v2/alerts/orders/{alert_id}"
-			headers = {
-				"Accept": "application/json",
-				"access-token": str(self.token_id),
-				"dhanClientId": str(self.ClientCode), 
-			}
-
-			r = requests.get(url, headers=headers, timeout=timeout)
-			data = r.json() if r.content else {}
-
-			if not r.ok:
-				raise Exception(data)
-
-			return data
-
-		except Exception as e:
-			print(f"Got exception in get_conditional_trigger_by_id: {e}")
-			return {}
+# ============================================================

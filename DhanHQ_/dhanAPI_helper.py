@@ -1,5 +1,5 @@
 # ============================================================
-# DEFINEEDGE API HELPER v3.1        
+# DEFINEEDGE API HELPER v1.1        
 # Production Broker Adapter
 # Engine Compatible
 # WebSocket Hardened
