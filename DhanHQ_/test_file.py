@@ -9,12 +9,12 @@ import time
 import os
 from dotenv import load_dotenv, find_dotenv
 import pandas as pd
-from edgeAPI_helper import EdgeApi
+from DhanHQ_.dhanAPI_helper import EdgeApi
 from helper_wraper import APIEngine
 
 
 # ============================================================
-# ENV LOAD           
+# ENV LOAD
 # ============================================================
 
 dotenv_file = find_dotenv()
@@ -73,10 +73,10 @@ def main():
 
     test_rest_tick_data(engine)
 
-    while True:
 
-        test_rest_ltp(engine)  
-        time.sleep(5)
+
+    test_rest_ltp(engine)  
+
 # ============================================================
 # ENTRY
 # ============================================================
