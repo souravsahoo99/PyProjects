@@ -3,7 +3,6 @@
 # Official DefineEdge Replica Engine
 # Backward Compatible | Thread Safe
 # ============================================================
-from dhanAPI_helper import DhanApi
 
 import mibian
 import os 
@@ -100,7 +99,7 @@ class TokenRegistry:
 
     MASTER_URL = "https://images.dhan.co/api-data/api-scrip-master.csv"
 
-    def __init__(self, api=DhanApi):
+    def __init__(self, api = None):
 
         self.api = api
         #  DATA Frame
