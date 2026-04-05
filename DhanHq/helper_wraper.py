@@ -19,9 +19,9 @@ from dotenv import find_dotenv, load_dotenv
 dotenv_file = find_dotenv()
 load_dotenv(dotenv_file)
 
-client_id = os.getenv("DHAN_CLIENT_ID")
-access_token = os.getenv("DHAN_ACCESS_TOKEN")
-
+client_code = os.getenv("DHAN_CLIENT_CODE")
+API_key = os.getenv("DHAN_API_KEY")
+API_secret = os.getenv("DHAN_API_SECRET")
 # ============================================================
 #     API - ENGINE                                                
 # ============================================================
@@ -29,15 +29,14 @@ access_token = os.getenv("DHAN_ACCESS_TOKEN")
 class APIEngine():
 
     def __init__(self):
-
-        self.api = DhanApi(client_id, access_token)
-
+        
         # TOKEN REGISTRY Integration (New) 
-        self.registry = TokenRegistry(api=self.api)
-        #self.registry.load_master()
+        self._login_Object = DhanApi(ClientCode= client_code, api_key= API_key, api_secret=API_secret)
+
+        self.Dhan = self._login_Object.api
+        self.registry = TokenRegistry(api=self.Dhan)
 
         self.market_data_map = {}
-
         # WEBSOCKET STATE
         self._is_ws_connected = False
         self._subscribed_instruments: set[tuple[str,str]] = set() 

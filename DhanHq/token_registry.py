@@ -1,8 +1,9 @@
 # ============================================================
-# TOKEN REGISTRY v1.0
+# TOKEN REGISTRY v1.1
 # Official DefineEdge Replica Engine
 # Backward Compatible | Thread Safe
 # ============================================================
+from dhanAPI_helper import DhanApi
 
 import mibian
 import os 
@@ -99,11 +100,11 @@ class TokenRegistry:
 
     MASTER_URL = "https://images.dhan.co/api-data/api-scrip-master.csv"
 
-    def __init__(self, api = None):
+    def __init__(self, api = DhanApi):
 
-        self.api = api
+        self.Dhan = api
         #  DATA Frame
-        self.instrument_df = self.api.instrument_df
+        self.instrument_df = self.Dhan.instrument_df
         #_______________________________________________________
         self._lock = threading.Lock()        
         self._loaded = False     
@@ -147,9 +148,11 @@ class TokenRegistry:
     def correct_step_df_creation(self):
         
         self.correct_list = {} 
+        instrument_df = self.instrument_df.copy()
+        
         names_list = instrument_df['SEM_CUSTOM_SYMBOL'].str.split(' ').str[0].unique().tolist()
         names_list = [name for name in names_list if isinstance(name, str) and '-' not in name and '%' not in name]
-        instrument_df = self.instrument_df.copy()
+
         
         for name in names_list:
             if '-' in name or '%' in name:
@@ -189,15 +192,55 @@ class TokenRegistry:
 
             except Exception as e:
                 self.logger.exception(f"Error processing {name}: {e}")
+# ________________________________________________________________________________________________________________________
+
+
+    def dhan_equity_step_creation(self) -> dict:
+        """
+        Build step_size size dictionary for all stock option underlyings (OPTSTK)
+        using Dhan instrument file.
+        """
+        try:
+            df = self.instrument_df.copy()
+
+            opt_df = df[(df["SEM_INSTRUMENT_NAME"] == "OPTSTK") & (df["SEM_OPTION_TYPE"] == "CE") & (df["SEM_EXM_EXCH_ID"] == "NSE")].copy()
+            opt_df["UNDERLYING"] = opt_df["SEM_TRADING_SYMBOL"].apply(lambda s: s.split("-")[0])
+            if opt_df.empty:
+                return {}
+            opt_df["SEM_STRIKE_PRICE"] = opt_df["SEM_STRIKE_PRICE"].astype(float)
+            step_dict = {}
+            for symbol, group in opt_df.groupby("UNDERLYING"):
+                try:
+                    
+                    group = group.sort_values("SEM_EXPIRY_DATE")
+                    nearest_expiry = group["SEM_EXPIRY_DATE"].iloc[0]
+                    g2 = group[group["SEM_EXPIRY_DATE"] == nearest_expiry]
+                    if len(g2) < 2:
+                        continue
+                    strikes = np.sort(g2["SEM_STRIKE_PRICE"].values)
+                    diffs = np.diff(strikes)
+                    if len(diffs) == 0:
+                        continue
+                    step_size = Counter(diffs).most_common(1)[0][0]
+                    step_size = int(step_size) if float(step_size).is_integer() else step_size
+                    step_dict[symbol] = step_size
+                except Exception:
+                    continue
+            return step_dict
+        except Exception as e:
+            print("Error in dhan_equity_step_creation:", e)
+            return {}
+
 
 # ________________________________________________________________________________________________________________________
 
 
     def get_ltp_data(self,names, debug="NO"):
         try:      
-            instrument_df = self.instrument_df.copy()
-            instruments = {'NSE_EQ':[],'IDX_I':[],'NSE_FNO':[],'NSE_CURRENCY':[],'BSE_EQ':[],'BSE_FNO':[],'BSE_CURRENCY':[],'MCX_COMM':[]}
             instrument_names = {}
+            instrument_df = self.instrument_df.copy()
+
+            instruments = {'NSE_EQ':[],'IDX_I':[],'NSE_FNO':[],'NSE_CURRENCY':[],'BSE_EQ':[],'BSE_FNO':[],'BSE_CURRENCY':[],'MCX_COMM':[]}
             NFO = ["BANKNIFTY","NIFTY","MIDCPNIFTY","FINNIFTY"]
             BFO = ['SENSEX','BANKEX']
             equity = ['CALL','PUT','FUT']       
@@ -255,7 +298,7 @@ class TokenRegistry:
             time.sleep(0.4)
 
             # Data Fetching via instrument
-            data = self.api.ticker_data(instruments)
+            data = self.Dhan.ticker_data(instruments)
             ltp_data=dict()
             
             if debug.upper()=="YES":
@@ -281,9 +324,10 @@ class TokenRegistry:
 
     def order_placement(self,tradingsymbol:str, exchange:str,quantity:int, price:int, trigger_price:int, order_type:str, transaction_type:str, trade_type:str,disclosed_quantity=0,after_market_order=False,validity ='DAY', amo_time='OPEN',bo_profit_value=None, bo_stop_loss_value=None, tag=None, should_slice=False)->str:
         try:
+            instrument_df = self.instrument_df.copy()
             tradingsymbol = tradingsymbol.upper()
             exchange = exchange.upper()
-            instrument_df = self.instrument_df.copy()
+
             script_exchange = {"NSE":self.Dhan.NSE, "NFO":self.Dhan.NSE_FNO, "BFO":self.Dhan.BSE_FNO, "CUR": self.Dhan.CUR, "BSE":self.Dhan.BSE, "MCX":self.Dhan.MCX}
             self.order_Type = {'LIMIT': self.Dhan.LIMIT, 'MARKET': self.Dhan.MARKET,'STOPLIMIT': self.Dhan.SL, 'STOPMARKET': self.Dhan.SLM}
             product = {'MIS':self.Dhan.INTRA, 'MARGIN':self.Dhan.MARGIN, 'MTF':self.Dhan.MTF, 'CO':self.Dhan.CO,'BO':self.Dhan.BO, 'CNC': self.Dhan.CNC}
@@ -406,6 +450,7 @@ class TokenRegistry:
     def get_start_date(self):
         try:
             instrument_df = self.instrument_df.copy()
+
             from_date= datetime.datetime.now()-datetime.timedelta(days=90)
             start_date = (datetime.datetime.now()-datetime.timedelta(days=90)).strftime('%Y-%m-%d')
             from_date = from_date.strftime('%Y-%m-%d')
@@ -418,6 +463,8 @@ class TokenRegistry:
             instrument_type = instrument_df[((instrument_df['SEM_TRADING_SYMBOL']==tradingsymbol)|(instrument_df['SEM_CUSTOM_SYMBOL']==tradingsymbol))&(instrument_df['SEM_EXM_EXCH_ID']==instrument_exchange[exchange])].iloc[-1]['SEM_INSTRUMENT_NAME']
             expiry_code     = instrument_df[((instrument_df['SEM_TRADING_SYMBOL']==tradingsymbol)|(instrument_df['SEM_CUSTOM_SYMBOL']==tradingsymbol))&(instrument_df['SEM_EXM_EXCH_ID']==instrument_exchange[exchange])].iloc[-1]['SEM_EXPIRY_CODE']
             time.sleep(0.5)
+
+            # Data Fetching
             ohlc = self.Dhan.historical_daily_data(int(security_id),exchange_segment,instrument_type,from_date,to_date,int(expiry_code), oi = True)
             if ohlc['status']!='failure':
                 df = pd.DataFrame(ohlc['data'])
@@ -441,8 +488,9 @@ class TokenRegistry:
     def get_historical_data(self,tradingsymbol,exchange,timeframe, sector = "NO",debug="NO"):           
         try:
             # tradingsymbol = tradingsymbol.upper()
-            exchange = exchange.upper()
             instrument_df = self.instrument_df.copy()
+            exchange = exchange.upper()
+
             from_date= datetime.datetime.now()-datetime.timedelta(days=365)
             from_date = from_date.strftime('%Y-%m-%d')
             to_date = datetime.datetime.now().strftime('%Y-%m-%d') 
@@ -545,7 +593,9 @@ class TokenRegistry:
 
 
     def get_lot_size(self,tradingsymbol: str):
+
         instrument_df = self.instrument_df.copy()
+
         data = instrument_df[((instrument_df['SEM_TRADING_SYMBOL']==tradingsymbol)|(instrument_df['SEM_CUSTOM_SYMBOL']==tradingsymbol))]
         if len(data) == 0:
             self.logger.exception("Enter valid Script Name")
@@ -560,10 +610,11 @@ class TokenRegistry:
 
     def ATM_Strike_Selection(self, Underlying, Expiry):
         try:
+            instrument_df = self.instrument_df.copy()
             Underlying = Underlying.upper()
             strike = 0
+            
             exchange_index = {"BANKNIFTY": "NSE","NIFTY":"NSE","MIDCPNIFTY":"NSE", "FINNIFTY":"NSE","SENSEX":"BSE","BANKEX":"BSE"}
-            instrument_df = self.instrument_df.copy()
             instrument_df['SEM_EXPIRY_DATE'] = pd.to_datetime(instrument_df['SEM_EXPIRY_DATE'], errors='coerce')
             instrument_df['ContractExpiration'] = instrument_df['SEM_EXPIRY_DATE'].dt.date
             instrument_df['ContractExpiration'] = instrument_df['ContractExpiration'].astype(str)
@@ -585,6 +636,8 @@ class TokenRegistry:
                 Expiry_date = expiry_list[-1]
             else:
                 Expiry_date = expiry_list[Expiry]
+            
+            # Data Fetching    
             ltp_data = self.get_ltp_data(Underlying)
             ltp = ltp_data[Underlying]
             
@@ -658,10 +711,12 @@ class TokenRegistry:
 
     def OTM_Strike_Selection(self, Underlying, Expiry,OTM_count=1):
         try:
+            instrument_df = self.instrument_df.copy()
             Underlying = Underlying.upper()
+
             # Expiry = pd.to_datetime(Expiry, format='%d-%m-%Y').strftime('%Y-%m-%d')
             exchange_index = {"BANKNIFTY": "NSE","NIFTY":"NSE","MIDCPNIFTY":"NSE", "FINNIFTY":"NSE","SENSEX":"BSE","BANKEX":"BSE"}
-            instrument_df = self.instrument_df.copy()
+
             instrument_df['SEM_EXPIRY_DATE'] = pd.to_datetime(instrument_df['SEM_EXPIRY_DATE'], errors='coerce')
             instrument_df['ContractExpiration'] = instrument_df['SEM_EXPIRY_DATE'].dt.date
             instrument_df['ContractExpiration'] = instrument_df['ContractExpiration'].astype(str)
@@ -761,10 +816,12 @@ class TokenRegistry:
 
     def ITM_Strike_Selection(self, Underlying, Expiry, ITM_count=1):
         try:
+            instrument_df = self.instrument_df.copy()            
             Underlying = Underlying.upper()
+
             # Expiry = pd.to_datetime(Expiry, format='%d-%m-%Y').strftime('%Y-%m-%d')
             exchange_index = {"BANKNIFTY": "NSE","NIFTY":"NSE","MIDCPNIFTY":"NSE", "FINNIFTY":"NSE","SENSEX":"BSE","BANKEX":"BSE"}
-            instrument_df = self.instrument_df.copy()
+
             instrument_df['SEM_EXPIRY_DATE'] = pd.to_datetime(instrument_df['SEM_EXPIRY_DATE'], errors='coerce')
             instrument_df['ContractExpiration'] = instrument_df['SEM_EXPIRY_DATE'].dt.date
             instrument_df['ContractExpiration'] = instrument_df['ContractExpiration'].astype(str)
@@ -864,6 +921,7 @@ class TokenRegistry:
 
     def get_expiry_list(self, Underlying, exchange):
         try:
+            instrument_df = self.instrument_df.copy()
             Underlying = Underlying.upper()
             exchange = exchange.upper()
             script_exchange = {"NSE":self.Dhan.NSE, "NFO":self.Dhan.FNO, "BFO":"BSE_FNO", "CUR": self.Dhan.CUR, "BSE":self.Dhan.BSE, "MCX":self.Dhan.MCX, "INDEX":self.Dhan.INDEX}
@@ -928,6 +986,7 @@ class TokenRegistry:
                 
             # exchange = exchange_index[inst_asset]
             instrument_df = self.instrument_df.copy()
+
             instrument_df['SEM_EXPIRY_DATE'] = pd.to_datetime(instrument_df['SEM_EXPIRY_DATE'], errors='coerce')
             instrument_df['ContractExpiration'] = instrument_df['SEM_EXPIRY_DATE'].dt.date.astype(str)
             # check_ecpiry = datetime.datetime.strptime(expiry_date, '%d-%m-%Y')
@@ -1062,7 +1121,9 @@ class TokenRegistry:
 
         
     def get_option_chain(self, Underlying, exchange, expiry,num_strikes = 10):
+        
         instrument_df = self.instrument_df.copy()
+
         try:
             Underlying = Underlying.upper()
             exchange = exchange.upper()
@@ -1130,8 +1191,9 @@ class TokenRegistry:
     def get_quote_data(self,names, debug="NO"):
         try:
             instrument_df = self.instrument_df.copy()
-            instruments = {'NSE_EQ':[],'IDX_I':[],'NSE_FNO':[],'NSE_CURRENCY':[],'BSE_EQ':[],'BSE_FNO':[],'BSE_CURRENCY':[],'MCX_COMM':[]}
             instrument_names = {}
+
+            instruments = {'NSE_EQ':[],'IDX_I':[],'NSE_FNO':[],'NSE_CURRENCY':[],'BSE_EQ':[],'BSE_FNO':[],'BSE_CURRENCY':[],'MCX_COMM':[]}
             NFO = ["BANKNIFTY","NIFTY","MIDCPNIFTY","FINNIFTY"]
             BFO = ['SENSEX','BANKEX']
             equity = ['CALL','PUT','FUT']           
@@ -1217,8 +1279,9 @@ class TokenRegistry:
     def get_ohlc_data(self,names, debug="NO"):
         try:
             instrument_df = self.instrument_df.copy()
-            instruments = {'NSE_EQ':[],'IDX_I':[],'NSE_FNO':[],'NSE_CURRENCY':[],'BSE_EQ':[],'BSE_FNO':[],'BSE_CURRENCY':[],'MCX_COMM':[]}
             instrument_names = {}
+
+            instruments = {'NSE_EQ':[],'IDX_I':[],'NSE_FNO':[],'NSE_CURRENCY':[],'BSE_EQ':[],'BSE_FNO':[],'BSE_CURRENCY':[],'MCX_COMM':[]}
             NFO = ["BANKNIFTY","NIFTY","MIDCPNIFTY","FINNIFTY"]
             BFO = ['SENSEX','BANKEX']
             equity = ['CALL','PUT','FUT']           
@@ -1316,9 +1379,10 @@ class TokenRegistry:
             pd.DataFrame: Combined OHLCV data
         """
         try:
+            instrument_df = self.instrument_df.copy()
             # tradingsymbol = tradingsymbol.upper()
             exchange = exchange.upper()
-            instrument_df = self.instrument_df.copy()
+
             if isinstance(from_date, str):
                 from_date = datetime.datetime.strptime(from_date, "%Y-%m-%d").date()
             if isinstance(to_date, str):
@@ -1464,49 +1528,12 @@ class TokenRegistry:
 # ________________________________________________________________________________________________________________________
 
 
-    def dhan_equity_step_creation(self) -> dict:
-        """
-        Build step_size size dictionary for all stock option underlyings (OPTSTK)
-        using Dhan instrument file.
-        """
-        try:
-            df = self.instrument_df.copy()
-            opt_df = df[(df["SEM_INSTRUMENT_NAME"] == "OPTSTK") & (df["SEM_OPTION_TYPE"] == "CE") & (df["SEM_EXM_EXCH_ID"] == "NSE")].copy()
-            opt_df["UNDERLYING"] = opt_df["SEM_TRADING_SYMBOL"].apply(lambda s: s.split("-")[0])
-            if opt_df.empty:
-                return {}
-            opt_df["SEM_STRIKE_PRICE"] = opt_df["SEM_STRIKE_PRICE"].astype(float)
-            step_dict = {}
-            for symbol, group in opt_df.groupby("UNDERLYING"):
-                try:
-                    
-                    group = group.sort_values("SEM_EXPIRY_DATE")
-                    nearest_expiry = group["SEM_EXPIRY_DATE"].iloc[0]
-                    g2 = group[group["SEM_EXPIRY_DATE"] == nearest_expiry]
-                    if len(g2) < 2:
-                        continue
-                    strikes = np.sort(g2["SEM_STRIKE_PRICE"].values)
-                    diffs = np.diff(strikes)
-                    if len(diffs) == 0:
-                        continue
-                    step_size = Counter(diffs).most_common(1)[0][0]
-                    step_size = int(step_size) if float(step_size).is_integer() else step_size
-                    step_dict[symbol] = step_size
-                except Exception:
-                    continue
-            return step_dict
-        except Exception as e:
-            print("Error in dhan_equity_step_creation:", e)
-            return {}
-
-
-# ________________________________________________________________________________________________________________________
-
-
     def _resolve_security_id(self, tradingsymbol: str, exchange: str) -> str:
+
+        instrument_df = self.instrument_df.copy()
+
         tradingsymbol = tradingsymbol.upper().strip()
         exchange = exchange.upper().strip()
-        instrument_df = self.instrument_df.copy()
         instrument_exchange = {
             "NSE": "NSE", "BSE": "BSE",
             "NFO": "NSE", "BFO": "BSE",
