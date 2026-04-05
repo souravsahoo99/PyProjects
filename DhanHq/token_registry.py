@@ -100,11 +100,11 @@ class TokenRegistry:
 
     MASTER_URL = "https://images.dhan.co/api-data/api-scrip-master.csv"
 
-    def __init__(self, api = DhanApi):
+    def __init__(self, api = None , df = None):
 
         self.Dhan = api
         #  DATA Frame
-        self.instrument_df = self.Dhan.instrument_df
+        self.instrument_df = df
         #_______________________________________________________
         self._lock = threading.Lock()        
         self._loaded = False     

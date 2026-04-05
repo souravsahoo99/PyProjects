@@ -34,7 +34,9 @@ class APIEngine():
         self._login_Object = DhanApi(ClientCode= client_code, api_key= API_key, api_secret=API_secret)
 
         self.Dhan = self._login_Object.api
-        self.registry = TokenRegistry(api=self.Dhan)
+        self.instrument_df = self._login_Object.instrument_df
+
+        self.registry = TokenRegistry(api= self.Dhan ,df= self.instrument_df)
 
         self.market_data_map = {}
         # WEBSOCKET STATE
